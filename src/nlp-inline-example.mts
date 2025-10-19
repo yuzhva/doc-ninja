@@ -1,6 +1,6 @@
 import { UkrainianNameMatcher } from './nlp/name-matcher.mts';
 
-async function findNamesInDocument() {
+async function runInlineExample() {
   const matcher = new UkrainianNameMatcher();
 
   // Your base names (nominative case)
@@ -55,4 +55,4 @@ async function findNamesInDocument() {
 }
 
 // Run the example
-findNamesInDocument();
+runInlineExample();

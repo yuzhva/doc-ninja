@@ -5,6 +5,8 @@ Examples for documents preparation and procession on local env.
 # Table of Contents
 
 - [Quick Start](#quick-start)
+- [Running out of Docker](#running-out-of-docker)
+- [Read MORE about NLP](./docs/about.md)
 
 ## Quick Start
 
@@ -23,6 +25,14 @@ pnpm run doc:to-text
 It will create `assets/docs-for-nlp` folder with \*.txt files - which are suitable for NLP procession.
 NOTE: Setting-up the input / output folders available in `src/doc-to-text.mts` file.
 
+2. Then, build the search index from your .txt files. This is a one-time step you only need to re-run if your documents change.
+
+```bash
+pnpm run doc:build-index
+```
+
+It will create `assets/nlp-index` folder with \*.json files - which are suitable for NLP procession.
+
 ### Document procession
 
 !IMPORTANT: load models to local first:
@@ -37,10 +47,32 @@ The example of NLP via variable available in `src/nlp-inline-example.mts`, while
 pnpm run nlp:example
 ```
 
-After `assets/docs-for-nlp` the next command could be executed:
+When the indexes are created in `assets/nlp-index` folder, the next command could be executed:
 
 ```bash
 pnpm run nlp:process-data
 ```
 
-It will create `assets/nlp-output` folder with \*.xlsx files with matched results.
+It will create `assets/nlp-output` folder with \*.xlsx file with matched results.
+
+## Run from under Docker
+
+1. Install dependencies:
+
+```bash
+# If you're using cmd.exe
+docker run --rm -it -v "%cd%":/app -w /app node:22 bash -c "corepack enable && pnpm i"
+
+# If you're using PowerShell
+docker run --rm -it -v "${PWD}:/app" -w /app node:22 bash -c "corepack enable && pnpm i"
+```
+
+2. Run preffered pnpm script:
+
+```bash
+# If you're using cmd.exe
+docker run --rm -v "%cd%":/app -w /app node:22 bash -c "npm run doc:to-text"
+
+# If you're using PowerShell
+docker run --rm -v "${PWD}:/app" -w /app node:22 bash -c "npm run doc:to-text"
+```

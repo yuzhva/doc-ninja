@@ -1,8 +1,6 @@
 {
   "files.exclude": {
-    "src/orders": true,
-    "src/orders/**/*": true,
-    "src/converted": true,
-    "src/converted/**/*": true,
+    "assets--prod": true,
+    "assets--prod/**/*": true,
   }
 }
