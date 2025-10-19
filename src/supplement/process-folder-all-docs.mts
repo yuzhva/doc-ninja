@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { collectFilePaths } from './collect-file-paths.mts';
-import { convertDocToTxt } from './convert-doc-to-txt.mts';
+import { convertDocViaHtmlToTxtAdvanced } from './convert-doc-to-txt.mts';
 
 /**
  * Converts all docs and preserves structure under destRoot
@@ -18,7 +18,8 @@ async function processFolderAllDocs(srcRoot: string, destRoot: string) {
     await fs.mkdir(destDir, { recursive: true });
 
     try {
-      const text = await convertDocToTxt(srcPath);
+      // const text = await convertDocViaRawTextToTxt(srcPath);
+      const { text } = await convertDocViaHtmlToTxtAdvanced(srcPath);
       await fs.writeFile(destPath, text, 'utf8');
       console.log(`✅ Processed: ${relativePath}`);
     } catch (err) {
