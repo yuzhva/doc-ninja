@@ -1,0 +1,8 @@
+# os specific
+.DS_Store
+
+# node specific
+node_modules
+
+# secrets
+src/orders

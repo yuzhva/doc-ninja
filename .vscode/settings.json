@@ -1,0 +1,6 @@
+{
+  "files.exclude": {
+    "src/orders": true,
+    "src/orders/**/*": true
+  }
+}
