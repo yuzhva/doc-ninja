@@ -31,7 +31,6 @@ async function processFoldersTree(srcRoot: string, destRoot: string) {
 // Example usage:
 
 processFoldersTree(
-  path.join(runtimePathById.src, 'orders'),
-  // path.join(runtimePathById.src, 'orders'),
-  path.join(runtimePathById.src, 'processed')
+  path.join(runtimePathById.root, 'assets/docs-to-convert'),
+  path.join(runtimePathById.root, 'assets/docs-for-nlp')
 );
