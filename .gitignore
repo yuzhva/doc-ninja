@@ -12,6 +12,6 @@ models
 assets--prod
 
 # optional: those are generated files
-assets/docs-for-nlp
-assets/nlp-index
-assets/nlp-output
+assets/**/docs-for-nlp
+assets/**/nlp-index
+assets/**/nlp-output

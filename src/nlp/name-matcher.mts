@@ -213,6 +213,9 @@ class UkrainianNameMatcher {
 
   /**
    * Advanced semantic approach - finds names by understanding word relationships
+   * This method is designed to handle large documents efficiently by not sending the
+   * entire text to the model. Instead, it pre-processes the content to extract
+   * only capitalized words, which are then analyzed for semantic similarity.
    */
   async findNamesWithSimilarity(
     content: string,
@@ -223,10 +226,16 @@ class UkrainianNameMatcher {
     }
 
     const matches: NameMatch[] = [];
-    this.embeddingCache.clear(); // Fresh cache for each document
+    console.log(`🧠 Starting similarity search with cache size: ${this.embeddingCache.size}`);
+
+    // Note: We clear the cache for each document to ensure fresh processing
+    // This prevents cross-document contamination but means no learning occurs
+    this.embeddingCache.clear();
+    console.log(`🗑️ Cleared embedding cache for fresh document processing`);
 
     // Extract only capitalized words (more likely to be names)
     const words = this.extractCapitalizedWordsWithPositions(content);
+    console.log(`📝 Extracted ${words.length} capitalized words from document`);
 
     for (const baseName of baseNames) {
       // Filter out potential adjectives or irrelevant short words
@@ -274,14 +283,18 @@ class UkrainianNameMatcher {
    */
   private async getCachedEmbedding(text: string): Promise<any> {
     if (this.embeddingCache.has(text)) {
+      // console.log(`🔄 Using cached embedding for: "${text}"`);
       return this.embeddingCache.get(text);
     }
+
+    // console.log(`🆕 Generating new embedding for: "${text}"`);
     // Generate embedding for the text
     const embedding = await this.embedder(text, {
       pooling: 'mean',
       normalize: true,
     });
     this.embeddingCache.set(text, embedding);
+    // console.log(`💾 Cached embedding for: "${text}" (cache size: ${this.embeddingCache.size})`);
     return embedding;
   }
 

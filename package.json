@@ -8,8 +8,10 @@
     "doc:to-text": "tsx ./src/doc-to-text.mts",
     "doc:build-index": "tsx ./src/doc-build-index.mts",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
-    "nlp:example": "tsx ./src/nlp-inline-example.mts",
-    "nlp:process-data": "tsx ./src/nlp-process-data.mts"
+    "nlp:demo--inline": "tsx ./src/examples/nlp-example--inline.mts",
+    "nlp:demo--adaptive": "tsx ./src/examples/nlp-example--adaptive.mts",
+    "nlp:process-data": "tsx ./src/nlp-process-data.mts",
+    "nlp:extract-info": "tsx ./src/nlp-extract-info.mts"
   },
   "keywords": [],
   "author": "",

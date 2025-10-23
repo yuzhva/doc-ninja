@@ -33,14 +33,14 @@ async function processNLPData() {
   try {
     // 1. Read input names from Excel
     const inputPath = path.join(
-      runtimePathById.root,
-      'assets/nlp-input/data.xlsx'
+      runtimePathById.assets,
+      'nlp-input/data.xlsx'
     );
     const baseNames = await readExcelData(inputPath);
     console.log(`📊 Loaded ${baseNames.length} names from input file`);
 
     // 2. Get all individual index files
-    const indexPath = path.join(runtimePathById.root, 'assets/nlp-index');
+    const indexPath = path.join(runtimePathById.assets, 'nlp-index');
     const indexFiles = await collectAllDocumentFiles(indexPath, '.json');
     console.log(`‍🗂️ Found ${indexFiles.length} index files to process.`);
 
@@ -123,7 +123,7 @@ async function processNLPData() {
     }
 
     // 5. Write results to Excel
-    const outputPath = path.join(runtimePathById.root, 'assets/nlp-output');
+    const outputPath = path.join(runtimePathById.assets, 'nlp-output');
     await fs.mkdir(outputPath, { recursive: true });
 
     const resultPath = path.join(outputPath, 'result.xlsx');

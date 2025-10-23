@@ -13,32 +13,18 @@ import {
 async function collectAllDocumentFiles(docsPath: string): Promise<string[]> {
   const allFiles: string[] = [];
   try {
-    await fs.access(docsPath);
-  } catch {
-    console.warn(`⚠️ Directory ${docsPath} does not exist`);
-    return allFiles;
-  }
-
-  const rootFiles = (await collectFilePaths(docsPath, ['.txt'])).filter(
-    (file) => path.extname(file).toLowerCase() === '.txt'
-  );
-  allFiles.push(...rootFiles);
-
-  const folders = getFoldersRecursive(docsPath);
-  async function processFolder(folderStructure: any[], basePath: string) {
-    for (const folder of folderStructure) {
-      const folderPath = path.join(basePath, folder.name);
-      const files = (await collectFilePaths(folderPath, ['.txt'])).filter(
-        (file) => path.extname(file).toLowerCase() === '.txt'
-      );
-      allFiles.push(...files);
-      if (folder.subFolders && folder.subFolders.length > 0) {
-        await processFolder(folder.subFolders, folderPath);
+    const entries = await fs.readdir(docsPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(docsPath, entry.name);
+      if (entry.isDirectory()) {
+        allFiles.push(...(await collectAllDocumentFiles(fullPath)));
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.txt')) {
+        allFiles.push(fullPath);
       }
     }
+  } catch (error) {
+    console.warn(`⚠️ Could not read directory ${docsPath}:`, error);
   }
-
-  await processFolder(folders, docsPath);
   return [...new Set(allFiles)];
 }
 
@@ -48,8 +34,8 @@ async function collectAllDocumentFiles(docsPath: string): Promise<string[]> {
 async function buildIndex() {
   console.log('🚀 Starting index building process...');
 
-  const docsPath = path.join(runtimePathById.root, 'assets/docs-for-nlp');
-  const indexPath = path.join(runtimePathById.root, 'assets/nlp-index');
+  const docsPath = path.join(runtimePathById.assets, 'docs-for-nlp');
+  const indexPath = path.join(runtimePathById.assets, 'nlp-index');
 
   try {
     // 1. Get all document files
@@ -80,13 +66,28 @@ async function buildIndex() {
         const content = await fs.readFile(docPath, 'utf-8');
         const indexedWords = await matcher.indexDocument(content);
 
-        // Create a parallel path in the index directory
-        const relativePath = path.relative(docsPath, docPath);
-        const indexDocPath = path.join(indexPath, `${relativePath}.json`);
+        // Get file stats for last modified time
+        const stats = await fs.stat(docPath);
+        const lastModified = stats.mtime.getTime();
 
-        // Ensure the directory exists and save the file
-        await fs.mkdir(path.dirname(indexDocPath), { recursive: true });
-        await fs.writeFile(indexDocPath, JSON.stringify(indexedWords, null, 2));
+        // Use timestamp and a sanitized relative path for a unique, readable filename
+        const relativeDocPath = path.relative(docsPath, docPath);
+        const sanitizedRelativePath = relativeDocPath
+          .replace(/[\/\\]/g, '_')
+          .replace(/\.txt$/i, '');
+        const indexDocPath = path.join(
+          indexPath,
+          `${lastModified}-${sanitizedRelativePath}.json`
+        );
+
+        const indexData = {
+          originalPath: relativeDocPath,
+          indexedWords: indexedWords,
+        };
+
+        // Ensure the root index directory exists and save the file
+        await fs.mkdir(indexPath, { recursive: true });
+        await fs.writeFile(indexDocPath, JSON.stringify(indexData, null, 2));
         indexedCount++;
       } catch (error: any) {
         console.warn(`\n   ⚠️ Failed to index ${docPath}:`, error.message);
