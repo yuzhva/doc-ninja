@@ -207,7 +207,7 @@ async function processNameAcrossFiles(
 
           console.log(`      📝 Processing "${match.name}"`);
           console.log(`         Section: ${match.extractedInfo?.sectionTitle || 'N/A'}`);
-          console.log(`         Action Date: ${match.extractedInfo?.actionDate || 'N/A'}`);
+          console.log(`         Action Date Content: ${match.extractedInfo?.actionDateContent || 'N/A'}`);
           console.log(`         Reason: ${match.extractedInfo?.reason || 'N/A'}`);
 
           // Simulate adaptive learning based on confidence and context
@@ -265,12 +265,14 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
     [
       'Input Name',
       'Found In Document',
+      'Found Declension',
       'Section Title',
       'Content',
+      'Action Date Content',
       'Action Date',
       'Reason',
       'Document Date',
-      'Found Declension',
+      'Summary',
       'Confidence',
       'Learning Status',
     ],
@@ -281,15 +283,35 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
       '✅ Passed Adaptive Threshold' :
       '⚠️ Below Adaptive Threshold';
 
+    const summaryParts: string[] = [];
+    if (match.extractedInfo?.sectionTitle) {
+      summaryParts.push(match.extractedInfo.sectionTitle);
+    }
+    if (match.extractedInfo?.content) {
+      if (summaryParts.length > 0) {
+        summaryParts.push(''); // Add a blank line for separation
+      }
+      summaryParts.push(match.extractedInfo.content);
+    }
+    if (match.extractedInfo?.actionDateContent) {
+      summaryParts.push(match.extractedInfo.actionDateContent);
+    }
+    if (match.extractedInfo?.reason) {
+      summaryParts.push(match.extractedInfo.reason);
+    }
+    const summary = summaryParts.join('\n');
+
     data.push([
       match.name,
       match.documentPath || 'N/A',
+      match.declension,
       match.extractedInfo?.sectionTitle || 'N/A',
       match.extractedInfo?.content || 'N/A',
+      match.extractedInfo?.actionDateContent || 'N/A',
       match.extractedInfo?.actionDate || 'N/A',
       match.extractedInfo?.reason || 'N/A',
       match.extractedInfo?.documentDate || 'N/A',
-      match.declension,
+      summary,
       (match.confidence * 100).toFixed(2) + '%',
       learningStatus,
     ]);
@@ -308,7 +330,7 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
   const worksheet = XLSX.utils.aoa_to_sheet(data);
   worksheet['!cols'] = [
     { wch: 25 }, { wch: 50 }, { wch: 40 }, { wch: 50 },
-    { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 25 },
+    { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 50 }, { wch: 20 }, { wch: 50 }, { wch: 15 }, { wch: 25 },
   ];
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Adaptive Results');
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
