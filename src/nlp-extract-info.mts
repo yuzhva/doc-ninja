@@ -178,50 +178,66 @@ async function processNameAcrossFiles(
   matcher: AdaptiveUkrainianNameMatcher,
   allMatches: NameMatch[]
 ) {
-  for (const baseName of baseNames) {
-    console.log(`\n🔎 Searching for name: "${baseName}"`);
-    let matchFoundForName = false;
+  let remainingNames = [...baseNames];
 
-    for (const sourceFile of sourceFiles) {
-      const { content, originalPath } = await getFileContent(sourceFile, config.sourceType);
-      console.log(`  📄 Checking in file: "${originalPath}"`);
+  console.log(`\n🔎 Searching for ${remainingNames.length} names across ${sourceFiles.length} files...`);
 
-      if (!content.trim()) {
-        console.log(`    ⚠️ No content found in file: ${sourceFile}`);
-        continue;
-      }
+  for (const sourceFile of sourceFiles) {
+    if (remainingNames.length === 0) {
+      console.log('✅ All names have been found. Stopping search.');
+      break;
+    }
 
-      // Find only the current baseName
-      const matches = await matcher.findNamesWithSimilarity(content, [baseName]);
+    const { content, originalPath } = await getFileContent(sourceFile, config.sourceType);
+    console.log(`\n📄 Checking in file: "${originalPath}" for ${remainingNames.length} remaining names.`);
 
-      if (matches.length > 0) {
-        console.log(`    🎯 Found ${matches.length} potential match(es) for "${baseName}".`);
-        matchFoundForName = true;
+    if (!content.trim()) {
+      console.log(`  ⚠️ No content found in file, skipping.`);
+      continue;
+    }
 
-        // Process all matches found in this file for the current name
-        for (const match of matches) {
-          // match.name = baseName; // Ensure the original input name is used
-          match.documentPath = originalPath;
-          match.extractedInfo = InformationExtractor.extract(content, match);
-          allMatches.push(match);
+    // Find all remaining names in the current file
+    const matchesInFile = await matcher.findNamesWithSimilarity(content, remainingNames);
 
-          console.log(`      📝 Processing "${match.name}"`);
-          console.log(`         Section: ${match.extractedInfo?.sectionTitle || 'N/A'}`);
-          console.log(`         Action Date Content: ${match.extractedInfo?.actionDateContent || 'N/A'}`);
-          console.log(`         Reason: ${match.extractedInfo?.reason || 'N/A'}`);
+    if (matchesInFile.length > 0) {
+      console.log(`  🎯 Found ${matchesInFile.length} potential match(es) in this file.`);
+      const namesFoundInThisFile = new Set<string>();
 
-          // Simulate adaptive learning based on confidence and context
-          await simulateFeedback(matcher, match);
-        }
+      // Process all matches found in this file
+      for (const match of matchesInFile) {
+        namesFoundInThisFile.add(match.name);
+
+        match.documentPath = originalPath;
+        match.extractedInfo = InformationExtractor.extract(content, match);
+        allMatches.push(match);
+
+        console.log(`    📝 Processed match for "${match.name}" (declension: "${match.declension}")`);
         
-        // Break from iterating over files for the current name
-        break;
+        // Simulate adaptive learning
+        await simulateFeedback(matcher, match);
       }
+      
+      // Update the list of names to search for in the next file
+      remainingNames = remainingNames.filter(name => !namesFoundInThisFile.has(name));
+    } else {
+      console.log(`  ⚪️ No matches found for remaining names in this file.`);
     }
+  }
 
-    if (!matchFoundForName) {
-      console.log(`  ❌ No match found for "${baseName}" in any file.`);
+  // To preserve the original input order in the final Excel file
+  allMatches.sort((a, b) => {
+    const nameAIndex = baseNames.indexOf(a.name);
+    const nameBIndex = baseNames.indexOf(b.name);
+    if (nameAIndex !== nameBIndex) {
+      return nameAIndex - nameBIndex;
     }
+    // If names are the same, sort by their position in the document
+    return a.position - b.position;
+  });
+
+  if (remainingNames.length > 0) {
+    console.log(`\n❌ No match found for ${remainingNames.length} name(s) across all files:`);
+    remainingNames.forEach(name => console.log(`  - ${name}`));
   }
 }
 
@@ -265,14 +281,14 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
     [
       'Input Name',
       'Found In Document',
+      'Document Date',
       'Found Declension',
       'Section Title',
       'Content',
       'Action Date Content',
-      'Action Date',
       'Reason',
-      'Document Date',
       'Summary',
+      'Action Date',
       'Confidence',
       'Learning Status',
     ],
@@ -304,14 +320,14 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
     data.push([
       match.name,
       match.documentPath || 'N/A',
+      match.extractedInfo?.documentDate || 'N/A',
       match.declension,
       match.extractedInfo?.sectionTitle || 'N/A',
       match.extractedInfo?.content || 'N/A',
       match.extractedInfo?.actionDateContent || 'N/A',
-      match.extractedInfo?.actionDate || 'N/A',
       match.extractedInfo?.reason || 'N/A',
-      match.extractedInfo?.documentDate || 'N/A',
       summary,
+      match.extractedInfo?.actionDate || 'N/A',
       (match.confidence * 100).toFixed(2) + '%',
       learningStatus,
     ]);
