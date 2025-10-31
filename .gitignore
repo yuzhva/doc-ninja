@@ -6,7 +6,9 @@ node_modules
 .pnpm-store
 
 # project specific
+dist
 models
+out
 
 # secrets
 assets--prod
