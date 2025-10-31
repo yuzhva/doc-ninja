@@ -1,0 +1,27 @@
+{
+  "name": "nlp-ninja--ui-sauce",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./src/index.csr.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development ms-cli web-app --exec serve",
+    "dev:csr": "cross-env NODE_ENV=development ms-cli web-app --exec serve --serveMode csr",
+    "build": "ms-cli web-app --exec build",
+    "build:csr": "ms-cli web-app --exec build --serveMode csr",
+    "serve": "ms-cli web-app --exec serve-static",
+    "serve:csr": "ms-cli web-app --exec serve-static --serveMode csr"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@mainset/bundler-webpack": "^0.3.1",
+    "@mainset/cli": "^0.3.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "cross-env": "^10.1.0"
+  },
+  "packageManager": "pnpm@10.20.0"
+}

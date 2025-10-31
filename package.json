@@ -5,6 +5,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "build:apps": "pnpm --filter \"./apps/**\" build",
+    "dev:apps": "pnpm --filter \"./apps/**\" dev",
+    "serve:apps": "pnpm --filter \"./apps/**\" serve",
     "doc:to-text": "tsx ./src/doc-to-text.mts",
     "doc:build-index": "tsx ./src/doc-build-index.mts",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
@@ -17,8 +20,10 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@mainset/dev-stack-fe": "^0.2.0",
     "@types/node": "^24.8.1",
     "@types/textract": "^2.4.5",
+    "cross-env": "^10.1.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
@@ -28,5 +33,5 @@
     "textract": "^2.5.0",
     "xlsx": "^0.18.5"
   },
-  "packageManager": "pnpm@9.15.9+sha512.68046141893c66fad01c079231128e9afb89ef87e2691d69e4d40eee228988295fd4682181bae55b58418c3a253bde65a505ec7c5f9403ece5cc3cd37dcf2531"
+  "packageManager": "pnpm@10.20.0"
 }

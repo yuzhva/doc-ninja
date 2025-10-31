@@ -80,7 +80,7 @@ docker run --rm -v "${PWD}:/app" -w /app node:22 bash -c "npm run doc:to-text"
 OR - Build once, then reuse:
 
 ```bash
-docker run -it -v "${PWD}:/app" -w /app node:22 bash
+docker run -it -p 3000:3000 -v "${PWD}:/app" -w /app node:22 bash
 
 # then inside
 apt-get update && apt-get install -y antiword # required for `textract` to convert .doc to .txt
