@@ -1,0 +1,73 @@
+# Comments are provided throughout this file to help you get started.
+# If you need more help, visit the Docker Compose reference guide at
+# https://docs.docker.com/go/compose-spec-reference/
+
+# Here the instructions define your application as a service called "server".
+# This service is built from the Dockerfile in the current directory.
+# You can add other services your application may depend on here, such as a
+# database or a cache. For examples, see the Awesome Compose repository:
+# https://github.com/docker/awesome-compose
+services:
+  nlp-ninja:
+    build:
+      context: .
+      target: production
+    # NOTE: start production service by default without {--profile} flag
+    profiles: [prod]
+    # env_file:
+    #   - ./.env
+    ports:
+      - 3000:3000
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.nlp-ninja.rule=Host(`nlp-ninja.mainset.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
+      - 'traefik.http.services.nlp-ninja.loadbalancer.server.port=3000'
+    networks:
+      - network--dev
+  nlp-ninja--dev:
+    extends: nlp-ninja
+    build:
+      target: development
+    environment:
+    # !IMPORTANT: required for Liver Reload in Windows
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    # env_file:
+    #   - ./.env.development
+    volumes:
+      # Bind Mount code for Live Update
+      - ./apps:/usr/src/nlp-ninja/apps
+      # !IMPORTANT: ensure that the volume mounting does not overwrite any of the folders that are supposed to be created by Dockerfile build steps
+      # Step-1: mount monorepo: root files
+      - /usr/src/nlp-ninja/node_modules
+      - /usr/src/nlp-ninja/.pnpm-store
+      # Step-2: mount monorepo: web-apps files
+      - /usr/src/nlp-ninja/apps/ui-sauce/node_modules
+      # - /usr/src/nlp-ninja/apps/ui-sauce/dist
+      - /usr/src/nlp-ninja/apps/electron/node_modules
+      # - /usr/src/nlp-ninja/apps/electron/dist
+    # the Docker {extends} syntax is designed to cherry-pick (and customize) a single service in a target
+    # https://stackoverflow.com/a/78257041/4591347
+    # the {profiles: []} Array will be concatenated with the profiles of it's parent e.g. [prod, dev, dev-packages]
+    #  usage of {!override} aka {profiles: !override [dev-packages]} is required to override the profiles when using {extends}
+    # https://stackoverflow.com/a/79233385/4591347
+    profiles: !override [dev]
+
+  # development service
+  # make the service available under custom domain on local computer
+  traefik:
+    image: traefik:v2.5
+    command:
+      - '--api.insecure=true'
+      - '--providers.docker=true'
+      - '--entrypoints.web.address=:80'
+    ports:
+      - '80:80'
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+    networks:
+      - network--dev
+
+# development
+networks:
+  network--dev:
