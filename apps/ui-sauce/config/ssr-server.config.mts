@@ -5,13 +5,16 @@ import path from 'path';
 import ReactDOMServer from 'react-dom/server';
 
 import provideServerReactApp from '../src/app.server.tsx';
+import proxyConfigByPath from './proxy.config.mjs';
 
 const ssrServerConfig: SSRConfigParams = {
+  listenPort: 8080,
   serveStatics: [
     {
       rootPath: path.join(runtimePathById.dist, 'public'),
     },
   ],
+  proxyConfigByPath,
   renderSSRContentByPath: {
     '/{*any}': ({ reqUrl, fullUrl }) =>
       new Promise((resolve, reject) => {

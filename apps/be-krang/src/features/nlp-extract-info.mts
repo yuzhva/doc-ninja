@@ -2,16 +2,16 @@ import fs from 'fs/promises';
 import path from 'path';
 import * as XLSX from 'xlsx';
 
-import type { NameMatch } from './nlp/index.mts';
-import { AdaptiveUkrainianNameMatcher } from './nlp/adaptive-matcher.mts';
-import type { ExtractedInfo } from './nlp/information-extractor.mts';
-import { InformationExtractor } from './nlp/information-extractor.mts';
-import { readExcelData } from './nlp/utils/excel-utils.mts';
+import type { NameMatch } from '../nlp/index.mts';
+import { AdaptiveUkrainianNameMatcher } from '../nlp/adaptive-matcher.mts';
+import type { ExtractedInfo } from '../nlp/information-extractor.mts';
+import { InformationExtractor } from '../nlp/information-extractor.mts';
+import { readExcelData } from '../nlp/utils/excel-utils.mts';
 import {
   collectFilePaths,
   getFoldersRecursive,
   runtimePathById,
-} from './supplement/index.mts';
+} from '../supplement/index.mts';
 
 // Extend NameMatch to include new extracted info
 declare module './nlp/name-matcher.mts' {
@@ -30,13 +30,13 @@ interface ProcessingConfig {
   outputFilename: string;
 }
 
-function getProcessingConfig(): ProcessingConfig {
+function getProcessingConfig({ sourceType }: { sourceType: ProcessingConfig['sourceType'] }): ProcessingConfig {
   // Check command line arguments
   const args = process.argv.slice(2);
   const sourceArg = args.find(arg => arg.startsWith('--source='));
-  const sourceType: SourceType = sourceArg?.split('=')[1] as SourceType || 'documents';
+  const sourceTypeParam: SourceType = sourceType || sourceArg?.split('=')[1] as SourceType || 'documents';
 
-  if (sourceType === 'index') {
+  if (sourceTypeParam === 'index') {
     return {
       sourceType: 'index',
       sourcePath: path.join(runtimePathById.assets, 'nlp-index'),
@@ -416,25 +416,4 @@ function extractDateFromPath(filePath: string): Date | null {
   return null;
 }
 
-// Show usage information
-if (process.argv.includes('--help') || process.argv.includes('-h')) {
-  console.log(`
-📚 NLP Information Extraction Tool
-
-Usage:
-  npm run nlp-extract-info [--source=TYPE]
-
-Options:
-  --source=documents    Extract from document files (.txt) in assets/docs-for-nlp (default)
-  --source=index        Extract from index files (.json) in assets/nlp-index
-  --help, -h           Show this help message
-
-Examples:
-  npm run nlp-extract-info                    # Extract from documents
-  npm run nlp-extract-info --source=documents # Extract from documents
-  npm run nlp-extract-info --source=index     # Extract from index files
-`);
-  process.exit(0);
-}
-
-extractInformation();
+export { extractInformation };

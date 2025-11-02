@@ -9,8 +9,6 @@
     "package": "electron-forge package",
     "make": "electron-forge make"
   },
-  "keywords": [],
-  "license": "ISC",
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1"
   },
@@ -25,12 +23,9 @@
     "@electron/fuses": "^1.8.0",
     "@types/electron": "^1.6.12",
     "@types/node": "^24.8.1",
+    "@types/supertest": "^6.0.3",
     "electron": "^39.0.0",
+    "supertest": "^7.1.4",
     "typescript": "^5.9.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron"
-    ]
   }
 }

@@ -1,12 +1,12 @@
 import fs from 'fs/promises';
 import path from 'path';
-import type { NameMatch } from './nlp/index.mts';
-import { UkrainianNameMatcher, readExcelData, writeExcelResults } from './nlp/index.mts';
+import type { NameMatch } from '../nlp/index.mts';
+import { UkrainianNameMatcher, readExcelData, writeExcelResults } from '../nlp/index.mts';
 import {
   collectFilePaths,
   getFoldersRecursive,
   runtimePathById,
-} from './supplement/index.mts';
+} from '../supplement/index.mts';
 
 interface ProcessingResult {
   inputName: string;

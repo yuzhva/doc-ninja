@@ -4,7 +4,7 @@ import {
   getFoldersRecursive,
   processFolderAllDocs,
   runtimePathById,
-} from './supplement/index.mts';
+} from '../supplement/index.mts';
 
 async function processFoldersTree(srcRoot: string, destRoot: string) {
   const folders = getFoldersRecursive(srcRoot);
