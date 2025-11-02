@@ -1,11 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { UkrainianNameMatcher } from './nlp/name-matcher.mts';
+import { UkrainianNameMatcher } from '../nlp/name-matcher.mts';
 import {
   collectFilePaths,
   getFoldersRecursive,
   runtimePathById,
-} from './supplement/index.mts';
+} from '../supplement/index.mts';
 
 /**
  * Recursively collects all .txt files from a directory.

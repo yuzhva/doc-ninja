@@ -1,13 +1,13 @@
 packages:
   - apps/*
 
-ignoredBuiltDependencies:
-  - '@parcel/watcher'
-  - core-js
-  - esbuild
-  - protobufjs
-  - sharp
+# ignoredBuiltDependencies:
+#   - '@parcel/watcher'
+#   - core-js
+#   - esbuild
+#   - protobufjs
 
 onlyBuiltDependencies:
   - electron
   - electron-winstaller
+  - sharp

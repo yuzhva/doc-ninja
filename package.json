@@ -1,37 +1,16 @@
 {
-  "name": "nlp-ninja",
+  "name": "nlp-ninja-monorepo",
+  "private": true,
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "type": "module",
   "scripts": {
+    "purge:workspace--node_modules": "for /d /r . %d in (node_modules) do @if exist \"%d\" rmdir /s /q \"%d\"",
+    "purge:workspace--dist": "for /d /r . %d in (dist) do @if exist \"%d\" rmdir /s /q \"%d\"",
+    "purge": "pnpm run purge:workspace--node_modules && pnpm run purge:workspace--dist",
     "build:apps": "pnpm --filter \"./apps/**\" build",
-    "dev:apps": "pnpm --filter \"./apps/**\" dev",
-    "serve:apps": "pnpm --filter \"./apps/**\" serve",
-    "doc:to-text": "tsx ./src/doc-to-text.mts",
-    "doc:build-index": "tsx ./src/doc-build-index.mts",
-    "nlp:download-models": "tsx ./src/nlp/download-models.mts",
-    "nlp:demo--inline": "tsx ./src/examples/nlp-example--inline.mts",
-    "nlp:demo--adaptive": "tsx ./src/examples/nlp-example--adaptive.mts",
-    "nlp:process-data": "tsx ./src/nlp-process-data.mts",
-    "nlp:extract-info": "tsx ./src/nlp-extract-info.mts"
+    "dev:apps": "pnpm --filter \"./apps/**\" dev"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@mainset/dev-stack-fe": "^0.2.0",
-    "@types/node": "^24.8.1",
-    "@types/textract": "^2.4.5",
-    "cross-env": "^10.1.0",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "@xenova/transformers": "^2.17.2",
-    "mammoth": "^1.11.0",
-    "textract": "^2.5.0",
-    "xlsx": "^0.18.5"
-  },
-  "packageManager": "pnpm@10.20.0"
+    "cross-env": "^10.1.0"
+  }
 }

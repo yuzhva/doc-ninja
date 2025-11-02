@@ -17,11 +17,11 @@ services:
     # env_file:
     #   - ./.env
     ports:
-      - 3000:3000
+      - 8080:8080
     labels:
       - 'traefik.enable=true'
       - 'traefik.http.routers.nlp-ninja.rule=Host(`nlp-ninja.mainset.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
-      - 'traefik.http.services.nlp-ninja.loadbalancer.server.port=3000'
+      - 'traefik.http.services.nlp-ninja.loadbalancer.server.port=8080'
     networks:
       - network--dev
   nlp-ninja--dev:
@@ -42,6 +42,8 @@ services:
       - /usr/src/nlp-ninja/node_modules
       - /usr/src/nlp-ninja/.pnpm-store
       # Step-2: mount monorepo: web-apps files
+      - /usr/src/nlp-ninja/apps/be-krang/node_modules
+      # - /usr/src/nlp-ninja/apps/be-krang/dist
       - /usr/src/nlp-ninja/apps/ui-sauce/node_modules
       # - /usr/src/nlp-ninja/apps/ui-sauce/dist
       - /usr/src/nlp-ninja/apps/electron/node_modules
