@@ -91,7 +91,7 @@ async function convertDocViaHtmlToTxt(filePath: string): Promise<string> {
 
             resolve(cleanedText);
           }
-        }
+        },
       );
     });
   }
@@ -103,7 +103,7 @@ async function convertDocViaHtmlToTxt(filePath: string): Promise<string> {
  * Enhanced version that can also extract metadata and improve structure
  */
 async function convertDocViaHtmlToTxtAdvanced(
-  filePath: string
+  filePath: string,
 ): Promise<{ text: string; metadata?: any }> {
   const ext = path.extname(filePath).toLowerCase();
 

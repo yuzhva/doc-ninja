@@ -29,7 +29,7 @@ services:
     build:
       target: development
     environment:
-    # !IMPORTANT: required for Liver Reload in Windows
+      # !IMPORTANT: required for Liver Reload in Windows
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
     # env_file:

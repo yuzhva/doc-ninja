@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import * as XLSX from 'xlsx';
+
 import type { NameMatch } from '../nlp/name-matcher.mts';
 
 interface ProcessingResult {
@@ -44,7 +45,7 @@ async function readExcelData(filePath: string): Promise<string[]> {
  */
 async function writeExcelResults(
   results: ProcessingResult[],
-  outputPath: string
+  outputPath: string,
 ): Promise<void> {
   try {
     // Prepare data for Excel
@@ -85,7 +86,7 @@ async function writeExcelResults(
         matches.forEach((match) => {
           const confidence = (match.confidence * 100).toFixed(1);
           matchDetails.push(
-            `"${match.declension}" in ${docPath} (confidence: ${confidence}%)`
+            `"${match.declension}" in ${docPath} (confidence: ${confidence}%)`,
           );
         });
       });
@@ -135,7 +136,7 @@ async function writeExcelResults(
  */
 async function writeDetailedResults(
   results: ProcessingResult[],
-  outputPath: string
+  outputPath: string,
 ): Promise<void> {
   const detailedData: any[][] = [
     [

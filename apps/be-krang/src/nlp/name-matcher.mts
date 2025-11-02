@@ -27,14 +27,14 @@ class UkrainianNameMatcher {
         {
           aggregation_strategy: 'simple',
           local_files_only: true, // Only use local files
-        }
+        },
       );
 
       // Initialize embedder for similarity search
       this.embedder = await pipeline(
         'feature-extraction',
         'Xenova/multilingual-e5-small',
-        { local_files_only: true }
+        { local_files_only: true },
       );
 
       console.log('Models initialized successfully!');
@@ -58,7 +58,7 @@ class UkrainianNameMatcher {
               console.log('\n✓ BERT model loaded');
             }
           },
-        }
+        },
       );
 
       this.embedder = await pipeline(
@@ -76,7 +76,7 @@ class UkrainianNameMatcher {
               console.log('\n✓ E5 model loaded');
             }
           },
-        }
+        },
       );
 
       console.log('Models downloaded and cached locally!');
@@ -97,7 +97,7 @@ class UkrainianNameMatcher {
     const entities = await this.tokenClassifier(content);
     const personEntities = entities.filter(
       (entity: any) =>
-        entity.entity_group === 'PER' || entity.entity_group === 'PERSON'
+        entity.entity_group === 'PER' || entity.entity_group === 'PERSON',
     );
 
     // For each base name, try to match it with found entities
@@ -111,7 +111,7 @@ class UkrainianNameMatcher {
         const similarity = this.calculateSimilarity(
           entityText.toLowerCase(),
           firstName.toLowerCase(),
-          lastName?.toLowerCase()
+          lastName?.toLowerCase(),
         );
 
         if (similarity > 0.7) {
@@ -133,7 +133,7 @@ class UkrainianNameMatcher {
    * Creates a pre-processed, indexed representation of a document's content.
    */
   async indexDocument(
-    content: string
+    content: string,
   ): Promise<Array<{ text: string; position: number; embedding: any }>> {
     if (!this.embedder) {
       await this.initialize();
@@ -161,7 +161,7 @@ class UkrainianNameMatcher {
    */
   async findNamesInIndexedDocument(
     indexedWords: Array<{ text: string; position: number; embedding: any }>,
-    baseNames: string[]
+    baseNames: string[],
   ): Promise<NameMatch[]> {
     if (!this.embedder) {
       await this.initialize();
@@ -202,7 +202,7 @@ class UkrainianNameMatcher {
         firstNameEmb,
         lastNameEmb,
         patronymicEmb,
-        baseName
+        baseName,
       );
 
       matches.push(...nameMatches);
@@ -219,14 +219,16 @@ class UkrainianNameMatcher {
    */
   async findNamesWithSimilarity(
     content: string,
-    baseNames: string[]
+    baseNames: string[],
   ): Promise<NameMatch[]> {
     if (!this.embedder) {
       await this.initialize();
     }
 
     const matches: NameMatch[] = [];
-    console.log(`🧠 Starting similarity search with cache size: ${this.embeddingCache.size}`);
+    console.log(
+      `🧠 Starting similarity search with cache size: ${this.embeddingCache.size}`,
+    );
 
     // Note: We clear the cache for each document to ensure fresh processing
     // This prevents cross-document contamination but means no learning occurs
@@ -269,7 +271,7 @@ class UkrainianNameMatcher {
         firstNameEmb,
         lastNameEmb,
         patronymicEmb,
-        baseName
+        baseName,
       );
 
       matches.push(...nameMatches);
@@ -302,7 +304,7 @@ class UkrainianNameMatcher {
    * Extract only capitalized Ukrainian words with their positions (more likely to be names)
    */
   private extractCapitalizedWordsWithPositions(
-    content: string
+    content: string,
   ): Array<{ text: string; position: number }> {
     // Only match capitalized Ukrainian words (proper nouns)
     const ukrainianCapitalizedWordRegex = /[А-ЯІЇЄҐ][а-яіїєґ'ʼ-]+/g;
@@ -333,7 +335,7 @@ class UkrainianNameMatcher {
     firstNameEmb: any,
     lastNameEmb: any,
     patronymicEmb: any | null,
-    baseName: string
+    baseName: string,
   ): Promise<NameMatch[]> {
     const matches: NameMatch[] = [];
 
@@ -356,7 +358,7 @@ class UkrainianNameMatcher {
             lastNameEmb,
             firstNameEmb,
             patronymicEmb,
-            baseName
+            baseName,
           );
           if (threeWordMatch) {
             matches.push(threeWordMatch);
@@ -375,7 +377,7 @@ class UkrainianNameMatcher {
             word2,
             lastNameEmb,
             firstNameEmb,
-            baseName
+            baseName,
           );
           if (twoWordMatch) {
             matches.push(twoWordMatch);
@@ -396,7 +398,7 @@ class UkrainianNameMatcher {
     word2: { text: string; position: number; embedding?: any },
     lastNameEmb: any,
     firstNameEmb: any,
-    baseName: string
+    baseName: string,
   ): Promise<NameMatch | null> {
     // Use pre-computed embedding if available, otherwise generate it
     const word1Emb = word1.embedding
@@ -422,7 +424,11 @@ class UkrainianNameMatcher {
     const reversedConfidence = (reversedOrder.first + reversedOrder.last) / 2;
 
     // A match requires both parts to be reasonably similar
-    if (normalConfidence > 0.9 && normalOrder.first > 0.85 && normalOrder.last > 0.85) {
+    if (
+      normalConfidence > 0.9 &&
+      normalOrder.first > 0.85 &&
+      normalOrder.last > 0.85
+    ) {
       return {
         name: baseName,
         declension: `${word1.text} ${word2.text}`,
@@ -431,7 +437,11 @@ class UkrainianNameMatcher {
       };
     }
 
-    if (reversedConfidence > 0.9 && reversedOrder.first > 0.85 && reversedOrder.last > 0.85) {
+    if (
+      reversedConfidence > 0.9 &&
+      reversedOrder.first > 0.85 &&
+      reversedOrder.last > 0.85
+    ) {
       return {
         name: baseName,
         declension: `${word1.text} ${word2.text}`,
@@ -453,7 +463,7 @@ class UkrainianNameMatcher {
     lastNameEmb: any,
     firstNameEmb: any,
     patronymicEmb: any,
-    baseName: string
+    baseName: string,
   ): Promise<NameMatch | null> {
     const word1Emb = word1.embedding
       ? { data: word1.embedding }
@@ -467,13 +477,24 @@ class UkrainianNameMatcher {
 
     // Check for LastName + FirstName + Patronymic
     const lastNameSim = this.cosineSimilarity(word1Emb.data, lastNameEmb.data);
-    const firstNameSim = this.cosineSimilarity(word2Emb.data, firstNameEmb.data);
-    const patronymicSim = this.cosineSimilarity(word3Emb.data, patronymicEmb.data);
+    const firstNameSim = this.cosineSimilarity(
+      word2Emb.data,
+      firstNameEmb.data,
+    );
+    const patronymicSim = this.cosineSimilarity(
+      word3Emb.data,
+      patronymicEmb.data,
+    );
 
     const confidence = (lastNameSim + firstNameSim + patronymicSim) / 3;
 
     // Require a high similarity for all three parts for a confident match
-    if (confidence > 0.92 && lastNameSim > 0.88 && firstNameSim > 0.88 && patronymicSim > 0.88) {
+    if (
+      confidence > 0.92 &&
+      lastNameSim > 0.88 &&
+      firstNameSim > 0.88 &&
+      patronymicSim > 0.88
+    ) {
       return {
         name: baseName,
         declension: `${word1.text} ${word2.text} ${word3.text}`,
@@ -501,7 +522,7 @@ class UkrainianNameMatcher {
     });
 
     return Array.from(uniqueMatches.values()).sort(
-      (a, b) => a.position - b.position
+      (a, b) => a.position - b.position,
     );
   }
 
@@ -511,7 +532,7 @@ class UkrainianNameMatcher {
   private calculateSimilarity(
     entity: string,
     firstName: string,
-    lastName?: string
+    lastName?: string,
   ): number {
     const entityParts = entity.split(/\s+/);
     let maxSimilarity = 0;
@@ -561,7 +582,7 @@ class UkrainianNameMatcher {
         matrix[j][i] = Math.min(
           matrix[j][i - 1] + 1,
           matrix[j - 1][i] + 1,
-          matrix[j - 1][i - 1] + indicator
+          matrix[j - 1][i - 1] + indicator,
         );
       }
     }
@@ -588,7 +609,7 @@ class UkrainianNameMatcher {
     // This is now just a fallback - the main matching uses semantic similarity
     const variations = this.getNameVariations(name);
     const escaped = variations.map((v) =>
-      v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
     );
     return new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi');
   }

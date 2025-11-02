@@ -32,5 +32,5 @@ async function processFoldersTree(srcRoot: string, destRoot: string) {
 
 processFoldersTree(
   path.join(runtimePathById.assets, 'docs-to-convert'),
-  path.join(runtimePathById.assets, 'docs-for-nlp')
+  path.join(runtimePathById.assets, 'docs-for-nlp'),
 );

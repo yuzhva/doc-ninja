@@ -1,7 +1,8 @@
-import { UkrainianNameMatcher } from './name-matcher.mts';
-import type { NameMatch } from './name-matcher.mts';
 import { promises as fs } from 'fs';
 import path from 'path';
+
+import { UkrainianNameMatcher } from './name-matcher.mts';
+import type { NameMatch } from './name-matcher.mts';
 
 interface UserFeedback {
   match: NameMatch;
@@ -26,7 +27,8 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
 
   constructor(settingsPath?: string) {
     super();
-    this.settingsPath = settingsPath || path.join(process.cwd(), 'assets/adaptive-settings.json');
+    this.settingsPath =
+      settingsPath || path.join(process.cwd(), 'assets/adaptive-settings.json');
     this.adaptiveSettings = {
       confidenceThresholds: {
         twoWordMatch: 0.9,
@@ -45,7 +47,11 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
   /**
    * Add user feedback to improve future matching
    */
-  async addFeedback(match: NameMatch, isCorrect: boolean, userCorrection?: string) {
+  async addFeedback(
+    match: NameMatch,
+    isCorrect: boolean,
+    userCorrection?: string,
+  ) {
     const feedback: UserFeedback = {
       match,
       isCorrect,
@@ -57,19 +63,26 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
     await this.adaptThresholds(feedback);
     await this.saveAdaptiveSettings();
 
-    console.log(`📚 Learning from feedback: ${isCorrect ? '✅ Correct' : '❌ Incorrect'} match for "${match.name}"`);
+    console.log(
+      `📚 Learning from feedback: ${isCorrect ? '✅ Correct' : '❌ Incorrect'} match for "${match.name}"`,
+    );
   }
 
   /**
    * Override the similarity matching with adaptive thresholds
    */
-  async findNamesWithSimilarity(content: string, baseNames: string[]): Promise<NameMatch[]> {
+  async findNamesWithSimilarity(
+    content: string,
+    baseNames: string[],
+  ): Promise<NameMatch[]> {
     if (!this.embedder) {
       await this.initialize();
     }
 
     const matches: NameMatch[] = [];
-    console.log(`🧠 Starting adaptive similarity search (thresholds: 2-word=${this.adaptiveSettings.confidenceThresholds.twoWordMatch.toFixed(2)}, 3-word=${this.adaptiveSettings.confidenceThresholds.threeWordMatch.toFixed(2)})`);
+    console.log(
+      `🧠 Starting adaptive similarity search (thresholds: 2-word=${this.adaptiveSettings.confidenceThresholds.twoWordMatch.toFixed(2)}, 3-word=${this.adaptiveSettings.confidenceThresholds.threeWordMatch.toFixed(2)})`,
+    );
 
     this.embeddingCache.clear();
     const words = this.extractCapitalizedWordsWithPositions(content);
@@ -89,7 +102,9 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
 
       const firstNameEmb = await this.getCachedEmbedding(firstName);
       const lastNameEmb = await this.getCachedEmbedding(lastName);
-      const patronymicEmb = patronymic ? await this.getCachedEmbedding(patronymic) : null;
+      const patronymicEmb = patronymic
+        ? await this.getCachedEmbedding(patronymic)
+        : null;
 
       const nameMatches = await this.findAdaptiveSemanticMatches(
         words,
@@ -99,7 +114,7 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
         firstNameEmb,
         lastNameEmb,
         patronymicEmb,
-        baseName
+        baseName,
       );
 
       matches.push(...nameMatches);
@@ -116,7 +131,7 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
     firstNameEmb: any,
     lastNameEmb: any,
     patronymicEmb: any | null,
-    baseName: string
+    baseName: string,
   ): Promise<NameMatch[]> {
     const matches: NameMatch[] = [];
 
@@ -137,7 +152,7 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
             lastNameEmb,
             firstNameEmb,
             patronymicEmb,
-            baseName
+            baseName,
           );
           if (threeWordMatch) {
             matches.push(threeWordMatch);
@@ -154,7 +169,7 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
             word2,
             lastNameEmb,
             firstNameEmb,
-            baseName
+            baseName,
           );
           if (twoWordMatch) {
             matches.push(twoWordMatch);
@@ -172,7 +187,7 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
     word2: { text: string; position: number },
     lastNameEmb: any,
     firstNameEmb: any,
-    baseName: string
+    baseName: string,
   ): Promise<NameMatch | null> {
     const word1Emb = await this.getCachedEmbedding(word1.text);
     const word2Emb = await this.getCachedEmbedding(word2.text);
@@ -188,8 +203,12 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
     };
 
     // Exclude perfect matches (similarity = 1) from confidence calculation
-    const normalScores = Object.values(normalOrder).filter(score => score < 1);
-    const reversedScores = Object.values(reversedOrder).filter(score => score < 1);
+    const normalScores = Object.values(normalOrder).filter(
+      (score) => score < 1,
+    );
+    const reversedScores = Object.values(reversedOrder).filter(
+      (score) => score < 1,
+    );
 
     const normalConfidence =
       normalScores.length > 0
@@ -236,17 +255,23 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
     lastNameEmb: any,
     firstNameEmb: any,
     patronymicEmb: any,
-    baseName: string
+    baseName: string,
   ): Promise<NameMatch | null> {
     const word1Emb = await this.getCachedEmbedding(word1.text);
     const word2Emb = await this.getCachedEmbedding(word2.text);
     const word3Emb = await this.getCachedEmbedding(word3.text);
 
     const lastNameSim = this.cosineSimilarity(word1Emb.data, lastNameEmb.data);
-    const firstNameSim = this.cosineSimilarity(word2Emb.data, firstNameEmb.data);
-    const patronymicSim = this.cosineSimilarity(word3Emb.data, patronymicEmb.data);
+    const firstNameSim = this.cosineSimilarity(
+      word2Emb.data,
+      firstNameEmb.data,
+    );
+    const patronymicSim = this.cosineSimilarity(
+      word3Emb.data,
+      patronymicEmb.data,
+    );
 
-        /*
+    /*
       Exclude perfect matches (similarity = 1) from confidence calculation
       to escape cases like:
       {
@@ -269,11 +294,16 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
       Since sim('Сергій', 'Сергій') is 1.0, it significantly pulls up the average, even if the other two parts are not perfect matches.
       The semantic similarity for the other parts is high enough to push the average over the 0.92 threshold.
     */
-    const scores = [lastNameSim, firstNameSim, patronymicSim].filter(score => score < 1);
+    const scores = [lastNameSim, firstNameSim, patronymicSim].filter(
+      (score) => score < 1,
+    );
 
     const confidence =
       scores.length > 0
-        ? Math.pow(scores.reduce((a, b) => a * b, 1), 1 / scores.length)
+        ? Math.pow(
+            scores.reduce((a, b) => a * b, 1),
+            1 / scores.length,
+          )
         : 1; // If all scores are 1, confidence is 1
 
     const thresholds = this.adaptiveSettings.confidenceThresholds;
@@ -300,32 +330,54 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
     // Adjust thresholds based on feedback
     if (isCorrect && match.confidence < 0.95) {
       // If it was correct but barely passed, lower thresholds slightly
-      this.adaptiveSettings.confidenceThresholds.twoWordMatch -= learningRate * 0.01;
-      this.adaptiveSettings.confidenceThresholds.threeWordMatch -= learningRate * 0.01;
-      this.adaptiveSettings.confidenceThresholds.individualSimilarity -= learningRate * 0.005;
+      this.adaptiveSettings.confidenceThresholds.twoWordMatch -=
+        learningRate * 0.01;
+      this.adaptiveSettings.confidenceThresholds.threeWordMatch -=
+        learningRate * 0.01;
+      this.adaptiveSettings.confidenceThresholds.individualSimilarity -=
+        learningRate * 0.005;
     } else if (!isCorrect && match.confidence > 0.7) {
       // If it was incorrect but had high confidence, raise thresholds
-      this.adaptiveSettings.confidenceThresholds.twoWordMatch += learningRate * 0.02;
-      this.adaptiveSettings.confidenceThresholds.threeWordMatch += learningRate * 0.02;
-      this.adaptiveSettings.confidenceThresholds.individualSimilarity += learningRate * 0.01;
+      this.adaptiveSettings.confidenceThresholds.twoWordMatch +=
+        learningRate * 0.02;
+      this.adaptiveSettings.confidenceThresholds.threeWordMatch +=
+        learningRate * 0.02;
+      this.adaptiveSettings.confidenceThresholds.individualSimilarity +=
+        learningRate * 0.01;
     }
 
     // Keep thresholds within reasonable bounds
     const thresholds = this.adaptiveSettings.confidenceThresholds;
-    thresholds.twoWordMatch = Math.max(0.7, Math.min(0.98, thresholds.twoWordMatch));
-    thresholds.threeWordMatch = Math.max(0.7, Math.min(0.98, thresholds.threeWordMatch));
-    thresholds.individualSimilarity = Math.max(0.6, Math.min(0.95, thresholds.individualSimilarity));
+    thresholds.twoWordMatch = Math.max(
+      0.7,
+      Math.min(0.98, thresholds.twoWordMatch),
+    );
+    thresholds.threeWordMatch = Math.max(
+      0.7,
+      Math.min(0.98, thresholds.threeWordMatch),
+    );
+    thresholds.individualSimilarity = Math.max(
+      0.6,
+      Math.min(0.95, thresholds.individualSimilarity),
+    );
 
-    console.log(`🎯 Adapted thresholds: 2-word=${thresholds.twoWordMatch.toFixed(3)}, 3-word=${thresholds.threeWordMatch.toFixed(3)}, individual=${thresholds.individualSimilarity.toFixed(3)}`);
+    console.log(
+      `🎯 Adapted thresholds: 2-word=${thresholds.twoWordMatch.toFixed(3)}, 3-word=${thresholds.threeWordMatch.toFixed(3)}, individual=${thresholds.individualSimilarity.toFixed(3)}`,
+    );
   }
 
   private async loadAdaptiveSettings() {
     try {
       const data = await fs.readFile(this.settingsPath, 'utf-8');
       const saved = JSON.parse(data);
-      this.adaptiveSettings = { ...this.adaptiveSettings, ...saved.adaptiveSettings };
+      this.adaptiveSettings = {
+        ...this.adaptiveSettings,
+        ...saved.adaptiveSettings,
+      };
       this.feedbackHistory = saved.feedbackHistory || [];
-      console.log(`📂 Loaded adaptive settings with ${this.feedbackHistory.length} feedback entries`);
+      console.log(
+        `📂 Loaded adaptive settings with ${this.feedbackHistory.length} feedback entries`,
+      );
     } catch (error) {
       console.log('📁 No existing adaptive settings found, using defaults');
     }
@@ -345,7 +397,7 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
    */
   getPerformanceStats() {
     const recentFeedback = this.feedbackHistory.slice(-50);
-    const correctCount = recentFeedback.filter(f => f.isCorrect).length;
+    const correctCount = recentFeedback.filter((f) => f.isCorrect).length;
     const totalCount = recentFeedback.length;
     const accuracy = totalCount > 0 ? (correctCount / totalCount) * 100 : 0;
 

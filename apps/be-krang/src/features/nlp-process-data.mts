@@ -1,7 +1,12 @@
 import fs from 'fs/promises';
 import path from 'path';
+
 import type { NameMatch } from '../nlp/index.mts';
-import { UkrainianNameMatcher, readExcelData, writeExcelResults } from '../nlp/index.mts';
+import {
+  UkrainianNameMatcher,
+  readExcelData,
+  writeExcelResults,
+} from '../nlp/index.mts';
 import {
   collectFilePaths,
   getFoldersRecursive,
@@ -32,10 +37,7 @@ async function processNLPData() {
 
   try {
     // 1. Read input names from Excel
-    const inputPath = path.join(
-      runtimePathById.assets,
-      'nlp-input/data.xlsx'
-    );
+    const inputPath = path.join(runtimePathById.assets, 'nlp-input/data.xlsx');
     const baseNames = await readExcelData(inputPath);
     console.log(`📊 Loaded ${baseNames.length} names from input file`);
 
@@ -55,7 +57,7 @@ async function processNLPData() {
     for (let i = 0; i < baseNames.length; i++) {
       const baseName = baseNames[i];
       console.log(
-        `\n🔍 Processing "${baseName}" (${i + 1}/${baseNames.length})`
+        `\n🔍 Processing "${baseName}" (${i + 1}/${baseNames.length})`,
       );
 
       const nameMatches: NameMatch[] = [];
@@ -67,11 +69,11 @@ async function processNLPData() {
         try {
           documentsSearched++;
           const indexedWords = JSON.parse(
-            await fs.readFile(indexDocPath, 'utf-8')
+            await fs.readFile(indexDocPath, 'utf-8'),
           );
           const matches = await matcher.findNamesInIndexedDocument(
             indexedWords,
-            [baseName]
+            [baseName],
           );
 
           if (matches.length > 0) {
@@ -87,8 +89,8 @@ async function processNLPData() {
             matchFound = true;
             console.log(
               `   🎯 Found ${matches.length} matches in "${path.basename(
-                relativePath
-              )}" - stopping search for this name`
+                relativePath,
+              )}" - stopping search for this name`,
             );
             if (searchConfig.stopAtFirstMatch) {
               break; // Exit the document loop for this name
@@ -97,9 +99,9 @@ async function processNLPData() {
         } catch (error) {
           console.warn(
             `   ⚠️ Failed to process index file ${path.basename(
-              indexDocPath
+              indexDocPath,
             )}:`,
-            error.message
+            error.message,
           );
         }
       }
@@ -113,11 +115,11 @@ async function processNLPData() {
 
       if (matchFound) {
         console.log(
-          `   ✅ Found ${nameMatches.length} matches after searching ${documentsSearched} documents`
+          `   ✅ Found ${nameMatches.length} matches after searching ${documentsSearched} documents`,
         );
       } else {
         console.log(
-          `   ❌ No matches found after searching all ${documentsSearched} documents`
+          `   ❌ No matches found after searching all ${documentsSearched} documents`,
         );
       }
     }
@@ -136,8 +138,8 @@ async function processNLPData() {
     console.log(
       `   Total matches found: ${results.reduce(
         (sum, r) => sum + r.totalMatches,
-        0
-      )}`
+        0,
+      )}`,
     );
     console.log(`   Results saved to: ${resultPath}`);
   } catch (error) {
@@ -151,7 +153,7 @@ async function processNLPData() {
  */
 async function collectAllDocumentFiles(
   docsPath: string,
-  extension = '.txt'
+  extension = '.txt',
 ): Promise<string[]> {
   const allFiles: string[] = [];
 
@@ -165,7 +167,7 @@ async function collectAllDocumentFiles(
   // Use existing utility to collect files from root folder
   const rootFiles = await collectFilePaths(docsPath, [extension]);
   const rootTxtFiles = rootFiles.filter(
-    (file) => path.extname(file).toLowerCase() === extension
+    (file) => path.extname(file).toLowerCase() === extension,
   );
   allFiles.push(...rootTxtFiles);
 
@@ -180,7 +182,7 @@ async function collectAllDocumentFiles(
       // Collect files from this folder
       const files = await collectFilePaths(folderPath, [extension]);
       const txtFiles = files.filter(
-        (file) => path.extname(file).toLowerCase() === extension
+        (file) => path.extname(file).toLowerCase() === extension,
       );
       allFiles.push(...txtFiles);
 

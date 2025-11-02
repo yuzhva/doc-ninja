@@ -31,7 +31,7 @@ async function runInlineExample() {
       console.log(
         `Found: "${match.declension}" (base: ${match.name}) at position ${
           match.position
-        }, confidence: ${match.confidence.toFixed(3)}`
+        }, confidence: ${match.confidence.toFixed(3)}`,
       );
     });
 
@@ -39,14 +39,14 @@ async function runInlineExample() {
     console.log('\n=== Using Similarity approach ===');
     const simMatches = await matcher.findNamesWithSimilarity(
       content,
-      baseNames
+      baseNames,
     );
     console.log(`Similarity approach found ${simMatches.length} matches`);
     simMatches.forEach((match) => {
       console.log(
         `Found: "${match.declension}" (base: ${match.name}) at position ${
           match.position
-        }, confidence: ${match.confidence.toFixed(3)}`
+        }, confidence: ${match.confidence.toFixed(3)}`,
       );
     });
   } catch (error) {

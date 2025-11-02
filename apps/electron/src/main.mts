@@ -1,7 +1,7 @@
-import { app as electronApp, BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, app as electronApp, ipcMain } from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import request from 'supertest';
+import { fileURLToPath } from 'url';
 
 // Import your refactored Express app
 import { app as expressApp } from '../../be-krang/src/main.mts';
@@ -14,17 +14,23 @@ const createWindow = () => {
     height: 600,
     webPreferences: {
       // Use the constant provided by Electron Forge to load the compiled preload script
-      preload: path.join(__dirname, 'preload.cjs')
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
   // Resolve the absolute path to the React build's index.html
   // For development (when files are in the workspace)
-  let reactIndexPath = path.resolve(__dirname, '../../ui-sauce/dist/public/server.html');
-  
+  let reactIndexPath = path.resolve(
+    __dirname,
+    '../../ui-sauce/dist/public/server.html',
+  );
+
   // For production (when files are packaged with the app)
   if (electronApp.isPackaged) {
-    reactIndexPath = path.join(process.resourcesPath, 'ui-sauce/dist/public/server.html');
+    reactIndexPath = path.join(
+      process.resourcesPath,
+      'ui-sauce/dist/public/server.html',
+    );
   }
 
   win.loadFile(reactIndexPath);
@@ -34,7 +40,9 @@ electronApp.whenReady().then(() => {
   // Handle IPC calls from the React UI
   ipcMain.handle('api-request', async (event, { method, path, body }) => {
     // Use supertest to make an "in-memory" request to your Express app
-    const response = await request(expressApp)[method.toLowerCase()](path).send(body);
+    const response = await request(expressApp)
+      [method.toLowerCase()](path)
+      .send(body);
 
     // Return the response body and status to the UI
     return { status: response.status, body: response.body };

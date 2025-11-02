@@ -1,0 +1,24 @@
+# general
+LICENSE
+.gitignore
+.keep
+
+# package manager
+pnpm-lock.yaml
+.npmrc.example
+
+# packages
+.prettierignore
+.husky
+
+# files
+*.sh
+*.toml
+*.env*
+
+# images
+*.ico
+*.svg
+
+# documents
+**/assets

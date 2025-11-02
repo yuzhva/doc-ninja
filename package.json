@@ -11,6 +11,10 @@
   },
   "devDependencies": {
     "@mainset/dev-stack-fe": "^0.2.0",
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.6.2",
+    "stylelint": "^16.25.0"
   }
 }
