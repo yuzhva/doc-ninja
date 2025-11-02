@@ -18,26 +18,29 @@ class TextPreprocessor {
   } {
     // Clean the text while preserving structure
     const cleanText = text
-      .replace(/[^\u0000-\u007F\u0080-\u00FF\u0100-\u017F\u0180-\u024F\u1E00-\u1EFF\u0400-\u04FF]/g, ' ') // Keep Latin, Cyrillic
-      .replace(/\s+/g, ' ')                    // Normalize whitespace
-      .replace(/\n\s*\n/g, '\n\n')            // Keep paragraph breaks
+      .replace(
+        /[^\u0000-\u007F\u0080-\u00FF\u0100-\u017F\u0180-\u024F\u1E00-\u1EFF\u0400-\u04FF]/g,
+        ' ',
+      ) // Keep Latin, Cyrillic
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/\n\s*\n/g, '\n\n') // Keep paragraph breaks
       .trim();
 
     // Split into paragraphs (double newlines)
     const paragraphs = cleanText
       .split(/\n\s*\n/)
-      .map(p => p.trim())
-      .filter(p => p.length > 0);
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
 
     // Split into sentences (more sophisticated sentence boundary detection)
     const sentences = cleanText
       .split(/[.!?]+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0)
-      .map(s => s.replace(/\n/g, ' ')); // Remove internal newlines from sentences
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => s.replace(/\n/g, ' ')); // Remove internal newlines from sentences
 
     // Calculate metadata
-    const wordCount = cleanText.split(/\s+/).filter(w => w.length > 0).length;
+    const wordCount = cleanText.split(/\s+/).filter((w) => w.length > 0).length;
 
     return {
       cleanText,
@@ -47,8 +50,8 @@ class TextPreprocessor {
         characterCount: cleanText.length,
         wordCount,
         sentenceCount: sentences.length,
-        paragraphCount: paragraphs.length
-      }
+        paragraphCount: paragraphs.length,
+      },
     };
   }
 
@@ -63,10 +66,15 @@ class TextPreprocessor {
       startPosition: number;
     }>;
   } {
-    const sections: Array<{title: string; content: string; startPosition: number}> = [];
+    const sections: Array<{
+      title: string;
+      content: string;
+      startPosition: number;
+    }> = [];
 
     // Look for section headers (headings or numbered sections)
-    const sectionPattern = /^(===\s*HEADING\s*\d+\s*===|(\d+\.?\s*[А-ЯІЇЄҐ][а-яіїєґ\s]+)|([А-ЯІЇЄҐ][А-ЯІЇЄҐ\s]{2,}))\s*$/gm;
+    const sectionPattern =
+      /^(===\s*HEADING\s*\d+\s*===|(\d+\.?\s*[А-ЯІЇЄҐ][а-яіїєґ\s]+)|([А-ЯІЇЄҐ][А-ЯІЇЄҐ\s]{2,}))\s*$/gm;
 
     let match;
     let lastIndex = 0;
@@ -80,7 +88,7 @@ class TextPreprocessor {
           sections.push({
             title: currentSection,
             content,
-            startPosition: lastIndex
+            startPosition: lastIndex,
           });
         }
       }
@@ -96,7 +104,7 @@ class TextPreprocessor {
         sections.push({
           title: currentSection || 'Content',
           content,
-          startPosition: lastIndex
+          startPosition: lastIndex,
         });
       }
     }

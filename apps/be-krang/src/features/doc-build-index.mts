@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+
 import { UkrainianNameMatcher } from '../nlp/name-matcher.mts';
 import {
   collectFilePaths,
@@ -60,7 +61,7 @@ async function buildIndex() {
       process.stdout.write(
         `\r   📄 Indexing document ${i + 1}/${
           documentFiles.length
-        } (${path.basename(docPath)})`
+        } (${path.basename(docPath)})`,
       );
       try {
         const content = await fs.readFile(docPath, 'utf-8');
@@ -77,7 +78,7 @@ async function buildIndex() {
           .replace(/\.txt$/i, '');
         const indexDocPath = path.join(
           indexPath,
-          `${lastModified}-${sanitizedRelativePath}.json`
+          `${lastModified}-${sanitizedRelativePath}.json`,
         );
 
         const indexData = {
@@ -96,7 +97,7 @@ async function buildIndex() {
 
     console.log(`\n\n✅ Indexing complete!`);
     console.log(
-      `   Index for ${indexedCount} documents saved to: ${indexPath}`
+      `   Index for ${indexedCount} documents saved to: ${indexPath}`,
     );
   } catch (error: any) {
     console.error('\n❌ Error building index:', error);

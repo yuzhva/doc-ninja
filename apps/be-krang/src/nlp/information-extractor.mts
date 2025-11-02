@@ -1,4 +1,4 @@
-import type { NameMatch } from "./name-matcher.mts";
+import type { NameMatch } from './name-matcher.mts';
 
 interface ExtractedInfo {
   content: string | null;
@@ -19,8 +19,8 @@ class InformationExtractor {
 
     // Find the start and end of the paragraph containing the match.
     // A paragraph is assumed to be separated by double newlines or start/end of the document.
-    const paragraphStart = content.lastIndexOf("\n\n", match.position);
-    let paragraphEnd = content.indexOf("\n\n", match.position);
+    const paragraphStart = content.lastIndexOf('\n\n', match.position);
+    let paragraphEnd = content.indexOf('\n\n', match.position);
     if (paragraphEnd === -1) {
       paragraphEnd = content.length;
     }
@@ -32,16 +32,16 @@ class InformationExtractor {
     // Find the nearest preceding numbered title (e.g., "1.", "1.2.", "1.2.3.")
     const contentBefore = content.substring(
       0,
-      paragraphStart === -1 ? 0 : paragraphStart
+      paragraphStart === -1 ? 0 : paragraphStart,
     );
     const sectionTitle = this.findNearestTitle(
       contentBefore,
-      containingSectionText
+      containingSectionText,
     );
 
     const paragraphContent = this.getParagraphContent(
       containingSectionText,
-      match.declension
+      match.declension,
     );
     const actionDateContent = this.findActionDateContent(containingSectionText);
     const actionDate =
@@ -65,7 +65,7 @@ class InformationExtractor {
    */
   private static findNearestTitle(
     contentBefore: string,
-    currentSection: string
+    currentSection: string,
   ): string | null {
     const numberedListRegex = /^\d+(\.\d+)*\.\s+/;
 
@@ -74,7 +74,7 @@ class InformationExtractor {
       return null;
     }
 
-    const paragraphs = contentBefore.split("\n\n");
+    const paragraphs = contentBefore.split('\n\n');
     const titleParts: string[] = [];
     let lastPrefix: string | null = null;
 
@@ -99,7 +99,7 @@ class InformationExtractor {
           const lastNum = lastPrefix.trim().slice(0, -1); // "1.1.1.1." -> "1.1.1.1"
           const currentNum = currentPrefix.trim().slice(0, -1); // "1.1.1." -> "1.1.1"
 
-          if (lastNum.startsWith(currentNum + ".")) {
+          if (lastNum.startsWith(currentNum + '.')) {
             // This is a parent of the last title found (e.g., '1.1.1' is a parent of '1.1.1.1').
             titleParts.push(paragraph);
             lastPrefix = currentPrefix;
@@ -116,7 +116,7 @@ class InformationExtractor {
 
     if (titleParts.length > 0) {
       // The parts were added from most nested to least, so reverse them and join.
-      return titleParts.reverse().join("\n\n");
+      return titleParts.reverse().join('\n\n');
     }
 
     return null;
@@ -127,11 +127,11 @@ class InformationExtractor {
    */
   private static getParagraphContent(
     sectionContent: string,
-    matchDeclension: string
+    matchDeclension: string,
   ): string {
     // Helper to escape special characters for use in a regex.
     const escapeRegExp = (str: string) =>
-      str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     const escapedMatch = escapeRegExp(matchDeclension);
     // This regex finds a sentence containing the match.
@@ -139,20 +139,20 @@ class InformationExtractor {
     // and ends with a . or ; or the end of the string.
     const sentenceRegex = new RegExp(
       `(?:^|(?<=[.;]\\s*))([^.;]*?${escapedMatch}[^.;]*[.;]?)`,
-      "i"
+      'i',
     );
     const match = sectionContent.match(sentenceRegex);
 
     if (match && match[1]) {
       // Return the captured sentence, cleaned up.
-      return match[1].replace(/\s+/g, " ").trim();
+      return match[1].replace(/\s+/g, ' ').trim();
     }
 
     // Fallback: if match not found, return the first non-empty line.
     const firstLine = sectionContent
-      .split("\n")
-      .find((line) => line.trim() !== "");
-    return firstLine ? firstLine.replace(/^\d+\.?\s*/, "").trim() : "";
+      .split('\n')
+      .find((line) => line.trim() !== '');
+    return firstLine ? firstLine.replace(/^\d+\.?\s*/, '').trim() : '';
   }
 
   /**
@@ -168,26 +168,26 @@ class InformationExtractor {
 
   private static convertUkrainianDateToDMY(dateString: string): string | null {
     const monthMap: { [key: string]: string } = {
-      січня: "01",
-      лютого: "02",
-      березня: "03",
-      квітня: "04",
-      травня: "05",
-      червня: "06",
-      липня: "07",
-      серпня: "08",
-      вересня: "09",
-      жовтня: "10",
-      листопада: "11",
-      грудня: "12",
+      січня: '01',
+      лютого: '02',
+      березня: '03',
+      квітня: '04',
+      травня: '05',
+      червня: '06',
+      липня: '07',
+      серпня: '08',
+      вересня: '09',
+      жовтня: '10',
+      листопада: '11',
+      грудня: '12',
     };
 
-    const parts = dateString.split(" ");
+    const parts = dateString.split(' ');
     if (parts.length !== 3) {
       return null;
     }
 
-    const day = parts[0].padStart(2, "0");
+    const day = parts[0].padStart(2, '0');
     const month = monthMap[parts[1].toLowerCase()];
     const year = parts[2];
 
@@ -226,12 +226,12 @@ class InformationExtractor {
       if (lastMatch.index !== undefined) {
         // Take the text from the last match to the end of the section
         let actionDateText = sectionContent.substring(lastMatch.index);
-        const sentenceEndIndex = actionDateText.indexOf(".");
+        const sentenceEndIndex = actionDateText.indexOf('.');
         if (sentenceEndIndex !== -1) {
           // NOTE: the {sentenceEndIndex + 1} is used to preserve the dot `.` at the end of the sentence
           actionDateText = actionDateText.substring(0, sentenceEndIndex + 1);
         }
-        return actionDateText.replace(/\s+/g, " ").trim();
+        return actionDateText.replace(/\s+/g, ' ').trim();
       }
     }
 
@@ -242,13 +242,13 @@ class InformationExtractor {
    * Finds the "Підстава" (reason) that applies to a name within a section.
    */
   private static findReason(sectionContent: string): string | null {
-    const reasonKeyword = "Підстава:";
+    const reasonKeyword = 'Підстава:';
     const reasonIndex = sectionContent.lastIndexOf(reasonKeyword);
 
     if (reasonIndex !== -1) {
       // Take the text from "Підстава:" to the end of the section
       const reasonText = sectionContent.substring(reasonIndex);
-      return reasonText.replace(/\s+/g, " ").trim();
+      return reasonText.replace(/\s+/g, ' ').trim();
     }
 
     return null;

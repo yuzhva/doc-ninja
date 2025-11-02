@@ -5,9 +5,7 @@ module.exports = {
   packagerConfig: {
     asar: true,
     // Include the React dist folder in the packaged app
-    extraResource: [
-      '../ui-sauce/dist'
-    ]
+    extraResource: ['../ui-sauce/dist'],
   },
   rebuildConfig: {},
   makers: [

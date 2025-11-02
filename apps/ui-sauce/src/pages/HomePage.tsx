@@ -1,7 +1,9 @@
 import React from 'react';
 
-function fetchRequest(path: string, customOptions) 
-  {// NOTE: add some default options like headers here
+import { Layout } from '../containers';
+
+function fetchRequest(path: string, customOptions) {
+  // NOTE: add some default options like headers here
   const defaultRequestOptions = {
     headers: {
       // TODO: do not pass {application/json}, parse JSON by default on Server Side
@@ -25,19 +27,18 @@ const HomePage = () => {
   const makePublicAPICall = React.useCallback(() => {
     // Use the Electron API if it exists, otherwise use standard web fetch
     const apiFetch = window.electronAPI ? window.electronAPI.fetch : fetch;
-    
+
     fetchRequest('/api-local/welcome/public', {
       method: 'GET',
     }).then((resAsJson) => {
       console.log({ resAsJson });
-    })
+    });
   }, []);
 
   return (
-    <div>
-      <h1>Welcome to React world</h1>
-      <button onClick={makePublicAPICall}>Make API Call</button>
-    </div>
+    <Layout>
+      <h1 class="text-3xl font-bold underline">Hello world!</h1>
+    </Layout>
   );
 };
 

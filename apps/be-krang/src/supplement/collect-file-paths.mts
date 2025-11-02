@@ -4,7 +4,10 @@ import path from 'path';
 /**
  * Recursively collects .doc / .docx files with full paths
  */
-async function collectFilePaths(folder: string, targetExts = ['.doc', '.docx']) {
+async function collectFilePaths(
+  folder: string,
+  targetExts = ['.doc', '.docx'],
+) {
   const entries = await fs.readdir(folder, { withFileTypes: true });
   const files: string[] = [];
 

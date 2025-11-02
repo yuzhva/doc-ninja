@@ -26,7 +26,10 @@ async function runAdaptiveDemo() {
     console.log('\n🔍 Searching for names using adaptive matching...\n');
 
     // Find names with adaptive matching
-    const matches = await adaptiveMatcher.findNamesWithSimilarity(content, baseNames);
+    const matches = await adaptiveMatcher.findNamesWithSimilarity(
+      content,
+      baseNames,
+    );
 
     console.log(`✅ Found ${matches.length} matches:\n`);
 
@@ -44,9 +47,15 @@ async function runAdaptiveDemo() {
     console.log(`   Total feedback received: ${stats.totalFeedback}`);
     console.log(`   Recent accuracy: ${stats.recentAccuracy.toFixed(1)}%`);
     console.log(`   Current thresholds:`);
-    console.log(`     - Two-word match: ${stats.currentThresholds.twoWordMatch.toFixed(3)}`);
-    console.log(`     - Three-word match: ${stats.currentThresholds.threeWordMatch.toFixed(3)}`);
-    console.log(`     - Individual similarity: ${stats.currentThresholds.individualSimilarity.toFixed(3)}`);
+    console.log(
+      `     - Two-word match: ${stats.currentThresholds.twoWordMatch.toFixed(3)}`,
+    );
+    console.log(
+      `     - Three-word match: ${stats.currentThresholds.threeWordMatch.toFixed(3)}`,
+    );
+    console.log(
+      `     - Individual similarity: ${stats.currentThresholds.individualSimilarity.toFixed(3)}`,
+    );
 
     // Simulate providing feedback
     console.log('\n🎓 Simulating user feedback...');
@@ -70,15 +79,24 @@ async function runAdaptiveDemo() {
     const updatedStats = adaptiveMatcher.getPerformanceStats();
     console.log('\n📈 Updated Performance Stats after feedback:');
     console.log(`   Total feedback received: ${updatedStats.totalFeedback}`);
-    console.log(`   Recent accuracy: ${updatedStats.recentAccuracy.toFixed(1)}%`);
+    console.log(
+      `   Recent accuracy: ${updatedStats.recentAccuracy.toFixed(1)}%`,
+    );
     console.log(`   Updated thresholds:`);
-    console.log(`     - Two-word match: ${updatedStats.currentThresholds.twoWordMatch.toFixed(3)}`);
-    console.log(`     - Three-word match: ${updatedStats.currentThresholds.threeWordMatch.toFixed(3)}`);
-    console.log(`     - Individual similarity: ${updatedStats.currentThresholds.individualSimilarity.toFixed(3)}`);
+    console.log(
+      `     - Two-word match: ${updatedStats.currentThresholds.twoWordMatch.toFixed(3)}`,
+    );
+    console.log(
+      `     - Three-word match: ${updatedStats.currentThresholds.threeWordMatch.toFixed(3)}`,
+    );
+    console.log(
+      `     - Individual similarity: ${updatedStats.currentThresholds.individualSimilarity.toFixed(3)}`,
+    );
 
-    console.log('\n🎯 Demo completed! The adaptive matcher has learned from your feedback.');
+    console.log(
+      '\n🎯 Demo completed! The adaptive matcher has learned from your feedback.',
+    );
     console.log('💾 Settings have been saved to assets/adaptive-settings.json');
-
   } catch (error) {
     console.error('❌ Error during adaptive matching:', error);
   }

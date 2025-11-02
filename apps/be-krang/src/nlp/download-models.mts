@@ -1,4 +1,4 @@
-import { pipeline, env } from '@xenova/transformers';
+import { env, pipeline } from '@xenova/transformers';
 
 // Set cache directory
 env.cacheDir = './models';
@@ -19,15 +19,19 @@ async function downloadModels() {
         aggregation_strategy: 'simple',
         progress_callback: (progress: any) => {
           if (progress.status === 'downloading') {
-            const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
-            process.stdout.write(`\r📥 BERT Model: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(1)}MB / ${(progress.total / 1024 / 1024).toFixed(1)}MB)`);
+            const percent = ((progress.loaded / progress.total) * 100).toFixed(
+              1,
+            );
+            process.stdout.write(
+              `\r📥 BERT Model: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(1)}MB / ${(progress.total / 1024 / 1024).toFixed(1)}MB)`,
+            );
           } else if (progress.status === 'done') {
             console.log(`\n✓ ${progress.file} downloaded`);
           } else if (progress.status === 'ready') {
             console.log('\n✓ BERT model ready');
           }
-        }
-      }
+        },
+      },
     );
     console.log('✓ BERT model downloaded');
 
@@ -38,15 +42,19 @@ async function downloadModels() {
       {
         progress_callback: (progress: any) => {
           if (progress.status === 'downloading') {
-            const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
-            process.stdout.write(`\r📥 E5 Model: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(1)}MB / ${(progress.total / 1024 / 1024).toFixed(1)}MB)`);
+            const percent = ((progress.loaded / progress.total) * 100).toFixed(
+              1,
+            );
+            process.stdout.write(
+              `\r📥 E5 Model: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(1)}MB / ${(progress.total / 1024 / 1024).toFixed(1)}MB)`,
+            );
           } else if (progress.status === 'done') {
             console.log(`\n✓ ${progress.file} downloaded`);
           } else if (progress.status === 'ready') {
             console.log('\n✓ E5 model ready');
           }
-        }
-      }
+        },
+      },
     );
     console.log('✓ Embedding model downloaded');
 
@@ -59,9 +67,11 @@ async function downloadModels() {
     const entities = await tokenClassifier(testText);
     console.log('Test entities found:', entities.length);
 
-    const embedding = await embedder('Тест', { pooling: 'mean', normalize: true });
+    const embedding = await embedder('Тест', {
+      pooling: 'mean',
+      normalize: true,
+    });
     console.log('Test embedding dimensions:', embedding.data.length);
-
   } catch (error) {
     console.error('Error downloading models:', error);
   }

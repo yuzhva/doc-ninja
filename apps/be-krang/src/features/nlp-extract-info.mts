@@ -2,8 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import * as XLSX from 'xlsx';
 
-import type { NameMatch } from '../nlp/index.mts';
 import { AdaptiveUkrainianNameMatcher } from '../nlp/adaptive-matcher.mts';
+import type { NameMatch } from '../nlp/index.mts';
 import type { ExtractedInfo } from '../nlp/information-extractor.mts';
 import { InformationExtractor } from '../nlp/information-extractor.mts';
 import { readExcelData } from '../nlp/utils/excel-utils.mts';
@@ -30,46 +30,50 @@ interface ProcessingConfig {
   outputFilename: string;
 }
 
-function getProcessingConfig({ sourceType }: { sourceType: ProcessingConfig['sourceType'] }): ProcessingConfig {
+function getProcessingConfig({
+  sourceType,
+}: {
+  sourceType: ProcessingConfig['sourceType'];
+}): ProcessingConfig {
   // Check command line arguments
   const args = process.argv.slice(2);
-  const sourceArg = args.find(arg => arg.startsWith('--source='));
-  const sourceTypeParam: SourceType = sourceType || sourceArg?.split('=')[1] as SourceType || 'documents';
+  const sourceArg = args.find((arg) => arg.startsWith('--source='));
+  const sourceTypeParam: SourceType =
+    sourceType || (sourceArg?.split('=')[1] as SourceType) || 'documents';
 
   if (sourceTypeParam === 'index') {
     return {
       sourceType: 'index',
       sourcePath: path.join(runtimePathById.assets, 'nlp-index'),
       fileExtension: '.json',
-      outputFilename: 'extracted_info_from_index.xlsx'
+      outputFilename: 'extracted_info_from_index.xlsx',
     };
   } else {
     return {
       sourceType: 'documents',
       sourcePath: path.join(runtimePathById.assets, 'docs-for-nlp'),
       fileExtension: '.txt',
-      outputFilename: 'extracted_info_from_documents.xlsx'
+      outputFilename: 'extracted_info_from_documents.xlsx',
     };
   }
 }
 
 async function extractInformation() {
   const config = getProcessingConfig();
-  
+
   // Start timing
   const startTime = Date.now();
-  
-  console.log('🚀 Starting NLP information extraction with adaptive learning...');
+
+  console.log(
+    '🚀 Starting NLP information extraction with adaptive learning...',
+  );
   console.log(`📂 Source type: ${config.sourceType}`);
   console.log(`📁 Source path: ${config.sourcePath}`);
   console.log(`⏱️ Started at: ${new Date().toLocaleTimeString()}`);
 
   try {
     // 1. Read input names from Excel
-    const inputPath = path.join(
-      runtimePathById.assets,
-      'nlp-input/data.xlsx'
-    );
+    const inputPath = path.join(runtimePathById.assets, 'nlp-input/data.xlsx');
     const allBaseNames = await readExcelData(inputPath);
     console.log(`📊 Loaded ${allBaseNames.length} names from input file.`);
 
@@ -79,13 +83,16 @@ async function extractInformation() {
       console.log(
         `ℹ️ Removed ${
           allBaseNames.length - baseNames.length
-        } duplicate names. Processing ${baseNames.length} unique names.`
+        } duplicate names. Processing ${baseNames.length} unique names.`,
       );
     }
 
     // 2. Get all files to process
-    let sourceFiles = await collectAllSourceFiles(config.sourcePath, config.fileExtension);
-    
+    let sourceFiles = await collectAllSourceFiles(
+      config.sourcePath,
+      config.fileExtension,
+    );
+
     // sort by newest first
     sourceFiles.sort((a, b) => {
       if (config.sourceType === 'index') {
@@ -101,12 +108,14 @@ async function extractInformation() {
           return dateB.getTime() - dateA.getTime(); // Newest first
         }
         if (dateA) return -1; // A has a date, B doesn't, so A comes first
-        if (dateB) return 1;  // B has a date, A doesn't, so B comes first
+        if (dateB) return 1; // B has a date, A doesn't, so B comes first
         return 0; // Neither have a date, keep original order
       }
     });
-    
-    console.log(`🗂️ Found ${sourceFiles.length} ${config.sourceType} files to process.`);
+
+    console.log(
+      `🗂️ Found ${sourceFiles.length} ${config.sourceType} files to process.`,
+    );
 
     // 3. Initialize ADAPTIVE NLP matcher
     const matcher = new AdaptiveUkrainianNameMatcher();
@@ -114,31 +123,42 @@ async function extractInformation() {
 
     // Show current performance stats
     const stats = matcher.getPerformanceStats();
-    console.log(`📈 Current performance: ${stats.recentAccuracy.toFixed(1)}% accuracy over ${stats.totalFeedback} feedback entries`);
-    console.log(`🎯 Current thresholds: 2-word=${stats.currentThresholds.twoWordMatch.toFixed(3)}, 3-word=${stats.currentThresholds.threeWordMatch.toFixed(3)}`);
+    console.log(
+      `📈 Current performance: ${stats.recentAccuracy.toFixed(1)}% accuracy over ${stats.totalFeedback} feedback entries`,
+    );
+    console.log(
+      `🎯 Current thresholds: 2-word=${stats.currentThresholds.twoWordMatch.toFixed(3)}, 3-word=${stats.currentThresholds.threeWordMatch.toFixed(3)}`,
+    );
 
     // 4. Process files based on source type
     const allMatches: NameMatch[] = [];
-    
-    await processNameAcrossFiles(sourceFiles, config, baseNames, matcher, allMatches);
+
+    await processNameAcrossFiles(
+      sourceFiles,
+      config,
+      baseNames,
+      matcher,
+      allMatches,
+    );
 
     // 5. Write results to Excel with learning insights
     await writeResultsToExcel(allMatches, matcher, config.outputFilename);
-    
+
     // Calculate and display timing
     const endTime = Date.now();
     const totalTime = endTime - startTime;
     const minutes = Math.floor(totalTime / 60000);
     const seconds = Math.floor((totalTime % 60000) / 1000);
     const milliseconds = totalTime % 1000;
-    
-    console.log(`\n⏱️ Processing completed in: ${minutes}m ${seconds}s ${milliseconds}ms`);
+
+    console.log(
+      `\n⏱️ Processing completed in: ${minutes}m ${seconds}s ${milliseconds}ms`,
+    );
     console.log(`📊 Total time: ${totalTime}ms`);
     console.log(`🏁 Finished at: ${new Date().toLocaleTimeString()}`);
-    
   } catch (error) {
     console.error('❌ Error during information extraction:', error);
-    
+
     // Show timing even on error
     const endTime = Date.now();
     const totalTime = endTime - startTime;
@@ -146,26 +166,41 @@ async function extractInformation() {
   }
 }
 
-async function getFileContent(filePath: string, sourceType: SourceType): Promise<{ content: string, originalPath: string }> {
+async function getFileContent(
+  filePath: string,
+  sourceType: SourceType,
+): Promise<{ content: string; originalPath: string }> {
   const contentBuffer = await fs.readFile(filePath, 'utf-8');
   const relativePath = path.basename(filePath);
 
   if (sourceType === 'index') {
     const indexData = JSON.parse(contentBuffer);
-    const originalDocPath = path.join(runtimePathById.assets, indexData.originalPath);
-    
+    const originalDocPath = path.join(
+      runtimePathById.assets,
+      indexData.originalPath,
+    );
+
     try {
       const originalContent = await fs.readFile(originalDocPath, 'utf-8');
-      console.log(`    📄 Using original document content for better context extraction`);
+      console.log(
+        `    📄 Using original document content for better context extraction`,
+      );
       return { content: originalContent, originalPath: indexData.originalPath };
     } catch (error) {
       // Fallback: reconstruct from indexed chunks if original is missing
       const sortedChunks = (indexData.indexedWords || [])
         .filter((doc: any) => doc.text && doc.text.trim())
         .sort((a: any, b: any) => (a.position || 0) - (b.position || 0));
-      const reconstructedContent = sortedChunks.map((doc: any) => doc.text.trim()).join(' ');
-      console.log(`    ⚠️ Using reconstructed content from index (may have limited context)`);
-      return { content: reconstructedContent, originalPath: indexData.originalPath };
+      const reconstructedContent = sortedChunks
+        .map((doc: any) => doc.text.trim())
+        .join(' ');
+      console.log(
+        `    ⚠️ Using reconstructed content from index (may have limited context)`,
+      );
+      return {
+        content: reconstructedContent,
+        originalPath: indexData.originalPath,
+      };
     }
   }
   return { content: contentBuffer, originalPath: relativePath };
@@ -176,11 +211,13 @@ async function processNameAcrossFiles(
   config: ProcessingConfig,
   baseNames: string[],
   matcher: AdaptiveUkrainianNameMatcher,
-  allMatches: NameMatch[]
+  allMatches: NameMatch[],
 ) {
   let remainingNames = [...baseNames];
 
-  console.log(`\n🔎 Searching for ${remainingNames.length} names across ${sourceFiles.length} files...`);
+  console.log(
+    `\n🔎 Searching for ${remainingNames.length} names across ${sourceFiles.length} files...`,
+  );
 
   for (const sourceFile of sourceFiles) {
     if (remainingNames.length === 0) {
@@ -188,8 +225,13 @@ async function processNameAcrossFiles(
       break;
     }
 
-    const { content, originalPath } = await getFileContent(sourceFile, config.sourceType);
-    console.log(`\n📄 Checking in file: "${originalPath}" for ${remainingNames.length} remaining names.`);
+    const { content, originalPath } = await getFileContent(
+      sourceFile,
+      config.sourceType,
+    );
+    console.log(
+      `\n📄 Checking in file: "${originalPath}" for ${remainingNames.length} remaining names.`,
+    );
 
     if (!content.trim()) {
       console.log(`  ⚠️ No content found in file, skipping.`);
@@ -197,10 +239,15 @@ async function processNameAcrossFiles(
     }
 
     // Find all remaining names in the current file
-    const matchesInFile = await matcher.findNamesWithSimilarity(content, remainingNames);
+    const matchesInFile = await matcher.findNamesWithSimilarity(
+      content,
+      remainingNames,
+    );
 
     if (matchesInFile.length > 0) {
-      console.log(`  🎯 Found ${matchesInFile.length} potential match(es) in this file.`);
+      console.log(
+        `  🎯 Found ${matchesInFile.length} potential match(es) in this file.`,
+      );
       const namesFoundInThisFile = new Set<string>();
 
       // Process all matches found in this file
@@ -211,14 +258,18 @@ async function processNameAcrossFiles(
         match.extractedInfo = InformationExtractor.extract(content, match);
         allMatches.push(match);
 
-        console.log(`    📝 Processed match for "${match.name}" (declension: "${match.declension}")`);
-        
+        console.log(
+          `    📝 Processed match for "${match.name}" (declension: "${match.declension}")`,
+        );
+
         // Simulate adaptive learning
         await simulateFeedback(matcher, match);
       }
-      
+
       // Update the list of names to search for in the next file
-      remainingNames = remainingNames.filter(name => !namesFoundInThisFile.has(name));
+      remainingNames = remainingNames.filter(
+        (name) => !namesFoundInThisFile.has(name),
+      );
     } else {
       console.log(`  ⚪️ No matches found for remaining names in this file.`);
     }
@@ -236,8 +287,10 @@ async function processNameAcrossFiles(
   });
 
   if (remainingNames.length > 0) {
-    console.log(`\n❌ No match found for ${remainingNames.length} name(s) across all files:`);
-    remainingNames.forEach(name => console.log(`  - ${name}`));
+    console.log(
+      `\n❌ No match found for ${remainingNames.length} name(s) across all files:`,
+    );
+    remainingNames.forEach((name) => console.log(`  - ${name}`));
   }
 }
 
@@ -245,7 +298,10 @@ async function processNameAcrossFiles(
  * Simulate user feedback to demonstrate adaptive learning
  * In a real application, this would be actual user feedback
  */
-async function simulateFeedback(matcher: AdaptiveUkrainianNameMatcher, match: NameMatch) {
+async function simulateFeedback(
+  matcher: AdaptiveUkrainianNameMatcher,
+  match: NameMatch,
+) {
   // Simulate feedback logic based on match quality indicators
   let isCorrect = true;
 
@@ -267,12 +323,12 @@ async function simulateFeedback(matcher: AdaptiveUkrainianNameMatcher, match: Na
   await matcher.addFeedback(match, isCorrect);
 }
 
-async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrainianNameMatcher, filename: string) {
-  const outputPath = path.join(
-    runtimePathById.assets,
-    'nlp-output',
-    filename
-  );
+async function writeResultsToExcel(
+  matches: NameMatch[],
+  matcher: AdaptiveUkrainianNameMatcher,
+  filename: string,
+) {
+  const outputPath = path.join(runtimePathById.assets, 'nlp-output', filename);
 
   // Get performance stats for the report
   const stats = matcher.getPerformanceStats();
@@ -295,9 +351,10 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
   ];
 
   for (const match of matches) {
-    const learningStatus = match.confidence > stats.currentThresholds.twoWordMatch ?
-      '✅ Passed Adaptive Threshold' :
-      '⚠️ Below Adaptive Threshold';
+    const learningStatus =
+      match.confidence > stats.currentThresholds.twoWordMatch
+        ? '✅ Passed Adaptive Threshold'
+        : '⚠️ Below Adaptive Threshold';
 
     const summaryParts: string[] = [];
     if (match.extractedInfo?.sectionTitle) {
@@ -338,37 +395,58 @@ async function writeResultsToExcel(matches: NameMatch[], matcher: AdaptiveUkrain
   data.push(['=== ADAPTIVE LEARNING SUMMARY ===']);
   data.push(['Total Feedback Entries:', stats.totalFeedback]);
   data.push(['Recent Accuracy:', `${stats.recentAccuracy.toFixed(1)}%`]);
-  data.push(['Current 2-Word Threshold:', stats.currentThresholds.twoWordMatch.toFixed(3)]);
-  data.push(['Current 3-Word Threshold:', stats.currentThresholds.threeWordMatch.toFixed(3)]);
-  data.push(['Individual Similarity Threshold:', stats.currentThresholds.individualSimilarity.toFixed(3)]);
+  data.push([
+    'Current 2-Word Threshold:',
+    stats.currentThresholds.twoWordMatch.toFixed(3),
+  ]);
+  data.push([
+    'Current 3-Word Threshold:',
+    stats.currentThresholds.threeWordMatch.toFixed(3),
+  ]);
+  data.push([
+    'Individual Similarity Threshold:',
+    stats.currentThresholds.individualSimilarity.toFixed(3),
+  ]);
 
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet(data);
   worksheet['!cols'] = [
-    { wch: 25 }, { wch: 50 }, { wch: 40 }, { wch: 50 },
-    { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 50 }, { wch: 20 }, { wch: 50 }, { wch: 15 }, { wch: 25 },
+    { wch: 25 },
+    { wch: 50 },
+    { wch: 40 },
+    { wch: 50 },
+    { wch: 50 },
+    { wch: 50 },
+    { wch: 20 },
+    { wch: 50 },
+    { wch: 20 },
+    { wch: 50 },
+    { wch: 15 },
+    { wch: 25 },
   ];
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Adaptive Results');
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   XLSX.writeFile(workbook, outputPath);
 
   console.log(`\n✅ Results saved to: ${outputPath}`);
-  console.log(`📊 Final performance: ${stats.recentAccuracy.toFixed(1)}% accuracy`);
+  console.log(
+    `📊 Final performance: ${stats.recentAccuracy.toFixed(1)}% accuracy`,
+  );
 }
 
 async function collectAllSourceFiles(
   sourcePath: string,
-  extension: string
+  extension: string,
 ): Promise<string[]> {
   const allFiles: string[] = [];
 
   async function processFolder(folderPath: string): Promise<void> {
     try {
       const entries = await fs.readdir(folderPath, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = path.join(folderPath, entry.name);
-        
+
         if (entry.isDirectory()) {
           // Recursively process subdirectories
           await processFolder(fullPath);
@@ -387,9 +465,11 @@ async function collectAllSourceFiles(
     await fs.access(sourcePath);
     await processFolder(sourcePath);
   } catch (error) {
-    console.log(`⚠️ Source path ${sourcePath} does not exist or is not accessible`);
+    console.log(
+      `⚠️ Source path ${sourcePath} does not exist or is not accessible`,
+    );
   }
-  
+
   return [...new Set(allFiles)];
 }
 
