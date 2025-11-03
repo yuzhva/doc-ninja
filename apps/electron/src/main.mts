@@ -44,7 +44,6 @@ electronApp.whenReady().then(() => {
       [method.toLowerCase()](path)
       .send(body);
 
-    console.log({ response });
     // Return the response body and status to the UI
     return { status: response.status, body: response.body };
   });

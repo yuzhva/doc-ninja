@@ -19,3 +19,4 @@ assets--prod
 **/assets/**/docs-for-nlp
 **/assets/**/nlp-index
 **/assets/**/nlp-output
+**/assets/**/doc-to-slice
