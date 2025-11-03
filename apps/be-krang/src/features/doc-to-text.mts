@@ -6,7 +6,10 @@ import {
   runtimePathById,
 } from '../supplement/index.mts';
 
-async function processFoldersTree(srcRoot: string, destRoot: string) {
+async function processFoldersTree(
+  srcRoot = path.join(runtimePathById.assets, 'docs-to-convert'),
+  destRoot = path.join(runtimePathById.assets, 'docs-for-nlp'),
+) {
   const folders = getFoldersRecursive(srcRoot);
 
   if (folders.length > 0) {
@@ -28,9 +31,4 @@ async function processFoldersTree(srcRoot: string, destRoot: string) {
   }
 }
 
-// Example usage:
-
-processFoldersTree(
-  path.join(runtimePathById.assets, 'docs-to-convert'),
-  path.join(runtimePathById.assets, 'docs-for-nlp'),
-);
+export { processFoldersTree };

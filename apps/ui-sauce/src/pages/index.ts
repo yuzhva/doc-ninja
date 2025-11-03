@@ -1,1 +1,2 @@
-export { HomePage } from './HomePage.tsx';
+export { HomePage } from './HomePage';
+export { DocumentsPage } from './documents';

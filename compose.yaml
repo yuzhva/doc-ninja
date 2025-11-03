@@ -18,10 +18,23 @@ services:
     #   - ./.env
     ports:
       - 8080:8080
+      - 3000:3000
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.nlp-ninja.rule=Host(`nlp-ninja.mainset.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
-      - 'traefik.http.services.nlp-ninja.loadbalancer.server.port=8080'
+
+      # --- UI Router and Service (Port 8080) ---
+      # This router will handle requests for ui.nlp-ninja.localhost
+      - 'traefik.http.routers.nlp-ninja-ui.rule=Host(`ui.nlp-ninja.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
+      - 'traefik.http.routers.nlp-ninja-ui.service=nlp-ninja-ui-service'
+      # This service points to port 8080 inside the container
+      - 'traefik.http.services.nlp-ninja-ui-service.loadbalancer.server.port=8080'
+
+      # --- API Router and Service (Port 3000) ---
+      # This router will handle requests for api.nlp-ninja.localhost
+      - 'traefik.http.routers.nlp-ninja-api.rule=Host(`api.nlp-ninja.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
+      - 'traefik.http.routers.nlp-ninja-api.service=nlp-ninja-api-service'
+      # This service points to port 3000 inside the container
+      - 'traefik.http.services.nlp-ninja-api-service.loadbalancer.server.port=3000'
     networks:
       - network--dev
   nlp-ninja--dev:

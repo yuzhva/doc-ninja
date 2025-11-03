@@ -30,11 +30,13 @@ interface ProcessingConfig {
   outputFilename: string;
 }
 
-function getProcessingConfig({
-  sourceType,
-}: {
-  sourceType: ProcessingConfig['sourceType'];
-}): ProcessingConfig {
+function getProcessingConfig(
+  {
+    sourceType,
+  }: {
+    sourceType: ProcessingConfig['sourceType'];
+  } = { sourceType: 'documents' },
+): ProcessingConfig {
   // Check command line arguments
   const args = process.argv.slice(2);
   const sourceArg = args.find((arg) => arg.startsWith('--source='));

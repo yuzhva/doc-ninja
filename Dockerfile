@@ -11,7 +11,10 @@ ARG PNPM_VERSION=10.20.0
 
 ################################################################################
 # Use node image for base image for all stages.
-FROM node:${NODE_VERSION}-alpine AS base
+FROM node:${NODE_VERSION}-slim AS base
+
+# Install system dependencies (e.g. `antiword` required for text extraction of .doc by `textract`)
+RUN apt-get update && apt-get install -y antiword --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm.
 RUN --mount=type=cache,target=/root/.npm \
@@ -34,6 +37,7 @@ RUN \
     # NOTE: the {-workspace.yaml} is required to install {node_modules} in each sub-module
     --mount=type=bind,source=pnpm-workspace.yaml,target=pnpm-workspace.yaml \
     # mount monorepo: web-apps files
+    --mount=type=bind,source=apps/be-krang/package.json,target=apps/be-krang/package.json \
     --mount=type=bind,source=apps/ui-sauce/package.json,target=apps/ui-sauce/package.json \
     --mount=type=bind,source=apps/electron/package.json,target=apps/electron/package.json \
     # mount cache and install dependencies
