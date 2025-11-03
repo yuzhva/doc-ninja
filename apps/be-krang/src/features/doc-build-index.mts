@@ -2,11 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { UkrainianNameMatcher } from '../nlp/name-matcher.mts';
-import {
-  collectFilePaths,
-  getFoldersRecursive,
-  runtimePathById,
-} from '../supplement/index.mts';
+import { runtimePathById } from '../supplement/index.mts';
 
 /**
  * Recursively collects all .txt files from a directory.
@@ -32,11 +28,11 @@ async function collectAllDocumentFiles(docsPath: string): Promise<string[]> {
 /**
  * Main function to build and save the document index.
  */
-async function buildIndex() {
+async function buildIndex(
+  docsPath = path.join(runtimePathById.assets, 'docs-for-nlp'),
+  indexPath = path.join(runtimePathById.assets, 'nlp-index'),
+) {
   console.log('🚀 Starting index building process...');
-
-  const docsPath = path.join(runtimePathById.assets, 'docs-for-nlp');
-  const indexPath = path.join(runtimePathById.assets, 'nlp-index');
 
   try {
     // 1. Get all document files
@@ -105,5 +101,4 @@ async function buildIndex() {
   }
 }
 
-// Run the indexing process
-buildIndex().catch(console.error);
+export { buildIndex };
