@@ -19,6 +19,7 @@ pnpm-lock.yaml
 # images
 *.ico
 *.svg
+*.png
 
 # documents
 **/assets

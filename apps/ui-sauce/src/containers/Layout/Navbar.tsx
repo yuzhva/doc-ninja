@@ -1,7 +1,11 @@
 import React from 'react';
 
+const THEME_CURRENT_MODE__DEFAULT = 'dark';
+
 const Navbar = ({ onBtnToggleSidebarClick }) => {
-  const [themeCurrentMode, setThemeCurrentMode] = React.useState('dark');
+  const [themeCurrentMode, setThemeCurrentMode] = React.useState(
+    THEME_CURRENT_MODE__DEFAULT,
+  );
 
   const handleThemeModeSwitch = React.useCallback(() => {
     setThemeCurrentMode((prevMode) => {
@@ -12,6 +16,13 @@ const Navbar = ({ onBtnToggleSidebarClick }) => {
 
       return nextMode;
     });
+  }, []);
+
+  React.useEffect(() => {
+    window.document.documentElement.classList.add(themeCurrentMode);
+    return () => {
+      window.document.documentElement.classList.remove(themeCurrentMode);
+    };
   }, []);
 
   return (
@@ -45,7 +56,7 @@ const Navbar = ({ onBtnToggleSidebarClick }) => {
               <a className="flex items-center" href="/">
                 <img
                   alt=""
-                  src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/80_%D0%9E%D0%94%D0%A8%D0%91%D1%80_%D0%BA.svg/1021px-80_%D0%9E%D0%94%D0%A8%D0%91%D1%80_%D0%BA.svg.png"
+                  src="/static-assets/images/80-ОДШБ.png"
                   className="mr-3 h-6 sm:h-8"
                 />
                 <span className="self-center whitespace-nowrap text-2xl font-semibold dark:text-white">

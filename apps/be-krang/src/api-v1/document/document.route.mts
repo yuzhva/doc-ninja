@@ -6,6 +6,7 @@ const expressRouter = express.Router();
 
 const DocumentRoute = expressRouter
   .post('/convert/doc-to-text', ApiV1DocumentController.postDocumentToText)
-  .post('/convert/text-to-index', ApiV1DocumentController.postTextToIndex);
+  .post('/convert/text-to-index', ApiV1DocumentController.postTextToIndex)
+  .post('/spreadsheet/slice', ApiV1DocumentController.postDocumentToSlice);
 
 export { DocumentRoute };

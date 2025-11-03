@@ -28,6 +28,14 @@ const DocumentsPage = () => {
     });
   }, []);
 
+  const postDocumentToChunk = React.useCallback(() => {
+    fetchRequest('/api-local/spreadsheet/slice', {
+      method: 'POST',
+    }).then((resAsJson) => {
+      console.log({ resAsJson });
+    });
+  }, []);
+
   const handleSubmit = React.useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
@@ -91,6 +99,40 @@ const DocumentsPage = () => {
             onClick={postProcessDocuments}
           >
             Почати пошук збігів
+          </button>
+        </form>
+      </Tabs.Item>
+      <Tabs.Item title="Нарізка таблиці">
+        <form className="max-w-sm mx-auto" onSubmit={handleSubmit}>
+          <div className="mb-5">
+            <label
+              className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+              htmlFor="textToIndexDestinationFolder"
+            >
+              Оберіть файл котрий буде нарізано
+            </label>
+            <input
+              className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 dark:text-gray-400 focus:outline-none dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400"
+              id="textToIndexDestinationFolder"
+              name="destinationFolder"
+              type="file"
+              accept=".xlsx,.xlsm,.xls"
+            />
+            {/*
+            <div
+              className="mt-1 text-sm text-gray-500 dark:text-gray-300"
+              id="user_avatar_help"
+            >
+              Опис
+            </div>
+            */}
+          </div>
+          <button
+            type="submit"
+            className="cursor-pointer text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+            onClick={postDocumentToChunk}
+          >
+            Нарізати табличку частинами
           </button>
         </form>
       </Tabs.Item>
