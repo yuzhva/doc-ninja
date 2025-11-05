@@ -1,7 +1,6 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
-import path from 'path';
 import { pathToFileURL } from 'url';
 
 import { apiV1Routes } from './api-v1/index.mts';
@@ -24,6 +23,7 @@ const handleForwardingToLatestApiPrefix = (
 // parsers
 app.use(cookieParser(process.env.SECURITY__COOKIE_SECRET)); // parse cookie to get JWT from {req.cookies} or {req.signedCookies}
 app.use(express.json()); // parse application/json to get from {req.body}
+// app.use(handleMultipart); // Handle multipart uploads globally
 
 app.get('/{*splat}', handleForwardingToLatestApiPrefix);
 app.post('/{*splat}', handleForwardingToLatestApiPrefix);

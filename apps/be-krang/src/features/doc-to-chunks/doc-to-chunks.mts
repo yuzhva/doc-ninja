@@ -14,8 +14,7 @@ import {
 } from './doc-to-chunks.utils.mts';
 
 interface SliceOptions {
-  docPath?: string;
-  destPath?: string;
+  buffer: Buffer; // Changed from docPath to buffer
   sheetToChunkPosition?: number;
   headerRows?: number;
   splitColumnPosition?: number;
@@ -30,9 +29,14 @@ interface SliceOptions {
   }>;
 }
 
+interface ChunkFile {
+  name: string;
+  content: Buffer;
+  relativePath: string;
+}
+
 const sliceDocumentForChunks = async ({
-  docPath = path.join(runtimePathById.assets, 'doc-to-slice', 'data.xlsx'),
-  destPath = path.join(runtimePathById.assets, 'doc-to-slice', 'chunks'),
+  buffer, // Use buffer instead of file path
   sheetToChunkPosition = 1,
   headerRows = 1,
   splitColumnPosition = 1,
@@ -40,17 +44,15 @@ const sliceDocumentForChunks = async ({
   chunkNamePattern,
   includeHiddenSheets = false,
   additionalSheets = [],
-}: SliceOptions) => {
+}: SliceOptions): Promise<ChunkFile[]> => {
   const startTime = Date.now();
 
   try {
-    console.log(`🚀 Starting to slice Excel document: ${docPath}`);
+    console.log(`🚀 Starting to slice Excel document from buffer`);
     console.log(`⏱️ Started at: ${new Date().toLocaleTimeString()}`);
 
-    await fs.mkdir(destPath, { recursive: true });
-
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(docPath);
+    await workbook.xlsx.load(buffer); // Load from buffer instead of file
 
     const loadTime = Date.now() - startTime;
     console.log(`📖 Document loaded in: ${loadTime}ms`);
@@ -193,9 +195,10 @@ const sliceDocumentForChunks = async ({
       chunkNamePattern,
     );
 
-    // Save chunks
-    let chunkCount = 0;
-    const saveChunk = async (chunkRows: any[], groupName: string) => {
+    // Save chunks to memory instead of disk
+    const chunkFiles: ChunkFile[] = [];
+
+    const saveChunk = async (chunkRows: any[], groupName: string): Promise<void> => {
       if (chunkRows.length === 0) return;
 
       const chunkWorkbook = new ExcelJS.Workbook();
@@ -271,17 +274,19 @@ const sliceDocumentForChunks = async ({
         }
       }
 
-      // Save file
+      // Generate file content as buffer
       const today = new Date();
       const dateString = `${today.getDate().toString().padStart(2, '0')}.${(today.getMonth() + 1).toString().padStart(2, '0')}.${today.getFullYear()}`;
       const sanitizedGroupName = groupName.replace(/[<>:"/\\|?*]/g, '_');
-      const chunkPath = path.join(
-        destPath,
-        `${sanitizedGroupName} - ${dateString}.xlsx`,
-      );
+      const fileName = `${sanitizedGroupName} - ${dateString}.xlsx`;
 
-      await chunkWorkbook.xlsx.writeFile(chunkPath);
-      chunkCount++;
+      const buffer = await chunkWorkbook.xlsx.writeBuffer();
+
+      chunkFiles.push({
+        name: fileName,
+        content: buffer as Buffer,
+        relativePath: fileName,
+      });
 
       const totalRows =
         chunkRows.length +
@@ -291,11 +296,11 @@ const sliceDocumentForChunks = async ({
         );
 
       console.log(
-        `✅ Saved chunk "${groupName}" with ${totalRows} total rows (${chunkWorkbook.worksheets.length} sheets): ${path.basename(chunkPath)}`,
+        `✅ Prepared chunk "${groupName}" with ${totalRows} total rows (${chunkWorkbook.worksheets.length} sheets): ${fileName}`,
       );
     };
 
-    // Save all chunks
+    // Process all chunks
     for (const [groupName, rows] of rowGroups) {
       await saveChunk(rows, groupName);
     }
@@ -308,13 +313,16 @@ const sliceDocumentForChunks = async ({
     console.log(`\n📊 Performance Summary:`);
     console.log(`  ⏱️ Total time: ${minutes}m ${seconds}s`);
     console.log(
-      `✅ Slicing complete. ${chunkCount} chunk(s) saved based on column ${splitColumnPosition} values.`,
+      `✅ Slicing complete. ${chunkFiles.length} chunk(s) prepared based on column ${splitColumnPosition} values.`,
     );
     console.log(`🏁 Finished at: ${new Date().toLocaleTimeString()}`);
+
+    return chunkFiles;
   } catch (error) {
     const totalTime = Date.now() - startTime;
     console.error('❌ Error slicing document:', error);
     console.log(`⏱️ Failed after: ${totalTime}ms`);
+    throw error;
   }
 };
 

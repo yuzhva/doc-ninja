@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('api-request', {
       path,
       method: options?.method || 'GET',
-      body: options?.body,
+      body: options?.body ? JSON.parse(options.body) : undefined,
     });
   },
 });
