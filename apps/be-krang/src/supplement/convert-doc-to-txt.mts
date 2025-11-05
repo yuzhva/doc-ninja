@@ -100,16 +100,28 @@ async function convertDocViaHtmlToTxt(filePath: string): Promise<string> {
 }
 
 /**
- * Enhanced version that can also extract metadata and improve structure
+ * Enhanced version that works with both file paths and buffers
  */
 async function convertDocViaHtmlToTxtAdvanced(
-  filePath: string,
+  input: string | Buffer,
+  fileName?: string,
 ): Promise<{ text: string; metadata?: any }> {
-  const ext = path.extname(filePath).toLowerCase();
+  let buffer: Buffer;
+  let filePath: string | undefined;
+
+  if (Buffer.isBuffer(input)) {
+    buffer = input;
+    filePath = fileName;
+  } else {
+    buffer = await fs.readFile(input);
+    filePath = input;
+  }
+
+  const ext = fileName
+    ? path.extname(fileName).toLowerCase()
+    : path.extname(filePath || '').toLowerCase();
 
   if (ext === '.docx') {
-    const buffer = await fs.readFile(filePath);
-
     // Extract both text and metadata
     const result = await mammoth.convertToHtml({
       buffer,
@@ -121,7 +133,7 @@ async function convertDocViaHtmlToTxtAdvanced(
     });
 
     const text = result.value
-      .replace(/<h([1-6])[^>]*>/g, '\n=== HEADING $1 ===\n') // Mark headings clearly
+      .replace(/<h([1-6])[^>]*>/g, '\n=== HEADING $1 ===\n')
       .replace(/<\/h[1-6]>/g, '\n')
       .replace(/<p[^>]*>/g, '')
       .replace(/<\/p>/g, '\n\n')
@@ -139,21 +151,28 @@ async function convertDocViaHtmlToTxtAdvanced(
       text,
       metadata: {
         messages: result.messages,
+        originalFile: filePath || fileName || 'uploaded-file',
+        extractedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  // For .doc files, we need the file path approach
+  if (ext === '.doc') {
+    if (!filePath) {
+      throw new Error('.doc files require file system processing');
+    }
+    const text = await convertDocViaHtmlToTxt(filePath);
+    return {
+      text,
+      metadata: {
         originalFile: filePath,
         extractedAt: new Date().toISOString(),
       },
     };
   }
 
-  // For .doc files, use the standard method
-  const text = await convertDocViaHtmlToTxt(filePath);
-  return {
-    text,
-    metadata: {
-      originalFile: filePath,
-      extractedAt: new Date().toISOString(),
-    },
-  };
+  throw new Error(`Unsupported file type: ${ext}`);
 }
 
 export {

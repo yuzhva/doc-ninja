@@ -96,7 +96,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                             <svg
                               stroke="currentColor"
                               fill="currentColor"
-                              stroke-width="0"
+                              strokeWidth="0"
                               viewBox="0 0 20 20"
                               aria-hidden="true"
                               className="h-6 w-6 flex-shrink-0 text-gray-500 transition duration-75 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"
@@ -195,7 +195,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                             <svg
                               stroke="currentColor"
                               fill="currentColor"
-                              stroke-width="0"
+                              strokeWidth="0"
                               viewBox="0 0 20 20"
                               aria-hidden="true"
                               className="h-6 w-6 flex-shrink-0 text-gray-500 transition duration-75 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"
@@ -215,7 +215,11 @@ const Sidebar = ({ isSidebarOpen }) => {
                           className="absolute inline-block z-10 rounded-lg py-2 px-3 text-sm font-medium shadow-sm transition-opacity duration-300 invisible opacity-0 bg-gray-900 text-white dark:bg-gray-700"
                           id=":r1u5:"
                           role="tooltip"
-                          style={{"position": "absolute", "top": "451px", "left": "60px"}}
+                          style={{
+                            position: 'absolute',
+                            top: '451px',
+                            left: '60px',
+                          }}
                         >
                           <div className="relative z-20">
                             <span
@@ -229,7 +233,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                           <div
                             className="absolute z-10 h-2 w-2 rotate-45 bg-gray-900 dark:bg-gray-700"
                             data-testid="flowbite-tooltip-arrow"
-                            style={{"left": "-4px", "top": "14px"}}
+                            style={{ left: '-4px', top: '14px' }}
                           >
                             &nbsp;
                           </div>
@@ -280,7 +284,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                             <svg
                               stroke="currentColor"
                               fill="currentColor"
-                              stroke-width="0"
+                              strokeWidth="0"
                               viewBox="0 0 20 20"
                               aria-hidden="true"
                               className="h-6 w-6 flex-shrink-0 text-gray-500 transition duration-75 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"
@@ -299,7 +303,11 @@ const Sidebar = ({ isSidebarOpen }) => {
                           className="absolute inline-block z-10 rounded-lg py-2 px-3 text-sm font-medium shadow-sm transition-opacity duration-300 invisible opacity-0 bg-gray-900 text-white dark:bg-gray-700"
                           id=":r1u7:"
                           role="tooltip"
-                          style={{"position": "absolute", "top": "499px", "left": "60px"}}
+                          style={{
+                            position: 'absolute',
+                            top: '499px',
+                            left: '60px',
+                          }}
                         >
                           <div className="relative z-20">
                             <span
@@ -313,7 +321,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                           <div
                             className="absolute z-10 h-2 w-2 rotate-45 bg-gray-900 dark:bg-gray-700"
                             data-testid="flowbite-tooltip-arrow"
-                            style={{"left": "-4px", "top": "14px"}}
+                            style={{ left: '-4px', top: '14px' }}
                           >
                             &nbsp;
                           </div>
@@ -368,7 +376,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                             <svg
                               stroke="currentColor"
                               fill="currentColor"
-                              stroke-width="0"
+                              strokeWidth="0"
                               viewBox="0 0 20 20"
                               aria-hidden="true"
                               className="h-6 w-6 flex-shrink-0 text-gray-500 transition duration-75 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"
@@ -378,9 +386,9 @@ const Sidebar = ({ isSidebarOpen }) => {
                               xmlns="http://www.w3.org/2000/svg"
                             >
                               <path
-                                fill-rule="evenodd"
+                                fillRule="evenodd"
                                 d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                                clip-rule="evenodd"
+                                clipRule="evenodd"
                               ></path>
                             </svg>
                           </a>
@@ -391,7 +399,11 @@ const Sidebar = ({ isSidebarOpen }) => {
                           className="absolute inline-block z-10 rounded-lg py-2 px-3 text-sm font-medium shadow-sm transition-opacity duration-300 invisible opacity-0 bg-gray-900 text-white dark:bg-gray-700"
                           id=":r1u9:"
                           role="tooltip"
-                          style={{"position": "absolute", "top": "547px", "left": "60px"}}
+                          style={{
+                            position: 'absolute',
+                            top: '547px',
+                            left: '60px',
+                          }}
                         >
                           <div className="relative z-20">
                             <span
@@ -405,7 +417,7 @@ const Sidebar = ({ isSidebarOpen }) => {
                           <div
                             className="absolute z-10 h-2 w-2 rotate-45 bg-gray-900 dark:bg-gray-700"
                             data-testid="flowbite-tooltip-arrow"
-                            style={{"left": "-4px", "top": "14px"}}
+                            style={{ left: '-4px', top: '14px' }}
                           >
                             &nbsp;
                           </div>

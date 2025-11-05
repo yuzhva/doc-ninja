@@ -40,6 +40,31 @@ electronApp.whenReady().then(() => {
   // Handle IPC calls from the React UI
   ipcMain.handle('api-request', async (event, { method, path, body }) => {
     // Use supertest to make an "in-memory" request to your Express app
+    /*
+    let requestBuilder = request(expressApp)[method.toLowerCase()](path);
+    // Handle body based on content type
+    if (body) {
+      if (typeof body === 'string') {
+        // If body is a JSON string, parse it and set proper headers
+        try {
+          const parsedBody = JSON.parse(body);
+          requestBuilder = requestBuilder.send(parsedBody);
+        } catch (e) {
+          // If it's not valid JSON, send as text
+          requestBuilder = requestBuilder.send(body);
+        }
+      } else if (body instanceof FormData) {
+        // Handle FormData for file uploads
+        requestBuilder = requestBuilder.send(body);
+      } else {
+        // Handle objects directly
+        requestBuilder = requestBuilder.send(body);
+      }
+    }
+
+    const response = await requestBuilder;
+    */
+
     const response = await request(expressApp)
       [method.toLowerCase()](path)
       .send(body);
