@@ -26,13 +26,16 @@ interface InvertedIndexEntry {
   positions: number[];
 }
 
-interface SearchConfig {
+export interface SearchConfig {
   rootDirectory: string;
   extensions: string[];
   maxFileSize: number; // in bytes
   indexPath?: string;
   concurrency: number;
   ukrainianStemming: boolean;
+  cacheRoot?: string;
+  txtCacheSubdir?: string;
+  indexCacheSubdir?: string;
 }
 
 interface SearchResult {

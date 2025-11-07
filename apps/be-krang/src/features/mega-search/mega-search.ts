@@ -36,11 +36,60 @@ class MegaSearch {
     return this.indexer.getStats();
   }
 
-  // Placeholder for future search functionality
-  async search(query: string): Promise<any[]> {
-    // TODO: Implement search algorithm with TF-IDF scoring
-    console.log(`Searching for: "${query}"`);
-    return [];
+  async search(
+    query: string,
+    topN: number = 10,
+  ): Promise<Array<{ doc: any; score: number; snippet: string }>> {
+    // Tokenize and stem the query
+    const queryTokens = this.textProcessor
+      .tokenize(query)
+      .map((t) => this.textProcessor.stemWord(t.term));
+    const uniqueQueryTokens = Array.from(new Set(queryTokens));
+    if (uniqueQueryTokens.length === 0) return [];
+
+    // Get index data
+    const docCache = this.indexer.getDocumentCache();
+    const invertedIndex = this.indexer.getInvertedIndex();
+    const docCount = docCache.size;
+
+    // Score documents
+    const docScores = new Map<string, number>();
+    for (const term of uniqueQueryTokens) {
+      const postings = invertedIndex.get(term);
+      if (!postings) continue;
+      const df = postings.length;
+      const idf = Math.log((docCount + 1) / (df + 1)) + 1;
+      for (const entry of postings) {
+        const tf = entry.frequency;
+        const score = tf * idf;
+        docScores.set(
+          entry.documentId,
+          (docScores.get(entry.documentId) || 0) + score,
+        );
+      }
+    }
+
+    // Sort and format results
+    const results = Array.from(docScores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topN)
+      .map(([docId, score]) => {
+        const doc = docCache.get(docId);
+        let snippet = '';
+        if (doc) {
+          // Find first occurrence of any query token for snippet
+          const text = doc.tokens.map((t) => t.term).join(' ');
+          const idx =
+            uniqueQueryTokens
+              .map((qt) => text.indexOf(qt))
+              .filter((i) => i >= 0)
+              .sort()[0] || 0;
+          snippet = text.substring(Math.max(0, idx - 30), idx + 70) + '...';
+        }
+        return { doc: doc?.metadata, score, snippet };
+      });
+
+    return results;
   }
 
   async testDocumentParsing(): Promise<void> {
@@ -49,10 +98,13 @@ class MegaSearch {
     const files = await this.indexer.discoverFiles();
     console.log(`Found ${files.length} files to test`);
 
-    for (const file of files.slice(0, 5)) { // Test first 5 files
+    for (const file of files.slice(0, 5)) {
+      // Test first 5 files
       try {
         console.log(`\n${'='.repeat(50)}`);
-        console.log(`Testing: ${file.fileName} (${(file.size / 1024).toFixed(1)} KB)`);
+        console.log(
+          `Testing: ${file.fileName} (${(file.size / 1024).toFixed(1)} KB)`,
+        );
         console.log(`File path: ${file.filePath}`);
 
         const extractor = new DocumentExtractor();
@@ -60,7 +112,9 @@ class MegaSearch {
         const text = await extractor.extractText(file.filePath);
         const extractionTime = Date.now() - startTime;
 
-        console.log(`Extracted ${text.length} characters in ${extractionTime}ms`);
+        console.log(
+          `Extracted ${text.length} characters in ${extractionTime}ms`,
+        );
 
         if (text.length > 0) {
           // Detect language
@@ -75,31 +129,48 @@ class MegaSearch {
           console.log(`Tokenized into ${tokens.length} tokens`);
 
           if (tokens.length > 0) {
-            console.log(`First 15 tokens: ${tokens.slice(0, 15).map(t => t.term).join(', ')}`);
+            console.log(
+              `First 15 tokens: ${tokens
+                .slice(0, 15)
+                .map((t) => t.term)
+                .join(', ')}`,
+            );
 
             // Show token statistics
-            const uniqueTokens = new Set(tokens.map(t => t.term));
+            const uniqueTokens = new Set(tokens.map((t) => t.term));
             console.log(`Unique tokens: ${uniqueTokens.size}`);
 
             // Test stemming if enabled
             if (this.config.ukrainianStemming) {
-              const stemmedSample = tokens.slice(0, 5).map(t =>
-                `${t.term} -> ${this.textProcessor.stemWord(t.term)}`
-              );
+              const stemmedSample = tokens
+                .slice(0, 5)
+                .map(
+                  (t) => `${t.term} -> ${this.textProcessor.stemWord(t.term)}`,
+                );
               console.log(`Stemming sample: ${stemmedSample.join(', ')}`);
             }
 
             // Show language-specific analysis
-            const ukrainianTokens = tokens.filter(t => /[а-яїієґ]/.test(t.term));
-            const englishTokens = tokens.filter(t => /[a-z]/.test(t.term) && !/[а-яїієґ]/.test(t.term));
-            console.log(`Language breakdown: ${ukrainianTokens.length} Ukrainian, ${englishTokens.length} English tokens`);
+            const ukrainianTokens = tokens.filter((t) =>
+              /[а-яїієґ]/.test(t.term),
+            );
+            const englishTokens = tokens.filter(
+              (t) => /[a-z]/.test(t.term) && !/[а-яїієґ]/.test(t.term),
+            );
+            console.log(
+              `Language breakdown: ${ukrainianTokens.length} Ukrainian, ${englishTokens.length} English tokens`,
+            );
           }
         } else {
-          console.log('⚠️  No text extracted - this file might be corrupted or use unsupported encoding');
+          console.log(
+            '⚠️  No text extracted - this file might be corrupted or use unsupported encoding',
+          );
         }
-
       } catch (error) {
-        console.error(`❌ Failed to parse ${file.fileName}:`, error instanceof Error ? error.message : String(error));
+        console.error(
+          `❌ Failed to parse ${file.fileName}:`,
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
 
