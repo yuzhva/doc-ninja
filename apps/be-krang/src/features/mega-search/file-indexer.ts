@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import * as zlib from 'zlib';
 
 import { DocumentExtractor } from './document-parsers';
 import { UkrainianTextProcessor } from './text-processor';
@@ -210,10 +211,65 @@ export class FileIndexer {
     });
   }
 
+  private async isGlobalIndexStale(globalIndexPath: string, files: DocumentMetadata[]): Promise<boolean> {
+    if (!fs.existsSync(globalIndexPath)) return true;
+    const idxStat = await promisify(fs.stat)(globalIndexPath);
+    for (const file of files) {
+      if (file.lastModified > idxStat.mtimeMs) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async saveGlobalInvertedIndex(): Promise<void> {
+    const globalIndexPath = this.config.globalIndexPath || path.join(this.config.rootDirectory, '.cache', 'global-inverted-index.json.gz');
+    const tempPath = globalIndexPath + '.tmp';
+    const obj: Record<string, any> = {};
+    for (const [term, entries] of this.invertedIndex.entries()) {
+      obj[term] = entries;
+    }
+    await fs.promises.mkdir(path.dirname(globalIndexPath), { recursive: true });
+    const json = JSON.stringify(obj);
+    const gzipped = zlib.gzipSync(json);
+    // Write to temp file first
+    await fs.promises.writeFile(tempPath, gzipped);
+    // Atomically replace the old file
+    await fs.promises.rename(tempPath, globalIndexPath);
+  }
+
+  private async loadGlobalInvertedIndex(): Promise<boolean> {
+    const globalIndexPath = this.config.globalIndexPath || path.join(this.config.rootDirectory, '.cache', 'global-inverted-index.json.gz');
+    if (!fs.existsSync(globalIndexPath)) return false;
+    try {
+      const gzipped = await fs.promises.readFile(globalIndexPath);
+      const data = zlib.gunzipSync(gzipped).toString('utf8');
+      const obj = JSON.parse(data);
+      this.invertedIndex.clear();
+      for (const term of Object.keys(obj)) {
+        this.invertedIndex.set(term, obj[term]);
+      }
+      return true;
+    } catch (e) {
+      console.error('Failed to load global inverted index:', e);
+      return false;
+    }
+  }
+
   async buildFullIndex(): Promise<void> {
     const files = await this.discoverFiles();
-    console.log(`Found ${files.length} documents to process`);
+    const globalIndexPath = this.config.globalIndexPath || path.join(this.config.rootDirectory, '.cache', 'global-inverted-index.json.gz');
+    const isStale = await this.isGlobalIndexStale(globalIndexPath, files);
 
+    if (!isStale) {
+      const loaded = await this.loadGlobalInvertedIndex();
+      if (loaded) {
+        console.log('Loaded global inverted index from disk.');
+        return;
+      }
+    }
+
+    console.log(`Found ${files.length} documents to process`);
     let indexed = 0;
     let skipped = 0;
 
@@ -232,6 +288,8 @@ export class FileIndexer {
     }
 
     console.log(`Indexing complete: ${indexed} indexed, ${skipped} skipped`);
+    await this.saveGlobalInvertedIndex();
+    console.log('Saved global inverted index to disk (compressed).');
   }
 
   getInvertedIndex(): Map<string, InvertedIndexEntry[]> {

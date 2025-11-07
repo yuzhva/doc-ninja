@@ -36,6 +36,7 @@ export interface SearchConfig {
   cacheRoot?: string;
   txtCacheSubdir?: string;
   indexCacheSubdir?: string;
+  globalIndexPath?: string; // <-- add this line
 }
 
 interface SearchResult {
