@@ -2,6 +2,7 @@ import { DocumentExtractor } from './document-parsers';
 import { FileIndexer } from './file-indexer';
 import { UkrainianTextProcessor } from './text-processor';
 import { SearchConfig } from './types';
+import { levenshtein } from './fuzzy';
 
 class MegaSearch {
   private indexer: FileIndexer;
@@ -39,6 +40,8 @@ class MegaSearch {
   async search(
     query: string,
     topN: number = 10,
+    fuzzy: boolean = true,
+    fuzzyThreshold: number = 1 // max edit distance for fuzzy match
   ): Promise<Array<{ doc: any; score: number; snippet: string }>> {
     // Tokenize and stem the query
     const queryTokens = this.textProcessor
@@ -52,20 +55,29 @@ class MegaSearch {
     const invertedIndex = this.indexer.getInvertedIndex();
     const docCount = docCache.size;
 
-    // Score documents
+    // Score documents (with fuzzy matching)
     const docScores = new Map<string, number>();
     for (const term of uniqueQueryTokens) {
-      const postings = invertedIndex.get(term);
-      if (!postings) continue;
-      const df = postings.length;
-      const idf = Math.log((docCount + 1) / (df + 1)) + 1;
-      for (const entry of postings) {
-        const tf = entry.frequency;
-        const score = tf * idf;
-        docScores.set(
-          entry.documentId,
-          (docScores.get(entry.documentId) || 0) + score,
+      // Gather all terms in the index that are close to the query term
+      let candidateTerms: string[] = [term];
+      if (fuzzy) {
+        candidateTerms = Array.from(invertedIndex.keys()).filter(idxTerm =>
+          levenshtein(term, idxTerm) <= fuzzyThreshold
         );
+      }
+      for (const idxTerm of candidateTerms) {
+        const postings = invertedIndex.get(idxTerm);
+        if (!postings) continue;
+        const df = postings.length;
+        const idf = Math.log((docCount + 1) / (df + 1)) + 1;
+        for (const entry of postings) {
+          const tf = entry.frequency;
+          const score = tf * idf;
+          docScores.set(
+            entry.documentId,
+            (docScores.get(entry.documentId) || 0) + score
+          );
+        }
       }
     }
 
@@ -84,7 +96,17 @@ class MegaSearch {
               .map((qt) => text.indexOf(qt))
               .filter((i) => i >= 0)
               .sort()[0] || 0;
-          snippet = text.substring(Math.max(0, idx - 30), idx + 70) + '...';
+          let rawSnippet = text.substring(Math.max(0, idx - 30), idx + 70);
+
+          // Highlight all query tokens in the snippet
+          uniqueQueryTokens.forEach(token => {
+            // Use regex with word boundaries for exact match, case-insensitive
+            rawSnippet = rawSnippet.replace(
+              new RegExp(`\\b${token}\\b`, 'gi'),
+              (match) => `<b>${match}</b>`
+            );
+          });
+          snippet = rawSnippet + '...';
         }
         return { doc: doc?.metadata, score, snippet };
       });
