@@ -1,8 +1,8 @@
 import { DocumentExtractor } from './document-parsers';
 import { FileIndexer } from './file-indexer';
+import { levenshtein } from './fuzzy';
 import { UkrainianTextProcessor } from './text-processor';
 import { SearchConfig } from './types';
-import { levenshtein } from './fuzzy';
 
 class MegaSearch {
   private indexer: FileIndexer;
@@ -41,11 +41,16 @@ class MegaSearch {
     query: string,
     topN: number = 10,
     fuzzy: boolean = true,
-    fuzzyThreshold: number = 1 // max edit distance for fuzzy match
+    fuzzyThreshold: number = 1, // max edit distance for fuzzy match
   ): Promise<Array<{ doc: any; score: number; snippet: string }>> {
+    // Phrase search: detect if query is wrapped in quotes
+    const phraseMatch = query.match(/^"(.*)"$/);
+    const isPhrase = !!phraseMatch;
+    const phrase = isPhrase ? phraseMatch[1] : null;
+
     // Tokenize and stem the query
     const queryTokens = this.textProcessor
-      .tokenize(query)
+      .tokenize(isPhrase ? phrase! : query)
       .map((t) => this.textProcessor.stemWord(t.term));
     const uniqueQueryTokens = Array.from(new Set(queryTokens));
     if (uniqueQueryTokens.length === 0) return [];
@@ -58,11 +63,10 @@ class MegaSearch {
     // Score documents (with fuzzy matching)
     const docScores = new Map<string, number>();
     for (const term of uniqueQueryTokens) {
-      // Gather all terms in the index that are close to the query term
       let candidateTerms: string[] = [term];
-      if (fuzzy) {
-        candidateTerms = Array.from(invertedIndex.keys()).filter(idxTerm =>
-          levenshtein(term, idxTerm) <= fuzzyThreshold
+      if (fuzzy && !isPhrase) {
+        candidateTerms = Array.from(invertedIndex.keys()).filter(
+          (idxTerm) => levenshtein(term, idxTerm) <= fuzzyThreshold,
         );
       }
       for (const idxTerm of candidateTerms) {
@@ -75,37 +79,64 @@ class MegaSearch {
           const score = tf * idf;
           docScores.set(
             entry.documentId,
-            (docScores.get(entry.documentId) || 0) + score
+            (docScores.get(entry.documentId) || 0) + score,
           );
         }
       }
     }
 
+    // If phrase search, filter to only docs containing the exact phrase
+    let filteredDocIds: string[] = Array.from(docScores.keys());
+    if (isPhrase) {
+      filteredDocIds = filteredDocIds.filter((docId) => {
+        const doc = docCache.get(docId);
+        if (!doc) return false;
+        // Reconstruct normalized text for phrase search
+        const docText = doc.tokens.map((t) => t.term).join(' ');
+        const phraseText = queryTokens.join(' ');
+        // Look for the exact phrase (as tokens in order)
+        return docText.includes(phraseText);
+      });
+    }
+
     // Sort and format results
-    const results = Array.from(docScores.entries())
+    const results = filteredDocIds
+      .map((docId) => [docId, docScores.get(docId) || 0] as [string, number])
       .sort((a, b) => b[1] - a[1])
       .slice(0, topN)
       .map(([docId, score]) => {
         const doc = docCache.get(docId);
         let snippet = '';
         if (doc) {
-          // Find first occurrence of any query token for snippet
           const text = doc.tokens.map((t) => t.term).join(' ');
-          const idx =
-            uniqueQueryTokens
-              .map((qt) => text.indexOf(qt))
-              .filter((i) => i >= 0)
-              .sort()[0] || 0;
-          let rawSnippet = text.substring(Math.max(0, idx - 30), idx + 70);
-
-          // Highlight all query tokens in the snippet
-          uniqueQueryTokens.forEach(token => {
-            // Use regex with word boundaries for exact match, case-insensitive
-            rawSnippet = rawSnippet.replace(
-              new RegExp(`\\b${token}\\b`, 'gi'),
-              (match) => `<b>${match}</b>`
+          let idx = 0;
+          let rawSnippet = '';
+          if (isPhrase) {
+            const phraseText = queryTokens.join(' ');
+            idx = text.indexOf(phraseText);
+            rawSnippet = text.substring(
+              Math.max(0, idx - 30),
+              idx + phraseText.length + 40,
             );
-          });
+            // Highlight the phrase
+            rawSnippet = rawSnippet.replace(
+              new RegExp(phraseText, 'gi'),
+              (match) => `<b>${match}</b>`,
+            );
+          } else {
+            idx =
+              uniqueQueryTokens
+                .map((qt) => text.indexOf(qt))
+                .filter((i) => i >= 0)
+                .sort()[0] || 0;
+            rawSnippet = text.substring(Math.max(0, idx - 30), idx + 70);
+            uniqueQueryTokens.forEach((token) => {
+              rawSnippet = rawSnippet.replace(
+                new RegExp(`\\b${token}\\b`, 'gi'),
+                (match) => `<b>${match}</b>`,
+              );
+            });
+          }
           snippet = rawSnippet + '...';
         }
         return { doc: doc?.metadata, score, snippet };

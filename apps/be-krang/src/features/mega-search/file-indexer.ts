@@ -108,6 +108,7 @@ export class FileIndexer {
                 lastModified: stats.mtimeMs,
                 size: stats.size,
                 indexed: false,
+                language: 'mixed', // Default, will be updated after indexing
               });
             }
           }
@@ -159,8 +160,10 @@ export class FileIndexer {
         : token.normalized;
       termFrequency.set(term, (termFrequency.get(term) || 0) + 1);
     });
+    // --- Language detection ---
+    const language = this.textProcessor.detectLanguage(text);
     const documentIndex: DocumentIndex = {
-      metadata: { ...metadata, indexed: true, indexedAt: Date.now() },
+      metadata: { ...metadata, indexed: true, indexedAt: Date.now(), language },
       tokens,
       termFrequency,
       wordCount: tokens.length,
@@ -285,6 +288,48 @@ export class FileIndexer {
     }
   }
 
+  private async saveChunkedInvertedIndex(): Promise<void> {
+    const chunkDir = path.join(
+      this.config.rootDirectory,
+      '.cache',
+      'sharded-index',
+    );
+    await fs.promises.mkdir(chunkDir, { recursive: true });
+    const shards: Record<string, Record<string, InvertedIndexEntry[]>> = {};
+    for (const [term, entries] of this.invertedIndex.entries()) {
+      const shard = term[0] || '_';
+      if (!shards[shard]) shards[shard] = {};
+      shards[shard][term] = entries;
+    }
+    for (const shard of Object.keys(shards)) {
+      const file = path.join(chunkDir, `${shard}.json.gz`);
+      const json = JSON.stringify(shards[shard]);
+      const gzipped = zlib.gzipSync(json);
+      await fs.promises.writeFile(file, gzipped);
+    }
+  }
+
+  private async loadChunkedInvertedIndex(): Promise<boolean> {
+    const chunkDir = path.join(
+      this.config.rootDirectory,
+      '.cache',
+      'sharded-index',
+    );
+    if (!fs.existsSync(chunkDir)) return false;
+    const files = await fs.promises.readdir(chunkDir);
+    this.invertedIndex.clear();
+    for (const file of files) {
+      if (!file.endsWith('.json.gz')) continue;
+      const gzipped = await fs.promises.readFile(path.join(chunkDir, file));
+      const data = zlib.gunzipSync(gzipped).toString('utf8');
+      const obj = JSON.parse(data);
+      for (const term of Object.keys(obj)) {
+        this.invertedIndex.set(term, obj[term]);
+      }
+    }
+    return this.invertedIndex.size > 0;
+  }
+
   async buildFullIndex(): Promise<void> {
     const files = await this.discoverFiles();
     const globalIndexPath =
@@ -302,6 +347,13 @@ export class FileIndexer {
         console.log('Loaded global inverted index from disk.');
         return;
       }
+    }
+
+    // Try to load chunked index first
+    const loaded = await this.loadChunkedInvertedIndex();
+    if (loaded) {
+      console.log('Loaded sharded inverted index from disk.');
+      return;
     }
 
     console.log(`Found ${files.length} documents to process`);

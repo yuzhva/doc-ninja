@@ -5,6 +5,7 @@ interface DocumentMetadata {
   size: number;
   indexed: boolean;
   indexedAt?: number;
+  language: 'ukrainian' | 'english' | 'mixed';
 }
 
 interface SearchToken {
