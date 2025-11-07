@@ -9,7 +9,8 @@
     "nlp:demo--inline": "tsx ./src/examples/nlp-example--inline.mts",
     "nlp:demo--adaptive": "tsx ./src/examples/nlp-example--adaptive.mts",
     "dev": "nodemon ./src/main.mts",
-    "serve": "node ./dist/src/main.mjs"
+    "serve": "node ./dist/src/main.mjs",
+    "test:mega-search": "nodemon ./src/features/mega-search/test--mega-search.ts"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
