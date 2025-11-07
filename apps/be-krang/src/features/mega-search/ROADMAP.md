@@ -62,23 +62,24 @@ You're thinking in the right direction! Here’s a concise roadmap for scaling a
 ===
 
 🚀 Next Steps / Improvements
+
 1. Performance & Scalability
-Global inverted index persistence: Save/load the full inverted index to disk for faster startup and lower memory usage.
-Parallel/concurrent indexing: Use worker threads or processes to index multiple files at once for large datasets.
-Memory-mapped or chunked index: For very large corpora, consider memory-mapped files or chunked/sharded index files.
+   Global inverted index persistence: Save/load the full inverted index to disk for faster startup and lower memory usage.
+   Parallel/concurrent indexing: Use worker threads or processes to index multiple files at once for large datasets.
+   Memory-mapped or chunked index: For very large corpora, consider memory-mapped files or chunked/sharded index files.
 2. Search Quality
-Phrase search: Support for searching exact phrases (e.g., "digital transformation").
-Boolean/advanced queries: Support AND, OR, NOT, wildcards, etc.
-Ranking improvements: Use more advanced scoring (BM25, proximity, boosting, etc.).
-Language detection per document: Use detected language to apply the right normalization/stemming.
+   Phrase search: Support for searching exact phrases (e.g., "digital transformation").
+   Boolean/advanced queries: Support AND, OR, NOT, wildcards, etc.
+   Ranking improvements: Use more advanced scoring (BM25, proximity, boosting, etc.).
+   Language detection per document: Use detected language to apply the right normalization/stemming.
 3. User Experience
-Snippet context: Show more context around matches, possibly with multiple snippets per result.
-Highlight in original document: Optionally, provide offsets or context for highlighting in the full document.
-Pagination: Support paginated search results.
+   Snippet context: Show more context around matches, possibly with multiple snippets per result.
+   Highlight in original document: Optionally, provide offsets or context for highlighting in the full document.
+   Pagination: Support paginated search results.
 4. API/Integration
-REST API or GraphQL: Expose search and indexing as HTTP endpoints for integration with UI/Electron.
-CLI improvements: Add commands for reindexing, cache management, stats, etc.
+   REST API or GraphQL: Expose search and indexing as HTTP endpoints for integration with UI/Electron.
+   CLI improvements: Add commands for reindexing, cache management, stats, etc.
 5. Robustness & Maintainability
-Error reporting: Better error messages and logging for failed/corrupted files.
-Unit and integration tests: Add tests for all core modules (tokenizer, indexer, search, fuzzy, etc.).
-Documentation: Document configuration, API, and extension points.
+   Error reporting: Better error messages and logging for failed/corrupted files.
+   Unit and integration tests: Add tests for all core modules (tokenizer, indexer, search, fuzzy, etc.).
+   Documentation: Document configuration, API, and extension points.

@@ -211,7 +211,10 @@ export class FileIndexer {
     });
   }
 
-  private async isGlobalIndexStale(globalIndexPath: string, files: DocumentMetadata[]): Promise<boolean> {
+  private async isGlobalIndexStale(
+    globalIndexPath: string,
+    files: DocumentMetadata[],
+  ): Promise<boolean> {
     if (!fs.existsSync(globalIndexPath)) return true;
     const idxStat = await promisify(fs.stat)(globalIndexPath);
     for (const file of files) {
@@ -223,12 +226,24 @@ export class FileIndexer {
   }
 
   private async saveGlobalInvertedIndex(): Promise<void> {
-    const globalIndexPath = this.config.globalIndexPath || path.join(this.config.rootDirectory, '.cache', 'global-inverted-index.json.gz');
+    const globalIndexPath =
+      this.config.globalIndexPath ||
+      path.join(
+        this.config.rootDirectory,
+        '.cache',
+        'global-inverted-index.json.gz',
+      );
     const tempPath = globalIndexPath + '.tmp';
-    const obj: Record<string, any> = {};
-    for (const [term, entries] of this.invertedIndex.entries()) {
-      obj[term] = entries;
-    }
+    // Save both invertedIndex and documentCache
+    const obj: Record<string, any> = {
+      invertedIndex: Object.fromEntries(this.invertedIndex),
+      documentCache: Object.fromEntries(
+        Array.from(this.documentCache.entries()).map(([k, v]) => [
+          k,
+          { ...v, termFrequency: Object.fromEntries(v.termFrequency) },
+        ]),
+      ),
+    };
     await fs.promises.mkdir(path.dirname(globalIndexPath), { recursive: true });
     const json = JSON.stringify(obj);
     const gzipped = zlib.gzipSync(json);
@@ -239,15 +254,29 @@ export class FileIndexer {
   }
 
   private async loadGlobalInvertedIndex(): Promise<boolean> {
-    const globalIndexPath = this.config.globalIndexPath || path.join(this.config.rootDirectory, '.cache', 'global-inverted-index.json.gz');
+    const globalIndexPath =
+      this.config.globalIndexPath ||
+      path.join(
+        this.config.rootDirectory,
+        '.cache',
+        'global-inverted-index.json.gz',
+      );
     if (!fs.existsSync(globalIndexPath)) return false;
     try {
       const gzipped = await fs.promises.readFile(globalIndexPath);
       const data = zlib.gunzipSync(gzipped).toString('utf8');
       const obj = JSON.parse(data);
+      // Restore invertedIndex
       this.invertedIndex.clear();
-      for (const term of Object.keys(obj)) {
-        this.invertedIndex.set(term, obj[term]);
+      for (const term of Object.keys(obj.invertedIndex)) {
+        this.invertedIndex.set(term, obj.invertedIndex[term]);
+      }
+      // Restore documentCache
+      this.documentCache.clear();
+      for (const filePath of Object.keys(obj.documentCache)) {
+        const doc = obj.documentCache[filePath];
+        doc.termFrequency = new Map(Object.entries(doc.termFrequency));
+        this.documentCache.set(filePath, doc);
       }
       return true;
     } catch (e) {
@@ -258,7 +287,13 @@ export class FileIndexer {
 
   async buildFullIndex(): Promise<void> {
     const files = await this.discoverFiles();
-    const globalIndexPath = this.config.globalIndexPath || path.join(this.config.rootDirectory, '.cache', 'global-inverted-index.json.gz');
+    const globalIndexPath =
+      this.config.globalIndexPath ||
+      path.join(
+        this.config.rootDirectory,
+        '.cache',
+        'global-inverted-index.json.gz',
+      );
     const isStale = await this.isGlobalIndexStale(globalIndexPath, files);
 
     if (!isStale) {
