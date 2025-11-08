@@ -4,6 +4,13 @@ import { levenshtein } from './fuzzy';
 import { UkrainianTextProcessor } from './text-processor';
 import { SearchConfig } from './types';
 
+type SearchOptions = {
+  topN?: number;
+  fuzzy?: boolean;
+  fuzzyThreshold?: number;
+  snippetsLimit?: number | 'ALL';
+};
+
 class MegaSearch {
   private indexer: FileIndexer;
   private textProcessor: UkrainianTextProcessor;
@@ -39,26 +46,51 @@ class MegaSearch {
 
   async search(
     query: string,
-    topN: number = 10,
-    fuzzy: boolean = true,
-    fuzzyThreshold: number = 1, // max edit distance for fuzzy match
-  ): Promise<Array<{ doc: any; score: number; snippet: string }>> {
+    options: SearchOptions = {},
+  ): Promise<Array<{ doc: any; score: number; snippets: string[] }>> {
+    const {
+      topN = 10,
+      fuzzy = true,
+      fuzzyThreshold = 1,
+      snippetsLimit = 3,
+    } = options;
+
+    console.log(`[SEARCH] Starting search for query: "${query}"`);
+    console.log(`[SEARCH] Options:`, {
+      topN,
+      fuzzy,
+      fuzzyThreshold,
+      snippetsLimit,
+    });
+
     // Phrase search: detect if query is wrapped in quotes
     const phraseMatch = query.match(/^"(.*)"$/);
     const isPhrase = !!phraseMatch;
     const phrase = isPhrase ? phraseMatch[1] : null;
+
+    console.log(`[SEARCH] Phrase search: ${isPhrase}, phrase: "${phrase}"`);
 
     // Tokenize and stem the query
     const queryTokens = this.textProcessor
       .tokenize(isPhrase ? phrase! : query)
       .map((t) => this.textProcessor.stemWord(t.term));
     const uniqueQueryTokens = Array.from(new Set(queryTokens));
-    if (uniqueQueryTokens.length === 0) return [];
+
+    console.log(`[SEARCH] Query tokens:`, queryTokens);
+    console.log(`[SEARCH] Unique query tokens:`, uniqueQueryTokens);
+
+    if (uniqueQueryTokens.length === 0) {
+      console.log(`[SEARCH] No valid tokens found, returning empty results`);
+      return [];
+    }
 
     // Get index data
     const docCache = this.indexer.getDocumentCache();
     const invertedIndex = this.indexer.getInvertedIndex();
     const docCount = docCache.size;
+
+    console.log(`[SEARCH] Document cache size: ${docCache.size}`);
+    console.log(`[SEARCH] Inverted index size: ${invertedIndex.size}`);
 
     // Score documents (with fuzzy matching)
     const docScores = new Map<string, number>();
@@ -69,11 +101,23 @@ class MegaSearch {
           (idxTerm) => levenshtein(term, idxTerm) <= fuzzyThreshold,
         );
       }
+
+      console.log(
+        `[SEARCH] For term "${term}", found ${candidateTerms.length} candidate terms:`,
+        candidateTerms,
+      );
+
       for (const idxTerm of candidateTerms) {
         const postings = invertedIndex.get(idxTerm);
         if (!postings) continue;
+
         const df = postings.length;
         const idf = Math.log((docCount + 1) / (df + 1)) + 1;
+
+        console.log(
+          `[SEARCH] Term "${idxTerm}" appears in ${df} documents, IDF: ${idf.toFixed(3)}`,
+        );
+
         for (const entry of postings) {
           const tf = entry.frequency;
           const score = tf * idf;
@@ -81,22 +125,40 @@ class MegaSearch {
             entry.documentId,
             (docScores.get(entry.documentId) || 0) + score,
           );
+
+          console.log(
+            `[SEARCH] Document "${entry.documentId}" TF: ${tf}, adding score: ${score.toFixed(3)}`,
+          );
         }
       }
     }
 
+    console.log(
+      `[SEARCH] Document scores:`,
+      Array.from(docScores.entries()).map(([doc, score]) => ({
+        doc: doc.split('/').pop(),
+        score: score.toFixed(3),
+      })),
+    );
+
     // If phrase search, filter to only docs containing the exact phrase
     let filteredDocIds: string[] = Array.from(docScores.keys());
     if (isPhrase) {
+      console.log(`[SEARCH] Filtering for phrase search...`);
       filteredDocIds = filteredDocIds.filter((docId) => {
         const doc = docCache.get(docId);
         if (!doc) return false;
-        // Reconstruct normalized text for phrase search
         const docText = doc.tokens.map((t) => t.term).join(' ');
         const phraseText = queryTokens.join(' ');
-        // Look for the exact phrase (as tokens in order)
-        return docText.includes(phraseText);
+        const hasPhrase = docText.includes(phraseText);
+        console.log(
+          `[SEARCH] Document "${docId.split('/').pop()}" contains phrase: ${hasPhrase}`,
+        );
+        return hasPhrase;
       });
+      console.log(
+        `[SEARCH] After phrase filtering: ${filteredDocIds.length} documents remain`,
+      );
     }
 
     // Sort and format results
@@ -106,42 +168,123 @@ class MegaSearch {
       .slice(0, topN)
       .map(([docId, score]) => {
         const doc = docCache.get(docId);
-        let snippet = '';
+        let snippets: string[] = [];
+
+        console.log(
+          `[SNIPPETS] Processing document: "${docId.split('/').pop()}", score: ${score.toFixed(3)}`,
+        );
+
         if (doc) {
           const text = doc.tokens.map((t) => t.term).join(' ');
-          let idx = 0;
-          let rawSnippet = '';
+          console.log(
+            `[SNIPPETS] Document text length: ${text.length} characters`,
+          );
+          console.log(
+            `[SNIPPETS] First 100 chars of text: "${text.substring(0, 100)}..."`,
+          );
+
           if (isPhrase) {
             const phraseText = queryTokens.join(' ');
-            idx = text.indexOf(phraseText);
-            rawSnippet = text.substring(
-              Math.max(0, idx - 30),
-              idx + phraseText.length + 40,
-            );
-            // Highlight the phrase
-            rawSnippet = rawSnippet.replace(
-              new RegExp(phraseText, 'gi'),
-              (match) => `<b>${match}</b>`,
-            );
-          } else {
-            idx =
-              uniqueQueryTokens
-                .map((qt) => text.indexOf(qt))
-                .filter((i) => i >= 0)
-                .sort()[0] || 0;
-            rawSnippet = text.substring(Math.max(0, idx - 30), idx + 70);
-            uniqueQueryTokens.forEach((token) => {
+            console.log(`[SNIPPETS] Looking for phrase: "${phraseText}"`);
+
+            // Find all occurrences of the phrase
+            let idx = 0;
+            let occurrenceCount = 0;
+            while ((idx = text.indexOf(phraseText, idx)) !== -1) {
+              occurrenceCount++;
+              let rawSnippet = text.substring(
+                Math.max(0, idx - 30),
+                idx + phraseText.length + 40,
+              );
               rawSnippet = rawSnippet.replace(
-                new RegExp(`\\b${token}\\b`, 'gi'),
+                new RegExp(phraseText, 'gi'),
                 (match) => `<b>${match}</b>`,
               );
+              snippets.push(rawSnippet + '...');
+              idx += phraseText.length;
+
+              console.log(
+                `[SNIPPETS] Found phrase occurrence #${occurrenceCount} at position ${idx}`,
+              );
+            }
+            console.log(
+              `[SNIPPETS] Total phrase occurrences found: ${occurrenceCount}`,
+            );
+          } else {
+            // For each query token, find all occurrences by matching stems
+            const snippetSet = new Set<string>();
+
+            console.log(
+              `[SNIPPETS] Looking for stemmed tokens: ${uniqueQueryTokens.join(', ')}`,
+            );
+
+            uniqueQueryTokens.forEach((queryToken) => {
+              let tokenOccurrences = 0;
+
+              // Find all document tokens that stem to this query token
+              doc.tokens.forEach((docToken, tokenIndex) => {
+                const docTokenStem = this.textProcessor.stemWord(docToken.term);
+                console.log(
+                  `[SNIPPETS] Checking token "${docToken.term}" (stem: "${docTokenStem}") against query token "${queryToken}"`,
+                );
+
+                if (docTokenStem === queryToken) {
+                  tokenOccurrences++;
+
+                  // Create snippet using position in the token array
+                  const startPos = Math.max(0, tokenIndex - 8);
+                  const endPos = Math.min(doc.tokens.length, tokenIndex + 12);
+                  const contextTokens = doc.tokens.slice(startPos, endPos);
+
+                  let rawSnippet = contextTokens.map((t) => t.term).join(' ');
+
+                  // Highlight the actual word found in the document
+                  rawSnippet = rawSnippet.replace(
+                    new RegExp(`\\b${docToken.term}\\b`, 'gi'),
+                    (m) => `<b>${m}</b>`,
+                  );
+
+                  snippetSet.add(rawSnippet + '...');
+
+                  console.log(
+                    `[SNIPPETS] Found match: "${docToken.term}" at position ${tokenIndex}, created snippet`,
+                  );
+                }
+              });
+
+              console.log(
+                `[SNIPPETS] Query token "${queryToken}" matched ${tokenOccurrences} document tokens`,
+              );
             });
+
+            snippets = Array.from(snippetSet);
+            console.log(
+              `[SNIPPETS] Generated ${snippets.length} unique snippets from token matches`,
+            );
           }
-          snippet = rawSnippet + '...';
+
+          // Limit snippets if not 'ALL'
+          const originalSnippetCount = snippets.length;
+          if (snippetsLimit !== 'ALL' && typeof snippetsLimit === 'number') {
+            snippets = snippets.slice(0, snippetsLimit);
+          }
+
+          console.log(
+            `[SNIPPETS] Final snippet count: ${snippets.length} (originally ${originalSnippetCount})`,
+          );
+          if (snippets.length > 0) {
+            console.log(
+              `[SNIPPETS] Sample snippet: "${snippets[0].substring(0, 100)}..."`,
+            );
+          }
+        } else {
+          console.log(`[SNIPPETS] No document found in cache for: "${docId}"`);
         }
-        return { doc: doc?.metadata, score, snippet };
+
+        return { doc: doc?.metadata, score, snippets };
       });
 
+    console.log(`[SEARCH] Returning ${results.length} results`);
     return results;
   }
 
