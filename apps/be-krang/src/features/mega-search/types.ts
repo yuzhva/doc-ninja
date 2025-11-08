@@ -38,6 +38,11 @@ export interface SearchConfig {
   txtCacheSubdir?: string;
   indexCacheSubdir?: string;
   globalIndexPath?: string; // <-- add this line
+
+  // BM25 scoring parameters
+  bm25K1?: number; // Default: 1.2 (term frequency saturation parameter)
+  bm25B?: number; // Default: 0.75 (length normalization parameter)
+  useBM25?: boolean; // Default: true (use BM25 instead of TF-IDF)
 }
 
 interface SearchResult {

@@ -1,3 +1,4 @@
+import { BM25Scorer } from './bm25-scorer';
 import { DocumentExtractor } from './document-parsers';
 import { FileIndexer } from './file-indexer';
 import { levenshtein } from './fuzzy';
@@ -14,10 +15,17 @@ type SearchOptions = {
 class MegaSearch {
   private indexer: FileIndexer;
   private textProcessor: UkrainianTextProcessor;
+  private bm25Scorer: BM25Scorer;
 
   constructor(private config: SearchConfig) {
     this.indexer = new FileIndexer(config);
     this.textProcessor = new UkrainianTextProcessor();
+
+    // Initialize BM25 scorer with config or defaults
+    this.bm25Scorer = new BM25Scorer({
+      k1: config.bm25K1 ?? 1.2,
+      b: config.bm25B ?? 0.75,
+    });
   }
 
   async initialize(): Promise<void> {
@@ -27,8 +35,17 @@ class MegaSearch {
     console.log(
       `Ukrainian stemming: ${this.config.ukrainianStemming ? 'enabled' : 'disabled'}`,
     );
+    console.log(
+      `Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`,
+    );
 
     await this.indexer.buildFullIndex();
+
+    // Calculate average document length for BM25
+    if (this.config.useBM25 !== false) {
+      const docCache = this.indexer.getDocumentCache();
+      this.bm25Scorer.calculateAverageDocLength(docCache);
+    }
 
     const stats = this.indexer.getStats();
     console.log(
@@ -62,6 +79,9 @@ class MegaSearch {
       fuzzyThreshold,
       snippetsLimit,
     });
+    console.log(
+      `[SEARCH] Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`,
+    );
 
     // Phrase search: detect if query is wrapped in quotes
     const phraseMatch = query.match(/^"(.*)"$/);
@@ -92,8 +112,10 @@ class MegaSearch {
     console.log(`[SEARCH] Document cache size: ${docCache.size}`);
     console.log(`[SEARCH] Inverted index size: ${invertedIndex.size}`);
 
-    // Score documents (with fuzzy matching)
+    // Score documents using BM25 or TF-IDF
     const docScores = new Map<string, number>();
+    const useBM25 = this.config.useBM25 !== false;
+
     for (const term of uniqueQueryTokens) {
       let candidateTerms: string[] = [term];
       if (fuzzy && !isPhrase) {
@@ -111,23 +133,38 @@ class MegaSearch {
         const postings = invertedIndex.get(idxTerm);
         if (!postings) continue;
 
-        const df = postings.length;
-        const idf = Math.log((docCount + 1) / (df + 1)) + 1;
+        const df = postings.length; // Document frequency
 
-        console.log(
-          `[SEARCH] Term "${idxTerm}" appears in ${df} documents, IDF: ${idf.toFixed(3)}`,
-        );
+        console.log(`[SEARCH] Term "${idxTerm}" appears in ${df} documents`);
 
         for (const entry of postings) {
-          const tf = entry.frequency;
-          const score = tf * idf;
+          const tf = entry.frequency; // Term frequency
+          const doc = docCache.get(entry.documentId);
+
+          if (!doc) continue;
+
+          let score: number;
+
+          if (useBM25) {
+            // Use BM25 scoring
+            score = this.bm25Scorer.calculateScore(
+              tf,
+              doc.wordCount,
+              df,
+              docCount,
+            );
+          } else {
+            // Use traditional TF-IDF scoring
+            score = this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
+          }
+
           docScores.set(
             entry.documentId,
             (docScores.get(entry.documentId) || 0) + score,
           );
 
           console.log(
-            `[SEARCH] Document "${entry.documentId}" TF: ${tf}, adding score: ${score.toFixed(3)}`,
+            `[SEARCH] Document "${entry.documentId.split('/').pop()}" TF: ${tf}, DF: ${df}, DocLen: ${doc.wordCount}, ${useBM25 ? 'BM25' : 'TF-IDF'} score: ${score.toFixed(3)}`,
           );
         }
       }
@@ -382,6 +419,11 @@ const defaultConfig: SearchConfig = {
   maxFileSize: 50 * 1024 * 1024, // 50MB
   concurrency: 4,
   ukrainianStemming: true,
+
+  // BM25 scoring parameters (best practice values)
+  useBM25: true,
+  bm25K1: 1.2, // Good balance for term frequency saturation
+  bm25B: 0.75, // Standard length normalization
 };
 
 // Main factory function
