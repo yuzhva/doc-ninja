@@ -106,6 +106,10 @@ async function main() {
     const megaSearch = await createMegaSearch({
       rootDirectory: path.join(__dirname, 'documents'),
       concurrency: 4,
+      // BM25 configuration from environment variables
+      useBM25: process.env.USE_BM25 !== 'false',
+      bm25K1: Number(process.env.BM25_K1) || 1.2,
+      bm25B: Number(process.env.BM25_B) || 0.75,
     });
 
     // Get search configuration from command line or environment
@@ -165,6 +169,12 @@ async function main() {
     console.log('  More results: TOP_N=10 node test--mega-search.ts "query"');
     console.log(
       '  Disable fuzzy search: FUZZY=false node test--mega-search.ts "query"',
+    );
+    console.log(
+      '  Use TF-IDF instead of BM25: USE_BM25=false node test--mega-search.ts "query"',
+    );
+    console.log(
+      '  Adjust BM25 parameters: BM25_K1=1.5 BM25_B=0.8 node test--mega-search.ts "query"',
     );
   } catch (error) {
     console.error('❌ Error during search:', error);
