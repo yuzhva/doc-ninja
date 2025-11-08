@@ -12,6 +12,8 @@ interface SearchToken {
   term: string;
   position: number;
   normalized: string;
+  charStart: number;     // Character start position in original text
+  charEnd: number;       // Character end position in original text
 }
 
 interface DocumentIndex {
@@ -19,6 +21,15 @@ interface DocumentIndex {
   tokens: SearchToken[];
   termFrequency: Map<string, number>;
   wordCount: number;
+  originalText: string;  // Store original text for highlighting
+}
+
+interface HighlightInfo {
+  term: string;           // Original query term (stemmed)
+  originalWord: string;   // Actual word found in document
+  charStart: number;      // Character position in original text
+  charEnd: number;        // End character position
+  confidence: number;     // Match confidence (1.0 for exact, lower for fuzzy)
 }
 
 interface InvertedIndexEntry {
@@ -27,7 +38,7 @@ interface InvertedIndexEntry {
   positions: number[];
 }
 
-export interface SearchConfig {
+interface SearchConfig {
   rootDirectory: string;
   extensions: string[];
   maxFileSize: number; // in bytes
@@ -65,4 +76,5 @@ export type {
   SearchMatch,
   SearchResult,
   SearchToken,
+  HighlightInfo,  // Add this export
 };

@@ -1,6 +1,7 @@
 import path from 'path';
 
 import { MegaSearch, createMegaSearch } from './mega-search';
+import type { HighlightInfo } from './types';
 
 // Production-ready types that match the actual implementation
 type SearchOptions = {
@@ -19,6 +20,7 @@ type SearchResult = {
   };
   score: number;
   snippets: string[];
+  highlights: HighlightInfo[];
 };
 
 // Production-ready batch processing function
@@ -91,6 +93,17 @@ function formatResults(
         console.log(`  ⚠️  No snippets found.`);
       }
 
+      if (result.highlights && result.highlights.length > 0) {
+        console.log(`  🎯 Found ${result.highlights.length} highlight(s):`);
+        result.highlights.forEach((highlight, highlightIdx) => {
+          console.log(
+            `    ${highlightIdx + 1}. "${highlight.originalWord}" at chars ${highlight.charStart}-${highlight.charEnd} (${(
+              highlight.confidence * 100
+            ).toFixed(1)}% confidence)`,
+          );
+        });
+      }
+
       if (resultIdx < results.length - 1) {
         console.log(`  ${'-'.repeat(40)}`);
       }
@@ -116,7 +129,7 @@ async function main() {
     const queries =
       process.argv.slice(2).length > 0
         ? [process.argv.slice(2).join(' ')]
-        : ['начальник управління']; // default query
+        : ['начальника управління']; // default query
 
     const searchOptions: SearchOptions = {
       topN: Number(process.env.TOP_N) || 5,
