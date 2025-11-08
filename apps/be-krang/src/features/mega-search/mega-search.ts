@@ -3,13 +3,40 @@ import { DocumentExtractor } from './document-parsers';
 import { FileIndexer } from './file-indexer';
 import { levenshtein } from './fuzzy';
 import { UkrainianTextProcessor } from './text-processor';
-import { SearchConfig, HighlightInfo } from './types';
+import {
+  DocumentIndex,
+  HighlightInfo,
+  InvertedIndexEntry,
+  ProcessedSearchToken,
+  SearchConfig,
+} from './types';
 
 type SearchOptions = {
   topN?: number;
   fuzzy?: boolean;
   fuzzyThreshold?: number;
   snippetsLimit?: number | 'ALL';
+  page?: number; // Add pagination
+  pageSize?: number; // Add page size
+};
+
+type PaginatedSearchResult = {
+  results: Array<{
+    doc: any;
+    score: number;
+    snippets: string[];
+    highlights: HighlightInfo[];
+  }>;
+  pagination: PaginationInfo;
+};
+
+type PaginationInfo = {
+  currentPage: number;
+  totalPages: number;
+  totalResults: number;
+  resultsPerPage: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 };
 
 class MegaSearch {
@@ -43,7 +70,7 @@ class MegaSearch {
 
     // Calculate average document length for BM25
     if (this.config.useBM25 !== false) {
-      const docCache = this.indexer.getDocumentCache();
+      const docCache = this.indexer.getDocumentCache(); // Now synchronous
       this.bm25Scorer.calculateAverageDocLength(docCache);
     }
 
@@ -61,294 +88,382 @@ class MegaSearch {
     return this.indexer.getStats();
   }
 
+  /**
+   * Safe wrapper for getting search data with proper error handling
+   */
+  private getSearchData(): {
+    docCache: Map<string, DocumentIndex>;
+    invertedIndex: Map<string, InvertedIndexEntry[]>;
+  } {
+    try {
+      const docCache = this.indexer.getDocumentCache(); // Now synchronous
+      const invertedIndex = this.indexer.getInvertedIndex(); // Now synchronous
+
+      if (!docCache || !invertedIndex) {
+        throw new Error('Search indexes not properly initialized');
+      }
+
+      return { docCache, invertedIndex };
+    } catch (error) {
+      console.error(
+        'Failed to get search data:',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw new Error('Search indexes are not available');
+    }
+  }
+
   async search(
     query: string,
     options: SearchOptions = {},
-  ): Promise<Array<{ doc: any; score: number; snippets: string[]; highlights: HighlightInfo[] }>> {
+  ): Promise<PaginatedSearchResult> {
     const {
-      topN = 10,
+      topN = 50,
       fuzzy = true,
       fuzzyThreshold = 1,
       snippetsLimit = 3,
+      page = 1,
+      pageSize = 10,
     } = options;
 
-    console.log(`[SEARCH] Starting search for query: "${query}"`);
-    console.log(`[SEARCH] Options:`, {
-      topN,
-      fuzzy,
-      fuzzyThreshold,
-      snippetsLimit,
-    });
-    console.log(
-      `[SEARCH] Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`,
-    );
+    // console.log(`[SEARCH] Starting search for query: "${query}"`);
+    // console.log(`[SEARCH] Options:`, { topN, fuzzy, fuzzyThreshold, snippetsLimit });
+    // console.log(`[SEARCH] Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`);
 
-    // Phrase search: detect if query is wrapped in quotes
-    const phraseMatch = query.match(/^"(.*)"$/);
-    const isPhrase = !!phraseMatch;
-    const phrase = isPhrase ? phraseMatch[1] : null;
+    try {
+      // Phrase search: detect if query is wrapped in quotes
+      const phraseMatch = query.match(/^"(.*)"$/);
+      const isPhrase = !!phraseMatch;
+      const phrase = isPhrase ? phraseMatch[1] : null;
 
-    console.log(`[SEARCH] Phrase search: ${isPhrase}, phrase: "${phrase}"`);
+      // console.log(`[SEARCH] Phrase search: ${isPhrase}, phrase: "${phrase}"`);
 
-    // Tokenize and stem the query
-    const queryTokens = this.textProcessor
-      .tokenize(isPhrase ? phrase! : query)
-      .map((t) => this.textProcessor.stemWord(t.term));
-    const uniqueQueryTokens = Array.from(new Set(queryTokens));
+      // Tokenize and stem the query
+      const queryTokens = this.textProcessor
+        .tokenize(isPhrase ? phrase! : query)
+        .map((t) => this.textProcessor.stemWord(t.term));
+      const uniqueQueryTokens = Array.from(new Set(queryTokens));
 
-    console.log(`[SEARCH] Query tokens:`, queryTokens);
-    console.log(`[SEARCH] Unique query tokens:`, uniqueQueryTokens);
+      // console.log(`[SEARCH] Query tokens:`, queryTokens);
+      // console.log(`[SEARCH] Unique query tokens:`, uniqueQueryTokens);
 
-    if (uniqueQueryTokens.length === 0) {
-      console.log(`[SEARCH] No valid tokens found, returning empty results`);
-      return [];
-    }
-
-    // Get index data
-    const docCache = this.indexer.getDocumentCache();
-    const invertedIndex = this.indexer.getInvertedIndex();
-    const docCount = docCache.size;
-
-    console.log(`[SEARCH] Document cache size: ${docCache.size}`);
-    console.log(`[SEARCH] Inverted index size: ${invertedIndex.size}`);
-
-    // Score documents using BM25 or TF-IDF
-    const docScores = new Map<string, number>();
-    const useBM25 = this.config.useBM25 !== false;
-
-    for (const term of uniqueQueryTokens) {
-      let candidateTerms: string[] = [term];
-      if (fuzzy && !isPhrase) {
-        candidateTerms = Array.from(invertedIndex.keys()).filter(
-          (idxTerm) => levenshtein(term, idxTerm) <= fuzzyThreshold,
-        );
+      if (uniqueQueryTokens.length === 0) {
+        console.log(`No valid tokens found in query: "${query}"`);
+        return this.createEmptyResult(page, pageSize);
       }
 
-      console.log(
-        `[SEARCH] For term "${term}", found ${candidateTerms.length} candidate terms:`,
-        candidateTerms,
-      );
+      // Get index data safely
+      const { docCache, invertedIndex } = this.getSearchData();
+      const docCount = docCache.size;
 
-      for (const idxTerm of candidateTerms) {
-        const postings = invertedIndex.get(idxTerm);
-        if (!postings) continue;
+      if (docCount === 0) {
+        console.log('No documents found in index. Please run indexing first.');
+        return this.createEmptyResult(page, pageSize);
+      }
 
-        const df = postings.length; // Document frequency
+      // Score documents using BM25 or TF-IDF
+      const docScores = new Map<string, number>();
+      const useBM25 = this.config.useBM25 !== false;
 
-        console.log(`[SEARCH] Term "${idxTerm}" appears in ${df} documents`);
-
-        for (const entry of postings) {
-          const tf = entry.frequency; // Term frequency
-          const doc = docCache.get(entry.documentId);
-
-          if (!doc) continue;
-
-          let score: number;
-
-          if (useBM25) {
-            // Use BM25 scoring
-            score = this.bm25Scorer.calculateScore(
-              tf,
-              doc.wordCount,
-              df,
-              docCount,
-            );
-          } else {
-            // Use traditional TF-IDF scoring
-            score = this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
-          }
-
-          docScores.set(
-            entry.documentId,
-            (docScores.get(entry.documentId) || 0) + score,
-          );
-
-          console.log(
-            `[SEARCH] Document "${entry.documentId.split('/').pop()}" TF: ${tf}, DF: ${df}, DocLen: ${doc.wordCount}, ${useBM25 ? 'BM25' : 'TF-IDF'} score: ${score.toFixed(3)}`,
+      for (const term of uniqueQueryTokens) {
+        let candidateTerms: string[] = [term];
+        if (fuzzy && !isPhrase) {
+          candidateTerms = Array.from(invertedIndex.keys()).filter(
+            (idxTerm: string) => levenshtein(term, idxTerm) <= fuzzyThreshold,
           );
         }
-      }
-    }
 
-    console.log(
-      `[SEARCH] Document scores:`,
-      Array.from(docScores.entries()).map(([doc, score]) => ({
-        doc: doc.split('/').pop(),
-        score: score.toFixed(3),
-      })),
-    );
+        for (const idxTerm of candidateTerms) {
+          const postings = invertedIndex.get(idxTerm);
+          if (!postings) continue;
 
-    // If phrase search, filter to only docs containing the exact phrase
-    let filteredDocIds: string[] = Array.from(docScores.keys());
-    if (isPhrase) {
-      console.log(`[SEARCH] Filtering for phrase search...`);
-      filteredDocIds = filteredDocIds.filter((docId) => {
-        const doc = docCache.get(docId);
-        if (!doc) return false;
-        const docText = doc.tokens.map((t) => t.term).join(' ');
-        const phraseText = queryTokens.join(' ');
-        const hasPhrase = docText.includes(phraseText);
-        console.log(
-          `[SEARCH] Document "${docId.split('/').pop()}" contains phrase: ${hasPhrase}`,
-        );
-        return hasPhrase;
-      });
-      console.log(
-        `[SEARCH] After phrase filtering: ${filteredDocIds.length} documents remain`,
-      );
-    }
+          const df = postings.length; // Document frequency
 
-    // Sort and format results
-    const results = filteredDocIds
-      .map((docId) => [docId, docScores.get(docId) || 0] as [string, number])
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, topN)
-      .map(([docId, score]) => {
-        const doc = docCache.get(docId);
-        let snippets: string[] = [];
-        let highlights: HighlightInfo[] = [];
+          for (const entry of postings) {
+            const tf = entry.frequency; // Term frequency
+            const doc = docCache.get(entry.documentId);
 
-        console.log(
-          `[SNIPPETS] Processing document: "${docId.split('/').pop()}", score: ${score.toFixed(3)}`,
-        );
+            if (!doc) continue;
 
-        if (doc) {
-          // Extract highlights with character positions
-          uniqueQueryTokens.forEach((queryToken) => {
-            doc.tokens.forEach((docToken) => {
-              const docTokenStem = this.textProcessor.stemWord(docToken.term);
+            let score: number;
 
-              if (docTokenStem === queryToken) {
-                highlights.push({
-                  term: queryToken,
-                  originalWord: docToken.term,
-                  charStart: docToken.charStart,
-                  charEnd: docToken.charEnd,
-                  confidence: fuzzy ? this.calculateMatchConfidence(queryToken, docTokenStem) : 1.0,
-                });
-              }
-            });
-          });
-
-          const text = doc.tokens.map((t) => t.term).join(' ');
-          console.log(
-            `[SNIPPETS] Document text length: ${text.length} characters`,
-          );
-          console.log(
-            `[SNIPPETS] First 100 chars of text: "${text.substring(0, 100)}..."`,
-          );
-
-          if (isPhrase) {
-            const phraseText = queryTokens.join(' ');
-            console.log(`[SNIPPETS] Looking for phrase: "${phraseText}"`);
-
-            // Find all occurrences of the phrase
-            let idx = 0;
-            let occurrenceCount = 0;
-            while ((idx = text.indexOf(phraseText, idx)) !== -1) {
-              occurrenceCount++;
-              let rawSnippet = text.substring(
-                Math.max(0, idx - 30),
-                idx + phraseText.length + 40,
+            if (useBM25) {
+              score = this.bm25Scorer.calculateScore(
+                tf,
+                doc.wordCount,
+                df,
+                docCount,
               );
-              rawSnippet = rawSnippet.replace(
-                new RegExp(phraseText, 'gi'),
-                (match) => `<b>${match}</b>`,
-              );
-              snippets.push(rawSnippet + '...');
-              idx += phraseText.length;
-
-              console.log(
-                `[SNIPPETS] Found phrase occurrence #${occurrenceCount} at position ${idx}`,
-              );
+            } else {
+              score = this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
             }
-            console.log(
-              `[SNIPPETS] Total phrase occurrences found: ${occurrenceCount}`,
-            );
-          } else {
-            // For each query token, find all occurrences by matching stems
-            const snippetSet = new Set<string>();
 
-            console.log(
-              `[SNIPPETS] Looking for stemmed tokens: ${uniqueQueryTokens.join(', ')}`,
-            );
-
-            uniqueQueryTokens.forEach((queryToken) => {
-              let tokenOccurrences = 0;
-
-              // Find all document tokens that stem to this query token
-              doc.tokens.forEach((docToken, tokenIndex) => {
-                const docTokenStem = this.textProcessor.stemWord(docToken.term);
-                console.log(
-                  `[SNIPPETS] Checking token "${docToken.term}" (stem: "${docTokenStem}") against query token "${queryToken}"`,
-                );
-
-                if (docTokenStem === queryToken) {
-                  tokenOccurrences++;
-
-                  // Create snippet using position in the token array
-                  const startPos = Math.max(0, tokenIndex - 8);
-                  const endPos = Math.min(doc.tokens.length, tokenIndex + 12);
-                  const contextTokens = doc.tokens.slice(startPos, endPos);
-
-                  let rawSnippet = contextTokens.map((t) => t.term).join(' ');
-
-                  // Highlight the actual word found in the document
-                  rawSnippet = rawSnippet.replace(
-                    new RegExp(`\\b${docToken.term}\\b`, 'gi'),
-                    (m) => `<b>${m}</b>`,
-                  );
-
-                  snippetSet.add(rawSnippet + '...');
-
-                  console.log(
-                    `[SNIPPETS] Found match: "${docToken.term}" at position ${tokenIndex}, created snippet`,
-                  );
-                }
-              });
-
-              console.log(
-                `[SNIPPETS] Query token "${queryToken}" matched ${tokenOccurrences} document tokens`,
-              );
-            });
-
-            snippets = Array.from(snippetSet);
-            console.log(
-              `[SNIPPETS] Generated ${snippets.length} unique snippets from token matches`,
+            docScores.set(
+              entry.documentId,
+              (docScores.get(entry.documentId) || 0) + score,
             );
           }
-
-          // Limit snippets if not 'ALL'
-          const originalSnippetCount = snippets.length;
-          if (snippetsLimit !== 'ALL' && typeof snippetsLimit === 'number') {
-            snippets = snippets.slice(0, snippetsLimit);
-          }
-
-          console.log(
-            `[SNIPPETS] Final snippet count: ${snippets.length} (originally ${originalSnippetCount})`,
-          );
-          if (snippets.length > 0) {
-            console.log(
-              `[SNIPPETS] Sample snippet: "${snippets[0].substring(0, 100)}..."`,
-            );
-          }
-        } else {
-          console.log(`[SNIPPETS] No document found in cache for: "${docId}"`);
         }
+      }
 
-        return {
-          doc: doc?.metadata,
-          score,
-          snippets,
-          highlights,
-        };
-      });
+      // If phrase search, filter to only docs containing the exact phrase
+      let filteredDocIds: string[] = Array.from(docScores.keys());
+      if (isPhrase) {
+        filteredDocIds = filteredDocIds.filter((docId) => {
+          const doc = docCache.get(docId);
+          if (!doc) return false;
+          const docText = doc.tokens
+            .map((t: ProcessedSearchToken) => t.term)
+            .join(' ');
+          const phraseText = queryTokens.join(' ');
+          return docText.includes(phraseText);
+        });
+      }
 
-    console.log(`[SEARCH] Returning ${results.length} results`);
-    return results;
+      // Calculate pagination
+      const totalResults = filteredDocIds.length;
+      const totalPages = Math.ceil(totalResults / pageSize);
+      const startIndex = (page - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
+
+      // Sort and paginate results
+      const sortedResults = filteredDocIds
+        .map((docId) => [docId, docScores.get(docId) || 0] as [string, number])
+        .sort((a, b) => b[1] - a[1]);
+
+      // Apply pagination
+      const paginatedResults = sortedResults
+        .slice(startIndex, endIndex)
+        .map(([docId, score]) => {
+          return this.processSearchResult(
+            docId,
+            score,
+            docCache,
+            uniqueQueryTokens,
+            fuzzy,
+            isPhrase,
+            queryTokens,
+            snippetsLimit,
+          );
+        });
+
+      const pagination: PaginationInfo = {
+        currentPage: page,
+        totalPages,
+        totalResults,
+        resultsPerPage: pageSize,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      };
+
+      console.log(
+        `Found ${totalResults} results, returning page ${page}/${totalPages} (${paginatedResults.length} results)`,
+      );
+
+      return {
+        results: paginatedResults,
+        pagination,
+      };
+    } catch (error) {
+      console.error(
+        `Search failed for query "${query}":`,
+        error instanceof Error ? error.message : String(error),
+      );
+      throw new Error(
+        `Search operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
 
-  private calculateMatchConfidence(queryTerm: string, matchedTerm: string): number {
+  /**
+   * Helper method to create empty result with proper pagination
+   */
+  private createEmptyResult(
+    page: number,
+    pageSize: number,
+  ): PaginatedSearchResult {
+    return {
+      results: [],
+      pagination: {
+        currentPage: page,
+        totalPages: 0,
+        totalResults: 0,
+        resultsPerPage: pageSize,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    };
+  }
+
+  /**
+   * Process individual search result with proper error handling
+   */
+  private processSearchResult(
+    docId: string,
+    score: number,
+    docCache: Map<string, DocumentIndex>,
+    uniqueQueryTokens: string[],
+    fuzzy: boolean,
+    isPhrase: boolean,
+    queryTokens: string[],
+    snippetsLimit: number | 'ALL',
+  ): {
+    doc: any;
+    score: number;
+    snippets: string[];
+    highlights: HighlightInfo[];
+  } {
+    const doc = docCache.get(docId);
+    let snippets: string[] = [];
+    let highlights: HighlightInfo[] = [];
+
+    if (doc) {
+      try {
+        // Extract highlights with character positions
+        uniqueQueryTokens.forEach((queryToken) => {
+          doc.tokens.forEach((docToken: ProcessedSearchToken) => {
+            const docTokenStem = this.textProcessor.stemWord(docToken.term);
+
+            if (docTokenStem === queryToken) {
+              highlights.push({
+                term: queryToken,
+                originalWord: docToken.term,
+                charStart: docToken.charStart,
+                charEnd: docToken.charEnd,
+                confidence: fuzzy
+                  ? this.calculateMatchConfidence(queryToken, docTokenStem)
+                  : 1.0,
+              });
+            }
+          });
+        });
+
+        const text = doc.tokens
+          .map((t: ProcessedSearchToken) => t.term)
+          .join(' ');
+
+        if (isPhrase) {
+          snippets = this.extractPhraseSnippets(text, queryTokens);
+        } else {
+          snippets = this.extractTokenSnippets(doc, uniqueQueryTokens);
+        }
+
+        // Limit snippets if not 'ALL'
+        if (snippetsLimit !== 'ALL' && typeof snippetsLimit === 'number') {
+          snippets = snippets.slice(0, snippetsLimit);
+        }
+      } catch (error) {
+        console.error(
+          `Error processing snippets for document ${doc.metadata.fileName}:`,
+          error instanceof Error ? error.message : String(error),
+        );
+        // Continue with empty snippets rather than failing
+      }
+    } else {
+      console.warn(`Document not found in cache: "${docId}"`);
+    }
+
+    return {
+      doc: doc?.metadata,
+      score,
+      snippets,
+      highlights,
+    };
+  }
+
+  /**
+   * Extract snippets for phrase search
+   */
+  private extractPhraseSnippets(text: string, queryTokens: string[]): string[] {
+    const snippets: string[] = [];
+    const phraseText = queryTokens.join(' ');
+
+    let idx = 0;
+    while ((idx = text.indexOf(phraseText, idx)) !== -1) {
+      let rawSnippet = text.substring(
+        Math.max(0, idx - 30),
+        idx + phraseText.length + 40,
+      );
+      rawSnippet = rawSnippet.replace(
+        new RegExp(phraseText, 'gi'),
+        (match: string) => `<b>${match}</b>`,
+      );
+      snippets.push(rawSnippet + '...');
+      idx += phraseText.length;
+    }
+
+    return snippets;
+  }
+
+  /**
+   * Extract snippets for token-based search with paragraph awareness
+   */
+  private extractTokenSnippets(
+    doc: DocumentIndex,
+    uniqueQueryTokens: string[],
+  ): string[] {
+    const snippetSet = new Set<string>();
+
+    uniqueQueryTokens.forEach((queryToken) => {
+      doc.tokens.forEach(
+        (docToken: ProcessedSearchToken, tokenIndex: number) => {
+          const docTokenStem = this.textProcessor.stemWord(docToken.term);
+
+          if (docTokenStem === queryToken) {
+            // Find which paragraph contains this token
+            const containingParagraph = doc.paragraphs?.find(
+              (p) => tokenIndex >= p.tokenStart && tokenIndex < p.tokenEnd,
+            );
+
+            if (containingParagraph) {
+              // Use paragraph as context (more natural than token windows)
+              let rawSnippet = containingParagraph.content;
+
+              // Highlight the matched term
+              rawSnippet = rawSnippet.replace(
+                new RegExp(`\\b${docToken.term}\\b`, 'gi'),
+                (m: string) => `<b>${m}</b>`,
+              );
+
+              // Truncate if paragraph is too long
+              if (rawSnippet.length > 300) {
+                const matchPos = rawSnippet
+                  .toLowerCase()
+                  .indexOf(docToken.term.toLowerCase());
+                const start = Math.max(0, matchPos - 150);
+                const end = Math.min(rawSnippet.length, matchPos + 150);
+                rawSnippet = '...' + rawSnippet.substring(start, end) + '...';
+              }
+
+              snippetSet.add(rawSnippet);
+            } else {
+              // Fallback to token-based context if no paragraph info
+              const startPos = Math.max(0, tokenIndex - 8);
+              const endPos = Math.min(doc.tokens.length, tokenIndex + 12);
+              const contextTokens = doc.tokens.slice(startPos, endPos);
+
+              let rawSnippet = contextTokens
+                .map((t: ProcessedSearchToken) => t.term)
+                .join(' ');
+              rawSnippet = rawSnippet.replace(
+                new RegExp(`\\b${docToken.term}\\b`, 'gi'),
+                (m: string) => `<b>${m}</b>`,
+              );
+
+              snippetSet.add(rawSnippet + '...');
+            }
+          }
+        },
+      );
+    });
+
+    return Array.from(snippetSet);
+  }
+
+  private calculateMatchConfidence(
+    queryTerm: string,
+    matchedTerm: string,
+  ): number {
     if (queryTerm === matchedTerm) return 1.0;
 
     // Use Levenshtein distance for confidence calculation
@@ -497,3 +612,5 @@ export {
   MegaSearch,
   testMegaSearch,
 };
+
+export type { SearchOptions };

@@ -1,6 +1,14 @@
+import {
+  englishStopWords,
+  normalizeEnglish,
+  stemEnglish,
+} from './lang/english';
+import {
+  lemmatizeUkrainian,
+  normalizeUkrainian,
+  ukrainianStopWords,
+} from './lang/ukrainian';
 import { SearchToken } from './types';
-import { normalizeUkrainian, lemmatizeUkrainian, ukrainianStopWords } from './lang/ukrainian';
-import { normalizeEnglish, stemEnglish, englishStopWords } from './lang/english';
 
 class UkrainianTextProcessor {
   private readonly ukrainianAlphabet = /[а-яїієґ]/i;
@@ -14,39 +22,28 @@ class UkrainianTextProcessor {
   }
 
   tokenize(text: string): SearchToken[] {
-    const normalized = this.normalize(text);
     const tokens: SearchToken[] = [];
 
-    // Track both normalized and original text positions
-    let originalTextPos = 0;
-    let normalizedPos = 0;
+    // Use regex that properly handles Ukrainian characters
+    const regex = /[\u0400-\u04FFa-zA-Z\u0100-\u017F''-]+/g;
+    let match;
 
-    // Split normalized text but keep track of original positions
-    const words = normalized.split(' ');
+    while ((match = regex.exec(text)) !== null) {
+      const term = match[0];
+      const normalizedTerm = this.normalize(term);
 
-    for (const word of words) {
-      if (word.length > 1 &&
-          !this.isStopWord(word) &&
-          this.combinedAlphabet.test(word)) {
-
-        // Find this word's position in the original text
-        const wordStartInOriginal = text.toLowerCase().indexOf(word.toLowerCase(), originalTextPos);
-        const wordEndInOriginal = wordStartInOriginal + word.length;
-
+      if (
+        normalizedTerm.length > 1 &&
+        !this.isStopWord(normalizedTerm) &&
+        this.combinedAlphabet.test(normalizedTerm)
+      ) {
         tokens.push({
-          term: word,
+          term: normalizedTerm,
           position: tokens.length,
-          normalized: word,
-          charStart: wordStartInOriginal >= 0 ? wordStartInOriginal : originalTextPos,
-          charEnd: wordStartInOriginal >= 0 ? wordEndInOriginal : originalTextPos + word.length
+          normalized: normalizedTerm,
+          charStart: match.index,
+          charEnd: match.index + term.length,
         });
-
-        // Update position tracking
-        if (wordStartInOriginal >= 0) {
-          originalTextPos = wordEndInOriginal;
-        } else {
-          originalTextPos += word.length + 1; // Estimate if not found
-        }
       }
     }
 
@@ -135,6 +132,76 @@ class UkrainianTextProcessor {
 
     const distance = matrix[len1][len2];
     return 1 - distance / Math.max(len1, len2);
+  }
+
+  /**
+   * Extract paragraphs from text while preserving structure
+   */
+  extractParagraphs(
+    text: string,
+  ): Array<{ content: string; startPos: number; endPos: number }> {
+    const paragraphs: Array<{
+      content: string;
+      startPos: number;
+      endPos: number;
+    }> = [];
+
+    // Split by double newlines to get paragraphs
+    const paragraphTexts = text.split(/\n\s*\n/);
+    let currentPos = 0;
+
+    for (const paragraphText of paragraphTexts) {
+      const trimmed = paragraphText.trim();
+      if (trimmed.length > 0) {
+        const startPos = text.indexOf(trimmed, currentPos);
+        const endPos = startPos + trimmed.length;
+
+        paragraphs.push({
+          content: trimmed,
+          startPos: startPos >= 0 ? startPos : currentPos,
+          endPos: startPos >= 0 ? endPos : currentPos + trimmed.length,
+        });
+
+        currentPos = endPos;
+      }
+    }
+
+    return paragraphs;
+  }
+
+  /**
+   * Tokenize text while tracking paragraph boundaries
+   */
+  tokenizeWithParagraphs(text: string): {
+    tokens: SearchToken[];
+    paragraphs: Array<{
+      content: string;
+      startPos: number;
+      endPos: number;
+      tokenStart: number;
+      tokenEnd: number;
+    }>;
+  } {
+    const tokens = this.tokenize(text);
+    const paragraphs = this.extractParagraphs(text);
+
+    // Map paragraph boundaries to token indices
+    const enhancedParagraphs = paragraphs.map((paragraph) => {
+      const tokenStart = tokens.findIndex(
+        (token) => token.charStart >= paragraph.startPos,
+      );
+      const tokenEnd = tokens.findIndex(
+        (token) => token.charEnd > paragraph.endPos,
+      );
+
+      return {
+        ...paragraph,
+        tokenStart: tokenStart >= 0 ? tokenStart : 0,
+        tokenEnd: tokenEnd >= 0 ? tokenEnd : tokens.length,
+      };
+    });
+
+    return { tokens, paragraphs: enhancedParagraphs };
   }
 }
 

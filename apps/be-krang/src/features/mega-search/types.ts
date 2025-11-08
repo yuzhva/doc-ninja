@@ -12,24 +12,42 @@ interface SearchToken {
   term: string;
   position: number;
   normalized: string;
-  charStart: number;     // Character start position in original text
-  charEnd: number;       // Character end position in original text
+  charStart: number; // Character start position in original text
+  charEnd: number; // Character end position in original text
+}
+
+// Add a more specific token type for better type safety
+interface ProcessedSearchToken {
+  term: string;
+  position: number;
+  normalized: string;
+  charStart: number;
+  charEnd: number;
+}
+
+interface ParagraphInfo {
+  content: string;
+  startPos: number;
+  endPos: number;
+  tokenStart: number;
+  tokenEnd: number;
 }
 
 interface DocumentIndex {
   metadata: DocumentMetadata;
-  tokens: SearchToken[];
+  tokens: ProcessedSearchToken[]; // Use more specific type
   termFrequency: Map<string, number>;
   wordCount: number;
-  originalText: string;  // Store original text for highlighting
+  originalText: string; // Store original text for highlighting
+  paragraphs?: ParagraphInfo[]; // Add paragraph structure
 }
 
 interface HighlightInfo {
-  term: string;           // Original query term (stemmed)
-  originalWord: string;   // Actual word found in document
-  charStart: number;      // Character position in original text
-  charEnd: number;        // End character position
-  confidence: number;     // Match confidence (1.0 for exact, lower for fuzzy)
+  term: string; // Original query term (stemmed)
+  originalWord: string; // Actual word found in document
+  charStart: number; // Character position in original text
+  charEnd: number; // End character position
+  confidence: number; // Match confidence (1.0 for exact, lower for fuzzy)
 }
 
 interface InvertedIndexEntry {
@@ -68,6 +86,32 @@ interface SearchMatch {
   context: string;
 }
 
+interface PaginationInfo {
+  currentPage: number;
+  totalPages: number;
+  totalResults: number;
+  resultsPerPage: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+interface PaginatedSearchResult {
+  results: Array<{
+    doc: any;
+    score: number;
+    snippets: string[];
+    highlights: HighlightInfo[];
+  }>;
+  pagination: PaginationInfo;
+}
+
+// Add error handling wrapper type
+interface SafeSearchResult<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
 export type {
   DocumentIndex,
   DocumentMetadata,
@@ -76,5 +120,10 @@ export type {
   SearchMatch,
   SearchResult,
   SearchToken,
-  HighlightInfo,  // Add this export
+  ProcessedSearchToken, // Export the new type
+  ParagraphInfo, // Export new type
+  HighlightInfo,
+  PaginationInfo,
+  PaginatedSearchResult,
+  SafeSearchResult, // Export error handling type
 };

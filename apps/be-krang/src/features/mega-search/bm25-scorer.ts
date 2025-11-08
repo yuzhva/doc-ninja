@@ -1,11 +1,11 @@
-import type { DocumentIndex, InvertedIndexEntry } from './types';
+import type { DocumentIndex } from './types';
 
-export interface BM25Config {
+interface BM25Config {
   k1: number; // Controls term frequency saturation (typically 1.0-2.0)
   b: number; // Controls length normalization (0.0-1.0)
 }
 
-export class BM25Scorer {
+class BM25Scorer {
   private avgDocLength: number = 0;
 
   constructor(private config: BM25Config) {}
@@ -80,3 +80,6 @@ export class BM25Scorer {
     return `BM25(k1=${this.config.k1}, b=${this.config.b})`;
   }
 }
+
+export { BM25Scorer };
+export type { BM25Config };

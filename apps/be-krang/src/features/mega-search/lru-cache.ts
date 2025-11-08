@@ -1,4 +1,4 @@
-export class LRUCache<K, V> {
+class LRUCache<K, V> {
   private cache = new Map<K, V>();
   constructor(private maxSize: number) {}
 
@@ -15,7 +15,11 @@ export class LRUCache<K, V> {
     this.cache.set(key, value);
     if (this.cache.size > this.maxSize) {
       const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
     }
   }
 }
+
+export { LRUCache };
