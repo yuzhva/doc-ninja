@@ -11,12 +11,17 @@ import {
   InvertedIndexEntry,
   SearchConfig,
 } from './types';
+import { LRUCache } from './lru-cache';
 
 export class FileIndexer {
   private textProcessor = new UkrainianTextProcessor();
   private documentExtractor = new DocumentExtractor();
   private documentCache = new Map<string, DocumentIndex>();
   private invertedIndex = new Map<string, InvertedIndexEntry[]>();
+
+  // Add LRU caches
+  private documentLRU = new LRUCache<string, DocumentIndex>(100); // Cache 100 most recent docs
+  private textLRU = new LRUCache<string, string>(50); // Cache 50 most recent text extractions
 
   constructor(private config: SearchConfig) {}
 
@@ -47,6 +52,10 @@ export class FileIndexer {
   }
 
   async extractTextFromFile(filePath: string): Promise<string> {
+    // Check LRU cache first
+    const cached = this.textLRU.get(filePath);
+    if (cached) return cached;
+
     const txtPath = this.getTextCachePath(filePath);
     // Ensure directory exists
     await fs.promises.mkdir(path.dirname(txtPath), { recursive: true });
@@ -63,6 +72,8 @@ export class FileIndexer {
       const extractor = new (require('./document-parsers').DocumentExtractor)();
       const text = await extractor.extractText(filePath);
       await promisify(fs.writeFile)(txtPath, text, 'utf8');
+      // Store in LRU cache before returning
+      this.textLRU.set(filePath, text);
       return text;
     } catch (e) {
       // fallback to extraction if cache fails
@@ -160,13 +171,14 @@ export class FileIndexer {
         : token.normalized;
       termFrequency.set(term, (termFrequency.get(term) || 0) + 1);
     });
-    // --- Language detection ---
+
     const language = this.textProcessor.detectLanguage(text);
     const documentIndex: DocumentIndex = {
       metadata: { ...metadata, indexed: true, indexedAt: Date.now(), language },
       tokens,
       termFrequency,
       wordCount: tokens.length,
+      originalText: text,  // Store original text for highlighting
     };
     this.documentCache.set(metadata.filePath, documentIndex);
     this.updateInvertedIndex(metadata.filePath, documentIndex);
@@ -384,7 +396,17 @@ export class FileIndexer {
   }
 
   getDocumentCache(): Map<string, DocumentIndex> {
-    return new Map(this.documentCache);
+    // Enhanced to use LRU for frequently accessed documents
+    const result = new Map(this.documentCache);
+
+    // Add LRU cached items
+    for (const [key, value] of this.documentLRU['cache']) {
+      if (!result.has(key)) {
+        result.set(key, value);
+      }
+    }
+
+    return result;
   }
 
   getStats() {

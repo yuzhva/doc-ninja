@@ -15,18 +15,42 @@ class UkrainianTextProcessor {
 
   tokenize(text: string): SearchToken[] {
     const normalized = this.normalize(text);
-    const words = normalized.split(' ').filter(
-      (word) =>
-        word.length > 1 &&
-        !this.isStopWord(word) &&
-        this.combinedAlphabet.test(word),
-    );
+    const tokens: SearchToken[] = [];
 
-    return words.map((term, index) => ({
-      term: term,
-      position: index,
-      normalized: term,
-    }));
+    // Track both normalized and original text positions
+    let originalTextPos = 0;
+    let normalizedPos = 0;
+
+    // Split normalized text but keep track of original positions
+    const words = normalized.split(' ');
+
+    for (const word of words) {
+      if (word.length > 1 &&
+          !this.isStopWord(word) &&
+          this.combinedAlphabet.test(word)) {
+
+        // Find this word's position in the original text
+        const wordStartInOriginal = text.toLowerCase().indexOf(word.toLowerCase(), originalTextPos);
+        const wordEndInOriginal = wordStartInOriginal + word.length;
+
+        tokens.push({
+          term: word,
+          position: tokens.length,
+          normalized: word,
+          charStart: wordStartInOriginal >= 0 ? wordStartInOriginal : originalTextPos,
+          charEnd: wordStartInOriginal >= 0 ? wordEndInOriginal : originalTextPos + word.length
+        });
+
+        // Update position tracking
+        if (wordStartInOriginal >= 0) {
+          originalTextPos = wordEndInOriginal;
+        } else {
+          originalTextPos += word.length + 1; // Estimate if not found
+        }
+      }
+    }
+
+    return tokens;
   }
 
   private isStopWord(word: string): boolean {

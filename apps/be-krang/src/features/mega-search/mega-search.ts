@@ -3,7 +3,7 @@ import { DocumentExtractor } from './document-parsers';
 import { FileIndexer } from './file-indexer';
 import { levenshtein } from './fuzzy';
 import { UkrainianTextProcessor } from './text-processor';
-import { SearchConfig } from './types';
+import { SearchConfig, HighlightInfo } from './types';
 
 type SearchOptions = {
   topN?: number;
@@ -64,7 +64,7 @@ class MegaSearch {
   async search(
     query: string,
     options: SearchOptions = {},
-  ): Promise<Array<{ doc: any; score: number; snippets: string[] }>> {
+  ): Promise<Array<{ doc: any; score: number; snippets: string[]; highlights: HighlightInfo[] }>> {
     const {
       topN = 10,
       fuzzy = true,
@@ -206,12 +206,30 @@ class MegaSearch {
       .map(([docId, score]) => {
         const doc = docCache.get(docId);
         let snippets: string[] = [];
+        let highlights: HighlightInfo[] = [];
 
         console.log(
           `[SNIPPETS] Processing document: "${docId.split('/').pop()}", score: ${score.toFixed(3)}`,
         );
 
         if (doc) {
+          // Extract highlights with character positions
+          uniqueQueryTokens.forEach((queryToken) => {
+            doc.tokens.forEach((docToken) => {
+              const docTokenStem = this.textProcessor.stemWord(docToken.term);
+
+              if (docTokenStem === queryToken) {
+                highlights.push({
+                  term: queryToken,
+                  originalWord: docToken.term,
+                  charStart: docToken.charStart,
+                  charEnd: docToken.charEnd,
+                  confidence: fuzzy ? this.calculateMatchConfidence(queryToken, docTokenStem) : 1.0,
+                });
+              }
+            });
+          });
+
           const text = doc.tokens.map((t) => t.term).join(' ');
           console.log(
             `[SNIPPETS] Document text length: ${text.length} characters`,
@@ -318,11 +336,26 @@ class MegaSearch {
           console.log(`[SNIPPETS] No document found in cache for: "${docId}"`);
         }
 
-        return { doc: doc?.metadata, score, snippets };
+        return {
+          doc: doc?.metadata,
+          score,
+          snippets,
+          highlights,
+        };
       });
 
     console.log(`[SEARCH] Returning ${results.length} results`);
     return results;
+  }
+
+  private calculateMatchConfidence(queryTerm: string, matchedTerm: string): number {
+    if (queryTerm === matchedTerm) return 1.0;
+
+    // Use Levenshtein distance for confidence calculation
+    const distance = levenshtein(queryTerm, matchedTerm);
+    const maxLength = Math.max(queryTerm.length, matchedTerm.length);
+
+    return Math.max(0, (maxLength - distance) / maxLength);
   }
 
   async testDocumentParsing(): Promise<void> {
