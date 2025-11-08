@@ -16,6 +16,7 @@ assets--prod
 !.env.example
 
 # optional: those are generated files
+**/assets/**/.cache
 **/assets/**/docs-for-nlp
 **/assets/**/nlp-index
 **/assets/**/nlp-output

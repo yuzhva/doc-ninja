@@ -5,45 +5,115 @@
  *  - remove punctuation except Cyrillic/Latin letters, digits and spaces,
  *  - normalize some Ukrainian characters (optional mapping)
  */
-export function normalizeUkrainian(s: string): string {
-  if (!s) return '';
-  let t = s.toLowerCase();
-  t = t.replace(/\u00A0/g, ' ').replace(/\u2011/g, '-').replace(/\s+/g, ' ');
-  t = t.replace(/ё/g, 'е');
-  t = t.replace(/[^0-9\p{L}\s\-']/gu, ' ');
-  t = t.replace(/\s+/g, ' ').trim();
-  return t;
+function normalizeUkrainian(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\u0400-\u04FFa-zA-Z\u0100-\u017F\s'-]/g, '')
+    .trim();
 }
 
 /**
  * Heuristic lemmatizer for Ukrainian words.
  * Covers common noun/adjective endings.
  */
-export function lemmatizeUkrainian(token: string): string {
-  if (!token) return token;
-  if (/^\d+$/.test(token)) return token;
+function lemmatizeUkrainian(word: string): string {
+  let stem = word;
 
-  const lower = token;
-  if (/(ого|ього|ому|их|ими)$/u.test(lower)) {
-    return lower.replace(/(ого|ього)$/u, 'ий');
+  // General stemming rules
+  if (word.endsWith('ння') || word.endsWith('ття')) {
+    stem = word.slice(0, -3) + 'нн';
+  } else if (word.endsWith('ання') || word.endsWith('іння')) {
+    stem = word.slice(0, -4) + 'нн';
+  } else if (
+    word.endsWith('ський') ||
+    word.endsWith('ська') ||
+    word.endsWith('ське')
+  ) {
+    stem = word.slice(0, -4);
+  } else if (
+    word.endsWith('ому') ||
+    word.endsWith('ій') ||
+    word.endsWith('ою')
+  ) {
+    stem = word.slice(0, -2);
+  } else if (
+    word.endsWith('і') ||
+    word.endsWith('у') ||
+    word.endsWith('а') ||
+    word.endsWith('е') ||
+    word.endsWith('я') ||
+    word.endsWith('ю') ||
+    word.endsWith('о')
+  ) {
+    if (word.length > 3) {
+      stem = word.slice(0, -1);
+    }
   }
-  if (/[ая]$/u.test(lower) && lower.length > 3) {
-    return lower.replace(/[ая]$/u, '');
-  }
-  if (/[ую]$/u.test(lower) && lower.length > 3) {
-    return lower.replace(/[ую]$/u, '');
-  }
-  if (/(ом|ем|єм|ою)$/u.test(lower) && lower.length > 4) {
-    return lower.replace(/(ом|ем|єм|ою)$/u, '');
-  }
-  if (lower.endsWith('ь') && lower.length > 3) {
-    return lower.slice(0, -1);
-  }
-  return lower;
+
+  return stem;
 }
 
-export const ukrainianStopWords = new Set([
-  'і', 'в', 'на', 'з', 'за', 'до', 'по', 'від', 'для', 'про', 'під', 'над', 'між', 'через',
-  'це', 'той', 'та', 'те', 'який', 'яка', 'яке', 'що', 'хто', 'де', 'коли', 'як',
-  'але', 'або', 'якщо', 'тому', 'щоб', 'після', 'перед', 'біля', 'навколо'
+const ukrainianStopWords = new Set([
+  'а',
+  'але',
+  'і',
+  'та',
+  'або',
+  'чи',
+  'не',
+  'ні',
+  'на',
+  'в',
+  'у',
+  'з',
+  'до',
+  'від',
+  'за',
+  'під',
+  'над',
+  'про',
+  'для',
+  'як',
+  'що',
+  'це',
+  'той',
+  'та',
+  'те',
+  'який',
+  'яка',
+  'яке',
+  'які',
+  'він',
+  'вона',
+  'воно',
+  'вони',
+  'я',
+  'ти',
+  'ми',
+  'ви',
+  'мене',
+  'тебе',
+  'його',
+  'її',
+  'нас',
+  'вас',
+  'їх',
+  'буде',
+  'був',
+  'була',
+  'було',
+  'були',
+  'є',
+  'бути',
+  'мати',
+  'має',
+  'мають',
+  'мав',
+  'мала',
+  'мало',
+  'мали',
 ]);
+
+export { lemmatizeUkrainian, normalizeUkrainian, ukrainianStopWords };

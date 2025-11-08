@@ -1,7 +1,8 @@
 import path from 'path';
 
-import { MegaSearch, createMegaSearch } from './mega-search';
-import type { HighlightInfo } from './types';
+import type { PaginatedSearchResult } from '../features/mega-search';
+import { MegaSearch, createMegaSearch } from '../features/mega-search';
+import { runtimePathById } from '../supplement/path.mts';
 
 // Production-ready types that match the actual implementation
 type SearchOptions = {
@@ -9,18 +10,8 @@ type SearchOptions = {
   fuzzy?: boolean;
   fuzzyThreshold?: number;
   snippetsLimit?: number | 'ALL';
-};
-
-type SearchResult = {
-  doc?: {
-    fileName: string;
-    filePath: string;
-    language: string;
-    [key: string]: any;
-  };
-  score: number;
-  snippets: string[];
-  highlights: HighlightInfo[];
+  page?: number;
+  pageSize?: number;
 };
 
 // Production-ready batch processing function
@@ -28,9 +19,10 @@ async function batchSearch(
   megaSearch: MegaSearch,
   queries: string[],
   options: SearchOptions & { batchSize?: number } = {},
-): Promise<Array<{ query: string; results: SearchResult[] }>> {
+): Promise<Array<{ query: string; results: PaginatedSearchResult }>> {
   const { batchSize = 16, ...searchOptions } = options;
-  const allResults: Array<{ query: string; results: SearchResult[] }> = [];
+  const allResults: Array<{ query: string; results: PaginatedSearchResult }> =
+    [];
 
   console.log(`[BATCH] Starting batch search for ${queries.length} queries`);
   console.log(
@@ -63,20 +55,23 @@ async function batchSearch(
 
 // Production-ready result formatter
 function formatResults(
-  queryResults: Array<{ query: string; results: SearchResult[] }>,
+  queryResults: Array<{ query: string; results: PaginatedSearchResult }>,
 ) {
   queryResults.forEach(({ query, results }, queryIdx) => {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`Query #${queryIdx + 1}: "${query}"`);
-    console.log(`Found ${results.length} result(s)`);
+    console.log(
+      `Found ${results.results.length} result(s) on page ${results.pagination.currentPage}/${results.pagination.totalPages}`,
+    );
+    console.log(`Total results: ${results.pagination.totalResults}`);
     console.log(`${'='.repeat(60)}`);
 
-    if (results.length === 0) {
+    if (results.results.length === 0) {
       console.log('No results found for this query.');
       return;
     }
 
-    results.forEach((result, resultIdx) => {
+    results.results.forEach((result, resultIdx) => {
       console.log(`\nResult #${resultIdx + 1}:`);
       console.log(`  📄 File: ${result.doc?.fileName || 'Unknown'}`);
       console.log(`  📊 Score: ${result.score.toFixed(3)}`);
@@ -104,10 +99,25 @@ function formatResults(
         });
       }
 
-      if (resultIdx < results.length - 1) {
+      if (resultIdx < results.results.length - 1) {
         console.log(`  ${'-'.repeat(40)}`);
       }
     });
+
+    // Display pagination info
+    if (results.pagination.totalPages > 1) {
+      console.log(`\n📄 Pagination Info:`);
+      console.log(
+        `  Current page: ${results.pagination.currentPage}/${results.pagination.totalPages}`,
+      );
+      console.log(`  Results per page: ${results.pagination.resultsPerPage}`);
+      console.log(
+        `  Has next page: ${results.pagination.hasNextPage ? 'Yes' : 'No'}`,
+      );
+      console.log(
+        `  Has previous page: ${results.pagination.hasPreviousPage ? 'Yes' : 'No'}`,
+      );
+    }
   });
 }
 
@@ -117,7 +127,7 @@ async function main() {
     console.log('🚀 Initializing Mega Search System...');
 
     const megaSearch = await createMegaSearch({
-      rootDirectory: path.join(__dirname, 'documents'),
+      rootDirectory: path.join(runtimePathById.assets, 'demo--mega-search'),
       concurrency: 4,
       // BM25 configuration from environment variables
       useBM25: process.env.USE_BM25 !== 'false',
@@ -132,13 +142,15 @@ async function main() {
         : ['начальника управління']; // default query
 
     const searchOptions: SearchOptions = {
-      topN: Number(process.env.TOP_N) || 5,
+      topN: Number(process.env.TOP_N) || 50,
       fuzzy: process.env.FUZZY !== 'false', // default true
       fuzzyThreshold: Number(process.env.FUZZY_THRESHOLD) || 1,
       snippetsLimit:
         process.env.SNIPPETS_LIMIT === 'ALL'
           ? 'ALL'
           : Number(process.env.SNIPPETS_LIMIT) || 3,
+      page: Number(process.env.PAGE) || 1,
+      pageSize: Number(process.env.PAGE_SIZE) || 10,
     };
 
     console.log('🔍 Search Configuration:');
@@ -189,14 +201,14 @@ async function main() {
     console.log(
       '  Adjust BM25 parameters: BM25_K1=1.5 BM25_B=0.8 node test--mega-search.ts "query"',
     );
+    console.log(
+      '  Pagination: PAGE=2 PAGE_SIZE=5 node test--mega-search.ts "query"',
+    );
   } catch (error) {
     console.error('❌ Error during search:', error);
     process.exit(1);
   }
 }
-
-// Export for programmatic usage
-export { batchSearch, formatResults, type SearchOptions, type SearchResult };
 
 // Run if called directly
 if (require.main === module) {

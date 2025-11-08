@@ -4,6 +4,9 @@ import { promisify } from 'util';
 import * as zlib from 'zlib';
 
 import { DocumentExtractor } from './document-parsers';
+import { LRUCache } from './lru-cache';
+import { scanDirectory } from './shared/file-utils';
+import { createLogger } from './shared/logger';
 import { UkrainianTextProcessor } from './text-processor';
 import {
   DocumentIndex,
@@ -11,9 +14,9 @@ import {
   InvertedIndexEntry,
   SearchConfig,
 } from './types';
-import { LRUCache } from './lru-cache';
 
-export class FileIndexer {
+class FileIndexer {
+  private logger = createLogger('FileIndexer');
   private textProcessor = new UkrainianTextProcessor();
   private documentExtractor = new DocumentExtractor();
   private documentCache = new Map<string, DocumentIndex>();
@@ -52,85 +55,98 @@ export class FileIndexer {
   }
 
   async extractTextFromFile(filePath: string): Promise<string> {
-    // Check LRU cache first
-    const cached = this.textLRU.get(filePath);
-    if (cached) return cached;
-
-    const txtPath = this.getTextCachePath(filePath);
-    // Ensure directory exists
-    await fs.promises.mkdir(path.dirname(txtPath), { recursive: true });
-    // Use cached .txt if up-to-date
     try {
-      const srcStat = await promisify(fs.stat)(filePath);
-      if (fs.existsSync(txtPath)) {
-        const txtStat = await promisify(fs.stat)(txtPath);
-        if (txtStat.mtimeMs >= srcStat.mtimeMs) {
-          return await promisify(fs.readFile)(txtPath, 'utf8');
+      // Check LRU cache first
+      const cached = this.textLRU.get(filePath);
+      if (cached) return cached;
+
+      const txtPath = this.getTextCachePath(filePath);
+      // Ensure directory exists
+      await fs.promises.mkdir(path.dirname(txtPath), { recursive: true });
+
+      // Use cached .txt if up-to-date
+      try {
+        const srcStat = await promisify(fs.stat)(filePath);
+        if (fs.existsSync(txtPath)) {
+          const txtStat = await promisify(fs.stat)(txtPath);
+          if (txtStat.mtimeMs >= srcStat.mtimeMs) {
+            const text = await promisify(fs.readFile)(txtPath, 'utf8');
+            this.textLRU.set(filePath, text);
+            return text;
+          }
         }
+
+        // Extract and cache
+        const extractor =
+          new (require('./document-parsers').DocumentExtractor)();
+        const text = await extractor.extractText(filePath);
+
+        // Save to cache file
+        await promisify(fs.writeFile)(txtPath, text, 'utf8');
+
+        // Store in LRU cache before returning
+        this.textLRU.set(filePath, text);
+        return text;
+      } catch (diskError) {
+        console.warn(
+          `Cache operation failed for ${path.basename(filePath)}, extracting directly:`,
+          diskError instanceof Error ? diskError.message : String(diskError),
+        );
+
+        // Fallback to direct extraction
+        const extractor =
+          new (require('./document-parsers').DocumentExtractor)();
+        const text = await extractor.extractText(filePath);
+        this.textLRU.set(filePath, text);
+        return text;
       }
-      // Extract and cache
-      const extractor = new (require('./document-parsers').DocumentExtractor)();
-      const text = await extractor.extractText(filePath);
-      await promisify(fs.writeFile)(txtPath, text, 'utf8');
-      // Store in LRU cache before returning
-      this.textLRU.set(filePath, text);
-      return text;
-    } catch (e) {
-      // fallback to extraction if cache fails
-      const extractor = new (require('./document-parsers').DocumentExtractor)();
-      return await extractor.extractText(filePath);
+    } catch (error) {
+      console.error(
+        `Text extraction failed for ${path.basename(filePath)}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      throw new Error(
+        `Failed to extract text from ${path.basename(filePath)}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
   async discoverFiles(): Promise<DocumentMetadata[]> {
-    const files: DocumentMetadata[] = [];
+    try {
+      this.logger.info('Starting file discovery', {
+        rootDirectory: this.config.rootDirectory,
+      });
 
-    const scanDirectory = async (dir: string): Promise<void> => {
-      try {
-        const entries = await promisify(fs.readdir)(dir, {
-          withFileTypes: true,
-        });
+      const fileInfos = await scanDirectory(
+        this.config.rootDirectory,
+        this.config.extensions,
+        {
+          maxFileSize: this.config.maxFileSize,
+          excludeDirs: [this.config.cacheRoot || '.cache'],
+        },
+      );
 
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
+      const documentMetadata: DocumentMetadata[] = fileInfos.map((file) => ({
+        filePath: file.filePath,
+        fileName: file.fileName,
+        lastModified: file.lastModified,
+        size: file.size,
+        indexed: false,
+        language: 'mixed' as const,
+      }));
 
-          if (entry.isDirectory()) {
-            // Exclude .cache directory from scanning
-            if (entry.name === (this.config.cacheRoot || '.cache')) continue;
-            await scanDirectory(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name).toLowerCase();
+      this.logger.info('File discovery completed', {
+        filesFound: documentMetadata.length,
+        totalSize: documentMetadata.reduce((sum, f) => sum + f.size, 0),
+      });
 
-            // Exclude generated files in any location
-            if (
-              !this.config.extensions.includes(ext) ||
-              entry.name.endsWith('.txt') ||
-              entry.name.endsWith('.index.json')
-            ) {
-              continue;
-            }
-
-            const stats = await promisify(fs.stat)(fullPath);
-
-            if (stats.size <= this.config.maxFileSize) {
-              files.push({
-                filePath: fullPath,
-                fileName: entry.name,
-                lastModified: stats.mtimeMs,
-                size: stats.size,
-                indexed: false,
-                language: 'mixed', // Default, will be updated after indexing
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`Error scanning directory ${dir}:`, error);
-      }
-    };
-
-    await scanDirectory(this.config.rootDirectory);
-    return files;
+      return documentMetadata;
+    } catch (error) {
+      this.logger.error('File discovery failed', error);
+      throw new Error(
+        `Failed to discover files: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
 
   needsReindexing(metadata: DocumentMetadata): boolean {
@@ -144,51 +160,117 @@ export class FileIndexer {
   }
 
   async indexDocument(metadata: DocumentMetadata): Promise<DocumentIndex> {
-    const indexPath = this.getIndexCachePath(metadata.filePath);
-    // Ensure directory exists
-    await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
-    const srcStat = await promisify(fs.stat)(metadata.filePath);
-    // Use cached index if up-to-date
-    if (fs.existsSync(indexPath)) {
-      const idxStat = await promisify(fs.stat)(indexPath);
-      if (idxStat.mtimeMs >= srcStat.mtimeMs) {
-        const cached = JSON.parse(
-          await promisify(fs.readFile)(indexPath, 'utf8'),
-        );
-        // Restore Map from object
-        cached.termFrequency = new Map(Object.entries(cached.termFrequency));
-        this.documentCache.set(metadata.filePath, cached);
-        this.updateInvertedIndex(metadata.filePath, cached);
-        return cached;
-      }
-    }
-    const text = await this.extractTextFromFile(metadata.filePath);
-    const tokens = this.textProcessor.tokenize(text);
-    const termFrequency = new Map<string, number>();
-    tokens.forEach((token) => {
-      const term = this.config.ukrainianStemming
-        ? this.textProcessor.stemWord(token.normalized)
-        : token.normalized;
-      termFrequency.set(term, (termFrequency.get(term) || 0) + 1);
-    });
+    const startTime = Date.now();
 
-    const language = this.textProcessor.detectLanguage(text);
-    const documentIndex: DocumentIndex = {
-      metadata: { ...metadata, indexed: true, indexedAt: Date.now(), language },
-      tokens,
-      termFrequency,
-      wordCount: tokens.length,
-      originalText: text,  // Store original text for highlighting
-    };
-    this.documentCache.set(metadata.filePath, documentIndex);
-    this.updateInvertedIndex(metadata.filePath, documentIndex);
-    // Save index to disk (convert Map to object)
-    const toSave = {
-      ...documentIndex,
-      termFrequency: Object.fromEntries(termFrequency),
-    };
-    await promisify(fs.writeFile)(indexPath, JSON.stringify(toSave), 'utf8');
-    return documentIndex;
+    try {
+      this.logger.debug('Starting document indexing', {
+        fileName: metadata.fileName,
+      });
+
+      const indexPath = this.getIndexCachePath(metadata.filePath);
+      // Ensure directory exists
+      await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
+
+      const srcStat = await promisify(fs.stat)(metadata.filePath);
+
+      // Use cached index if up-to-date
+      if (fs.existsSync(indexPath)) {
+        try {
+          const idxStat = await promisify(fs.stat)(indexPath);
+          if (idxStat.mtimeMs >= srcStat.mtimeMs) {
+            const cached = JSON.parse(
+              await promisify(fs.readFile)(indexPath, 'utf8'),
+            );
+            // Restore Map from object
+            cached.termFrequency = new Map(
+              Object.entries(cached.termFrequency),
+            );
+            this.documentCache.set(metadata.filePath, cached);
+            this.updateInvertedIndex(metadata.filePath, cached);
+            return cached;
+          }
+        } catch (cacheError) {
+          console.warn(
+            `Index cache corrupted for ${metadata.fileName}, rebuilding:`,
+            cacheError instanceof Error
+              ? cacheError.message
+              : String(cacheError),
+          );
+          // Continue to rebuild index
+        }
+      }
+
+      const text = await this.extractTextFromFile(metadata.filePath);
+      if (!text || text.trim().length === 0) {
+        throw new Error('No text content extracted from file');
+      }
+
+      const tokens = this.textProcessor.tokenize(text);
+      if (tokens.length === 0) {
+        console.warn(`No valid tokens found in ${metadata.fileName}`);
+      }
+
+      const termFrequency = new Map<string, number>();
+      tokens.forEach((token) => {
+        const term = this.config.ukrainianStemming
+          ? this.textProcessor.stemWord(token.normalized)
+          : token.normalized;
+        termFrequency.set(term, (termFrequency.get(term) || 0) + 1);
+      });
+
+      const language = this.textProcessor.detectLanguage(text);
+      const documentIndex: DocumentIndex = {
+        metadata: {
+          ...metadata,
+          indexed: true,
+          indexedAt: Date.now(),
+          language,
+        },
+        tokens,
+        termFrequency,
+        wordCount: tokens.length,
+        originalText: text, // Store original text for highlighting
+      };
+
+      this.documentCache.set(metadata.filePath, documentIndex);
+      this.updateInvertedIndex(metadata.filePath, documentIndex);
+
+      // Save index to disk (convert Map to object)
+      try {
+        const toSave = {
+          ...documentIndex,
+          termFrequency: Object.fromEntries(termFrequency),
+        };
+        await promisify(fs.writeFile)(
+          indexPath,
+          JSON.stringify(toSave),
+          'utf8',
+        );
+      } catch (saveError) {
+        console.warn(
+          `Failed to save index cache for ${metadata.fileName}:`,
+          saveError instanceof Error ? saveError.message : String(saveError),
+        );
+        // Continue without caching
+      }
+
+      const endTime = Date.now();
+      this.logger.debug('Document indexing completed', {
+        fileName: metadata.fileName,
+        tokens: documentIndex.tokens.length,
+        duration: endTime - startTime,
+      });
+
+      return documentIndex;
+    } catch (error) {
+      this.logger.error('Document indexing failed', {
+        fileName: metadata.fileName,
+        error,
+      });
+      throw new Error(
+        `Failed to index document ${metadata.fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
 
   private updateInvertedIndex(
@@ -240,52 +322,34 @@ export class FileIndexer {
     return false;
   }
 
-  private async saveGlobalInvertedIndex(): Promise<void> {
-    const globalIndexPath =
-      this.config.globalIndexPath ||
-      path.join(
-        this.config.rootDirectory,
-        '.cache',
-        'global-inverted-index.json.gz',
-      );
-    const tempPath = globalIndexPath + '.tmp';
-    // Save both invertedIndex and documentCache
-    const obj: Record<string, any> = {
-      invertedIndex: Object.fromEntries(this.invertedIndex),
-      documentCache: Object.fromEntries(
-        Array.from(this.documentCache.entries()).map(([k, v]) => [
-          k,
-          { ...v, termFrequency: Object.fromEntries(v.termFrequency) },
-        ]),
-      ),
-    };
-    await fs.promises.mkdir(path.dirname(globalIndexPath), { recursive: true });
-    const json = JSON.stringify(obj);
-    const gzipped = zlib.gzipSync(json);
-    // Write to temp file first
-    await fs.promises.writeFile(tempPath, gzipped);
-    // Atomically replace the old file
-    await fs.promises.rename(tempPath, globalIndexPath);
-  }
-
   private async loadGlobalInvertedIndex(): Promise<boolean> {
-    const globalIndexPath =
-      this.config.globalIndexPath ||
-      path.join(
-        this.config.rootDirectory,
-        '.cache',
-        'global-inverted-index.json.gz',
-      );
-    if (!fs.existsSync(globalIndexPath)) return false;
     try {
+      const globalIndexPath =
+        this.config.globalIndexPath ||
+        path.join(
+          this.config.rootDirectory,
+          '.cache',
+          'global-inverted-index.json.gz',
+        );
+
+      if (!fs.existsSync(globalIndexPath)) return false;
+
       const gzipped = await fs.promises.readFile(globalIndexPath);
       const data = zlib.gunzipSync(gzipped).toString('utf8');
       const obj = JSON.parse(data);
+
+      // Validate the loaded data
+      if (!obj.invertedIndex || !obj.documentCache) {
+        console.warn('Invalid global index format, rebuilding...');
+        return false;
+      }
+
       // Restore invertedIndex
       this.invertedIndex.clear();
       for (const term of Object.keys(obj.invertedIndex)) {
         this.invertedIndex.set(term, obj.invertedIndex[term]);
       }
+
       // Restore documentCache
       this.documentCache.clear();
       for (const filePath of Object.keys(obj.documentCache)) {
@@ -293,31 +357,135 @@ export class FileIndexer {
         doc.termFrequency = new Map(Object.entries(doc.termFrequency));
         this.documentCache.set(filePath, doc);
       }
+
       return true;
-    } catch (e) {
-      console.error('Failed to load global inverted index:', e);
+    } catch (error) {
+      console.warn(
+        'Failed to load global inverted index:',
+        error instanceof Error ? error.message : String(error),
+      );
       return false;
     }
   }
 
-  private async saveChunkedInvertedIndex(): Promise<void> {
-    const chunkDir = path.join(
-      this.config.rootDirectory,
-      '.cache',
-      'sharded-index',
-    );
-    await fs.promises.mkdir(chunkDir, { recursive: true });
-    const shards: Record<string, Record<string, InvertedIndexEntry[]>> = {};
-    for (const [term, entries] of this.invertedIndex.entries()) {
-      const shard = term[0] || '_';
-      if (!shards[shard]) shards[shard] = {};
-      shards[shard][term] = entries;
-    }
-    for (const shard of Object.keys(shards)) {
-      const file = path.join(chunkDir, `${shard}.json.gz`);
-      const json = JSON.stringify(shards[shard]);
+  private async saveGlobalInvertedIndex(): Promise<void> {
+    try {
+      const globalIndexPath =
+        this.config.globalIndexPath ||
+        path.join(
+          this.config.rootDirectory,
+          '.cache',
+          'global-inverted-index.json.gz',
+        );
+      const tempPath = globalIndexPath + '.tmp';
+
+      // Save both invertedIndex and documentCache
+      const obj: Record<string, any> = {
+        invertedIndex: Object.fromEntries(this.invertedIndex),
+        documentCache: Object.fromEntries(
+          Array.from(this.documentCache.entries()).map(([k, v]) => [
+            k,
+            { ...v, termFrequency: Object.fromEntries(v.termFrequency) },
+          ]),
+        ),
+      };
+
+      await fs.promises.mkdir(path.dirname(globalIndexPath), {
+        recursive: true,
+      });
+      const json = JSON.stringify(obj);
       const gzipped = zlib.gzipSync(json);
-      await fs.promises.writeFile(file, gzipped);
+
+      // Write to temp file first
+      await fs.promises.writeFile(tempPath, gzipped);
+      // Atomically replace the old file
+      await fs.promises.rename(tempPath, globalIndexPath);
+    } catch (error) {
+      console.error(
+        'Failed to save global inverted index:',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw new Error(
+        `Failed to save index: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  async buildFullIndex(): Promise<void> {
+    try {
+      const files = await this.discoverFiles();
+      if (files.length === 0) {
+        console.log('No files found to index.');
+        return;
+      }
+
+      const globalIndexPath =
+        this.config.globalIndexPath ||
+        path.join(
+          this.config.rootDirectory,
+          '.cache',
+          'global-inverted-index.json.gz',
+        );
+      const isStale = await this.isGlobalIndexStale(globalIndexPath, files);
+
+      if (!isStale) {
+        const loaded = await this.loadGlobalInvertedIndex();
+        if (loaded) {
+          console.log('Loaded existing index from cache.');
+          return;
+        }
+      }
+
+      // Try to load chunked index first
+      const loaded = await this.loadChunkedInvertedIndex();
+      if (loaded) {
+        console.log('Loaded sharded index from cache.');
+        return;
+      }
+
+      console.log(`Indexing ${files.length} documents...`);
+      let indexed = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (const file of files) {
+        try {
+          if (this.needsReindexing(file)) {
+            await this.indexDocument(file);
+            indexed++;
+            // Only log every 10th file to reduce noise
+            if (indexed % 10 === 0 || indexed === files.length) {
+              console.log(`Progress: ${indexed}/${files.length} files indexed`);
+            }
+          } else {
+            skipped++;
+          }
+        } catch (error) {
+          errors++;
+          console.error(
+            `Failed to index ${file.fileName}:`,
+            error instanceof Error ? error.message : String(error),
+          );
+          // Continue processing other files
+        }
+      }
+
+      console.log(
+        `Indexing complete: ${indexed} indexed, ${skipped} skipped, ${errors} errors`,
+      );
+
+      if (indexed > 0) {
+        await this.saveGlobalInvertedIndex();
+        console.log('Index saved successfully.');
+      }
+    } catch (error) {
+      console.error(
+        'Index building failed:',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw new Error(
+        `Failed to build index: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -340,55 +508,6 @@ export class FileIndexer {
       }
     }
     return this.invertedIndex.size > 0;
-  }
-
-  async buildFullIndex(): Promise<void> {
-    const files = await this.discoverFiles();
-    const globalIndexPath =
-      this.config.globalIndexPath ||
-      path.join(
-        this.config.rootDirectory,
-        '.cache',
-        'global-inverted-index.json.gz',
-      );
-    const isStale = await this.isGlobalIndexStale(globalIndexPath, files);
-
-    if (!isStale) {
-      const loaded = await this.loadGlobalInvertedIndex();
-      if (loaded) {
-        console.log('Loaded global inverted index from disk.');
-        return;
-      }
-    }
-
-    // Try to load chunked index first
-    const loaded = await this.loadChunkedInvertedIndex();
-    if (loaded) {
-      console.log('Loaded sharded inverted index from disk.');
-      return;
-    }
-
-    console.log(`Found ${files.length} documents to process`);
-    let indexed = 0;
-    let skipped = 0;
-
-    for (const file of files) {
-      try {
-        if (this.needsReindexing(file)) {
-          await this.indexDocument(file);
-          indexed++;
-          console.log(`Indexed: ${file.fileName} (${indexed}/${files.length})`);
-        } else {
-          skipped++;
-        }
-      } catch (error) {
-        console.error(`Failed to index ${file.fileName}:`, error);
-      }
-    }
-
-    console.log(`Indexing complete: ${indexed} indexed, ${skipped} skipped`);
-    await this.saveGlobalInvertedIndex();
-    console.log('Saved global inverted index to disk (compressed).');
   }
 
   getInvertedIndex(): Map<string, InvertedIndexEntry[]> {
@@ -420,3 +539,5 @@ export class FileIndexer {
     };
   }
 }
+
+export { FileIndexer };
