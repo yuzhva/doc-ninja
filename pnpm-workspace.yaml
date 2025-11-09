@@ -11,4 +11,5 @@ packages:
 onlyBuiltDependencies:
   - electron
   - electron-winstaller
+  - onnxruntime-node
   - sharp
