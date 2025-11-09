@@ -5,6 +5,7 @@ LICENSE
 
 # package manager
 pnpm-lock.yaml
+pnpm-workspace.yaml
 .npmrc.example
 
 # packages
@@ -12,9 +13,15 @@ pnpm-lock.yaml
 .husky
 
 # files
+Dockerfile
 *.sh
 *.toml
+*.yaml
 *.env*
+
+# documents
+*.doc
+*.docx
 
 # images
 *.ico
@@ -22,4 +29,5 @@ pnpm-lock.yaml
 *.png
 
 # documents
+.cache
 **/assets

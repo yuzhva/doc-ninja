@@ -1,16 +1,16 @@
 {
-  "name": "nlp-ninja",
+  "name": "be-krang",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
+    "dev": "tsx watch ./src/main.mts",
+    "serve": "node ./dist/main.mjs",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
     "doc:to-text": "tsx ./src/features/doc-to-text.mts",
     "doc:build-index": "tsx ./src/features/doc-build-index.mts",
     "nlp:extract-info": "tsx ./src/features/nlp-extract-info.mts",
-    "doc:demo--search": "tsx ./src/examples/mega-search.example.ts",
     "nlp:demo--inline": "tsx ./src/examples/nlp--inline.example.mts",
-    "nlp:demo--adaptive": "tsx ./src/examples/nlp--adaptive.example.mts",
-    "dev": "nodemon ./src/main.mts",
-    "serve": "node ./dist/src/main.mjs"
+    "nlp:demo--adaptive": "tsx ./src/examples/nlp--adaptive.example.mts"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
@@ -33,6 +33,7 @@
     "multer": "^2.0.2",
     "sharp": "^0.34.4",
     "textract": "^2.5.0",
+    "toolkit--local": "workspace:^",
     "xlsx": "^0.18.5"
   },
   "packageManager": "pnpm@10.20.0"

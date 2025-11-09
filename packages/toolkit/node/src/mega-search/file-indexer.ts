@@ -76,10 +76,8 @@ class FileIndexer {
           }
         }
 
-        // Extract and cache
-        const extractor =
-          new (require('./document-parsers').DocumentExtractor)();
-        const text = await extractor.extractText(filePath);
+        // Extract and cache - use class instance instead of require
+        const text = await this.documentExtractor.extractText(filePath);
 
         // Save to cache file
         await promisify(fs.writeFile)(txtPath, text, 'utf8');
@@ -93,10 +91,8 @@ class FileIndexer {
           diskError instanceof Error ? diskError.message : String(diskError),
         );
 
-        // Fallback to direct extraction
-        const extractor =
-          new (require('./document-parsers').DocumentExtractor)();
-        const text = await extractor.extractText(filePath);
+        // Fallback to direct extraction - use class instance instead of require
+        const text = await this.documentExtractor.extractText(filePath);
         this.textLRU.set(filePath, text);
         return text;
       }

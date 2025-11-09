@@ -1,0 +1,22 @@
+{
+  "name": "toolkit--local",
+  "version": "1.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "src"
+  ],
+  "exports": {
+    "./node": "./node/src/index.ts",
+    "./browser": "./browser/index.ts"
+  },
+  "scripts": {
+    "build": "tsc ./node/src/index.ts",
+    "demo:mega-search": "tsx ./node/examples/mega-search/index.example.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
