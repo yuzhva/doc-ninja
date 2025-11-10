@@ -472,6 +472,51 @@ class FileIndexer {
     });
   }
 
+  /**
+   * ULTRA-OPTIMIZED version of updateInvertedIndex
+   */
+  private updateInvertedIndexOptimized(
+    documentId: string,
+    docIndex: DocumentIndex,
+  ): void {
+    // Pre-compute all stems once to avoid repeated stemming
+    const tokenStems = this.config.ukrainianStemming
+      ? docIndex.tokens.map((token) =>
+          this.textProcessor.stemWord(token.normalized),
+        )
+      : docIndex.tokens.map((token) => token.normalized);
+
+    // Build position lookup map efficiently
+    const termPositions = new Map<string, number[]>();
+
+    for (let i = 0; i < tokenStems.length; i++) {
+      const stem = tokenStems[i];
+      if (!termPositions.has(stem)) {
+        termPositions.set(stem, []);
+      }
+      termPositions.get(stem)!.push(docIndex.tokens[i].position);
+    }
+
+    // Add entries using pre-computed data
+    docIndex.termFrequency.forEach((frequency, term) => {
+      const positions = termPositions.get(term) || [];
+
+      const entry: InvertedIndexEntry = {
+        documentId,
+        frequency,
+        positions,
+      };
+
+      // Use direct map operations for better performance
+      const existing = this.invertedIndex.get(term);
+      if (existing) {
+        existing.push(entry);
+      } else {
+        this.invertedIndex.set(term, [entry]);
+      }
+    });
+  }
+
   private async isGlobalIndexStale(
     globalIndexPath: string,
     files: DocumentMetadata[],

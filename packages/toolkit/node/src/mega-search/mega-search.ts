@@ -1141,7 +1141,11 @@ async function createFileIndexer(
   config: Partial<SearchConfig> = {},
 ): Promise<FileIndexer> {
   const finalConfig = { ...defaultConfig, ...config };
+<<<<<<< HEAD
   const fileIndexer = new FileIndexer(finalConfig);
+=======
+  const fileIndexer = new FileIndexer(finalConfig); // ✅ Updated variable name
+>>>>>>> 6aff8f9 (feat: combine search and nlp together)
   return fileIndexer;
 }
 
