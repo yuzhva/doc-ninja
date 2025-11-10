@@ -138,11 +138,18 @@ class MegaSearch {
 
       // console.log(`[SEARCH] Phrase search: ${isPhrase}, phrase: "${phrase}"`);
 
-      // Tokenize and stem the query
-      const queryTokens = this.textProcessor
-        .tokenize(isPhrase ? phrase! : query)
-        .map((t) => this.textProcessor.stemWord(t.term));
-      const uniqueQueryTokens = Array.from(new Set(queryTokens));
+      // Tokenize the query
+      const rawTokens = this.textProcessor.tokenize(isPhrase ? phrase! : query);
+
+      // For regular search, use stemmed tokens; for phrase search, preserve original tokens
+      const queryTokens = rawTokens.map((t) =>
+        this.textProcessor.stemWord(t.term),
+      );
+      const originalTokens = rawTokens.map((t) => t.term.toLowerCase());
+
+      // Use appropriate tokens based on search type
+      const searchTokens = isPhrase ? originalTokens : queryTokens;
+      const uniqueQueryTokens = Array.from(new Set(queryTokens)); // Always use stemmed for indexing
 
       // console.log(`[SEARCH] Query tokens:`, queryTokens);
       // console.log(`[SEARCH] Unique query tokens:`, uniqueQueryTokens);
@@ -161,7 +168,7 @@ class MegaSearch {
         return this.createEmptyResult(page, pageSize);
       }
 
-      // Score documents using BM25 or TF-IDF
+      // Score documents using BM25 or TF-IDF (always use stemmed tokens for scoring)
       const docScores = new Map<string, number>();
       const useBM25 = this.config.useBM25 !== false;
 
@@ -209,13 +216,17 @@ class MegaSearch {
       // If phrase search, filter to only docs containing the exact phrase
       let filteredDocIds: string[] = Array.from(docScores.keys());
       if (isPhrase) {
+        const phraseText = searchTokens.join(' '); // Use original tokens for phrase matching
+
         filteredDocIds = filteredDocIds.filter((docId) => {
           const doc = docCache.get(docId);
           if (!doc) return false;
+
+          // Create lowercase document text for case-insensitive phrase matching
           const docText = doc.tokens
-            .map((t: ProcessedSearchToken) => t.term)
+            .map((t: ProcessedSearchToken) => t.term.toLowerCase())
             .join(' ');
-          const phraseText = queryTokens.join(' ');
+
           return docText.includes(phraseText);
         });
       }
@@ -242,7 +253,7 @@ class MegaSearch {
             uniqueQueryTokens,
             fuzzy,
             isPhrase,
-            queryTokens,
+            searchTokens, // Pass appropriate tokens based on search type
             snippetsLimit,
           );
         });
@@ -305,7 +316,7 @@ class MegaSearch {
     uniqueQueryTokens: string[],
     fuzzy: boolean,
     isPhrase: boolean,
-    queryTokens: string[],
+    searchTokens: string[], // Changed from queryTokens to be more generic
     snippetsLimit: number | 'ALL',
   ): {
     doc: any;
@@ -319,7 +330,7 @@ class MegaSearch {
 
     if (doc) {
       try {
-        // Extract highlights with character positions
+        // Extract highlights with character positions (always use stemmed for indexing)
         uniqueQueryTokens.forEach((queryToken) => {
           doc.tokens.forEach((docToken: ProcessedSearchToken) => {
             const docTokenStem = this.textProcessor.stemWord(docToken.term);
@@ -343,7 +354,7 @@ class MegaSearch {
           .join(' ');
 
         if (isPhrase) {
-          snippets = this.extractPhraseSnippets(text, queryTokens);
+          snippets = this.extractPhraseSnippets(text, searchTokens); // Use original tokens for phrase snippets
         } else {
           snippets = this.extractTokenSnippets(doc, uniqueQueryTokens);
         }
@@ -374,20 +385,28 @@ class MegaSearch {
   /**
    * Extract snippets for phrase search
    */
-  private extractPhraseSnippets(text: string, queryTokens: string[]): string[] {
+  private extractPhraseSnippets(
+    text: string,
+    searchTokens: string[],
+  ): string[] {
     const snippets: string[] = [];
-    const phraseText = queryTokens.join(' ');
+    const phraseText = searchTokens.join(' ');
+
+    // Case-insensitive search for phrase
+    const lowerText = text.toLowerCase();
+    const lowerPhrase = phraseText.toLowerCase();
 
     let idx = 0;
-    while ((idx = text.indexOf(phraseText, idx)) !== -1) {
+    while ((idx = lowerText.indexOf(lowerPhrase, idx)) !== -1) {
       let rawSnippet = text.substring(
         Math.max(0, idx - 30),
         idx + phraseText.length + 40,
       );
-      rawSnippet = rawSnippet.replace(
-        new RegExp(phraseText, 'gi'),
-        (match: string) => `<b>${match}</b>`,
-      );
+
+      // Highlight the matched phrase (preserve original case in snippet)
+      const actualPhrase = text.substring(idx, idx + phraseText.length);
+      rawSnippet = rawSnippet.replace(actualPhrase, `<b>${actualPhrase}</b>`);
+
       snippets.push(rawSnippet + '...');
       idx += phraseText.length;
     }
