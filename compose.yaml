@@ -54,13 +54,15 @@ services:
       # Step-1: mount monorepo: root files
       - /usr/src/nlp-ninja/node_modules
       - /usr/src/nlp-ninja/.pnpm-store
-      # Step-2: mount monorepo: web-apps files
+      # Step-2: mount monorepo: web-apps and packages files
       - /usr/src/nlp-ninja/apps/be-krang/node_modules
       # - /usr/src/nlp-ninja/apps/be-krang/dist
       - /usr/src/nlp-ninja/apps/ui-sauce/node_modules
       # - /usr/src/nlp-ninja/apps/ui-sauce/dist
       - /usr/src/nlp-ninja/apps/electron/node_modules
       # - /usr/src/nlp-ninja/apps/electron/dist
+      - /usr/src/nlp-ninja/packages/toolkit/node_modules
+      # - /usr/src/nlp-ninja/packages/toolkit/dist
     # the Docker {extends} syntax is designed to cherry-pick (and customize) a single service in a target
     # https://stackoverflow.com/a/78257041/4591347
     # the {profiles: []} Array will be concatenated with the profiles of it's parent e.g. [prod, dev, dev-packages]

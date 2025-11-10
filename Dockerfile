@@ -36,10 +36,11 @@ RUN \
     --mount=type=bind,source=pnpm-lock.yaml,target=pnpm-lock.yaml \
     # NOTE: the {-workspace.yaml} is required to install {node_modules} in each sub-module
     --mount=type=bind,source=pnpm-workspace.yaml,target=pnpm-workspace.yaml \
-    # mount monorepo: web-apps files
+    # mount monorepo: web-apps and packages files
     --mount=type=bind,source=apps/be-krang/package.json,target=apps/be-krang/package.json \
     --mount=type=bind,source=apps/ui-sauce/package.json,target=apps/ui-sauce/package.json \
     --mount=type=bind,source=apps/electron/package.json,target=apps/electron/package.json \
+    --mount=type=bind,source=packages/toolkit/package.json,target=packages/toolkit/package.json \
     # mount cache and install dependencies
     --mount=type=cache,target=/root/.local/share/pnpm/store \
     (\
@@ -57,6 +58,7 @@ FROM install-dependencies as pre-build--source-code
 COPY . .
 
 # Build the source code of all applications.
+# RUN pnpm run build:packages
 RUN pnpm run build:apps
 
 ################################################################################
@@ -67,6 +69,7 @@ FROM install-dependencies AS production
 ENV NODE_ENV production
 
 # Copy the built source code from the pre-build stage.
+# COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/packages/toolkit/dist ./packages/toolkit/dist
 COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
 
 # Run the application as a non-root user.
@@ -89,6 +92,7 @@ FROM install-dependencies AS development
 ENV NODE_ENV development
 
 # Copy the built source code from the pre-build stage.
+# COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/packages/toolkit/dist ./packages/toolkit/dist
 COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
 
 # Run the application as a non-root user.

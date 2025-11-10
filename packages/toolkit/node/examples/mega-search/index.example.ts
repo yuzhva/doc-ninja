@@ -1,8 +1,10 @@
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-import type { PaginatedSearchResult } from '../features/mega-search';
-import { MegaSearch, createMegaSearch } from '../features/mega-search';
-import { runtimePathById } from '../supplement/path.mts';
+import type { PaginatedSearchResult } from '../../src/index';
+import { MegaSearch, createMegaSearch } from '../../src/index';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Production-ready types that match the actual implementation
 type SearchOptions = {
@@ -127,7 +129,7 @@ async function main() {
     console.log('🚀 Initializing Mega Search System...');
 
     const megaSearch = await createMegaSearch({
-      rootDirectory: path.join(runtimePathById.assets, 'demo--mega-search'),
+      rootDirectory: path.join(__dirname, 'documents'),
       concurrency: 4,
       // BM25 configuration from environment variables
       useBM25: process.env.USE_BM25 !== 'false',
@@ -211,6 +213,6 @@ async function main() {
 }
 
 // Run if called directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(console.error);
 }
