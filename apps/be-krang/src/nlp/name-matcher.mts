@@ -1,4 +1,4 @@
-import { env, pipeline } from '@xenova/transformers';
+import { env, pipeline } from '@huggingface/transformers';
 
 // Configure to run locally and set cache directory
 env.allowRemoteModels = false; // Only use locally cached models

@@ -1,4 +1,4 @@
-import { env, pipeline } from '@xenova/transformers';
+import { env, pipeline } from '@huggingface/transformers';
 
 // Set cache directory
 env.cacheDir = './models';

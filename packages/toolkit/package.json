@@ -12,11 +12,24 @@
   },
   "scripts": {
     "build": "tsc ./node/src/index.ts",
-    "demo:mega-search": "tsx ./node/examples/mega-search/index.example.ts"
+    "nlp:models--install": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts",
+    "nlp:models--install-default": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts --default --verify",
+    "nlp:models--install-list": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts --list",
+    "nlp:models--status": "tsx -e \"import('./node/src/nlp-analyzer/scripts/install-models.ts').then(m => new m.ModelInstaller().getInstalledModels().then(console.log))\"",
+    "demo:mega-search": "tsx ./node/examples/mega-search/basic.example.ts",
+    "demo:nlp--analyzer-basic": "tsx ./node/examples/nlp-analyzer/basic.example.ts",
+    "demo:nlp--analyzer-custom": "tsx ./node/examples/nlp-analyzer/custom-processors.example.ts",
+    "demo:nlp--post-processors": "tsx ./node/examples/nlp-analyzer/post-processors.example.ts",
+    "demo:nlp--workflows": "tsx ./node/examples/nlp-analyzer/workflow.example.ts",
+    "demo:nlp--adaptive-learning": "tsx ./node/examples/nlp-analyzer/adaptive-learning.example.ts",
+    "demo:nlp--parallel": "tsx ./node/examples/nlp-analyzer/parallel-processing.example.ts"
   },
   "devDependencies": {
     "@types/node": "^24.8.1",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.7.6"
   }
 }

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 
 import { extractInformation } from '../../features/nlp-extract-info.mts';
+// import { extractInformationModern } from '../../features/nlp-extract-info-modern.mts';
 import { appendExtension } from '../../supplement/file-extension-utils.mts';
 
 interface BatchRequest {
@@ -19,6 +20,7 @@ interface BatchRequest {
 
 const postProcessDocuments = async (req: Request, res: Response) => {
   try {
+    // await extractInformationModern();
     await extractInformation();
 
     res.status(StatusCodes.OK).json({

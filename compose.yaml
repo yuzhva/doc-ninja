@@ -50,6 +50,9 @@ services:
     volumes:
       # Bind Mount code for Live Update
       - ./apps:/usr/src/nlp-ninja/apps
+      - ./packages:/usr/src/nlp-ninja/packages
+      # Bind Mount models from host machine
+      # - ./apps/be-krang/models:/usr/src/nlp-ninja/models
       # !IMPORTANT: ensure that the volume mounting does not overwrite any of the folders that are supposed to be created by Dockerfile build steps
       # Step-1: mount monorepo: root files
       - /usr/src/nlp-ninja/node_modules
