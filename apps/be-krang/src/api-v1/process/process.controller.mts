@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 
+import { extractInformationModern } from '../../features/nlp-extract-info-modern.mts';
 import { extractInformation } from '../../features/nlp-extract-info.mts';
 // import { extractInformationModern } from '../../features/nlp-extract-info-modern.mts';
 import { appendExtension } from '../../supplement/file-extension-utils.mts';
