@@ -16,8 +16,10 @@ type SearchOptions = {
   fuzzy?: boolean;
   fuzzyThreshold?: number;
   snippetsLimit?: number | 'ALL';
-  page?: number; // Add pagination
-  pageSize?: number; // Add page size
+  page?: number;
+  pageSize?: number;
+  fuzzyPhrase?: boolean; // Enable fuzzy phrase matching
+  fuzzyPhraseMaxDistance?: number; // Max words between fuzzy phrase tokens
 };
 
 type PaginatedSearchResult = {
@@ -124,35 +126,29 @@ class MegaSearch {
       snippetsLimit = 3,
       page = 1,
       pageSize = 10,
+      fuzzyPhrase = false,
+      fuzzyPhraseMaxDistance = 2,
     } = options;
 
-    // console.log(`[SEARCH] Starting search for query: "${query}"`);
-    // console.log(`[SEARCH] Options:`, { topN, fuzzy, fuzzyThreshold, snippetsLimit });
-    // console.log(`[SEARCH] Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`);
-
     try {
-      // Phrase search: detect if query is wrapped in quotes
+      // Phrase search: detect if query is wrapped in quotes OR fuzzyPhrase is enabled
       const phraseMatch = query.match(/^"(.*)"$/);
-      const isPhrase = !!phraseMatch;
-      const phrase = isPhrase ? phraseMatch[1] : null;
-
-      // console.log(`[SEARCH] Phrase search: ${isPhrase}, phrase: "${phrase}"`);
+      const isPhrase = !!phraseMatch || fuzzyPhrase;
+      const phrase = phraseMatch ? phraseMatch[1] : fuzzyPhrase ? query : null;
 
       // Tokenize the query
-      const rawTokens = this.textProcessor.tokenize(isPhrase ? phrase! : query);
+      const rawTokens = this.textProcessor.tokenize(phrase || query);
 
-      // For regular search, use stemmed tokens; for phrase search, preserve original tokens
+      // For fuzzy phrase, we need both stemmed and original tokens
       const queryTokens = rawTokens.map((t) =>
         this.textProcessor.stemWord(t.term),
       );
       const originalTokens = rawTokens.map((t) => t.term.toLowerCase());
 
       // Use appropriate tokens based on search type
-      const searchTokens = isPhrase ? originalTokens : queryTokens;
+      const searchTokens =
+        isPhrase && !fuzzyPhrase ? originalTokens : queryTokens;
       const uniqueQueryTokens = Array.from(new Set(queryTokens)); // Always use stemmed for indexing
-
-      // console.log(`[SEARCH] Query tokens:`, queryTokens);
-      // console.log(`[SEARCH] Unique query tokens:`, uniqueQueryTokens);
 
       if (uniqueQueryTokens.length === 0) {
         console.log(`No valid tokens found in query: "${query}"`);
@@ -216,19 +212,31 @@ class MegaSearch {
       // If phrase search, filter to only docs containing the exact phrase
       let filteredDocIds: string[] = Array.from(docScores.keys());
       if (isPhrase) {
-        const phraseText = searchTokens.join(' '); // Use original tokens for phrase matching
+        if (fuzzyPhrase) {
+          // Fuzzy phrase matching - all tokens must appear close together with fuzzy variations
+          filteredDocIds = filteredDocIds.filter((docId) => {
+            const doc = docCache.get(docId);
+            if (!doc) return false;
 
-        filteredDocIds = filteredDocIds.filter((docId) => {
-          const doc = docCache.get(docId);
-          if (!doc) return false;
+            return this.containsFuzzyPhrase(doc, originalTokens, {
+              fuzzyThreshold,
+              maxDistance: fuzzyPhraseMaxDistance,
+            });
+          });
+        } else {
+          // Exact phrase matching
+          const phraseText = searchTokens.join(' ');
+          filteredDocIds = filteredDocIds.filter((docId) => {
+            const doc = docCache.get(docId);
+            if (!doc) return false;
 
-          // Create lowercase document text for case-insensitive phrase matching
-          const docText = doc.tokens
-            .map((t: ProcessedSearchToken) => t.term.toLowerCase())
-            .join(' ');
+            const docText = doc.tokens
+              .map((t: ProcessedSearchToken) => t.term.toLowerCase())
+              .join(' ');
 
-          return docText.includes(phraseText);
-        });
+            return docText.includes(phraseText);
+          });
+        }
       }
 
       // Calculate pagination
@@ -253,7 +261,7 @@ class MegaSearch {
             uniqueQueryTokens,
             fuzzy,
             isPhrase,
-            searchTokens, // Pass appropriate tokens based on search type
+            fuzzyPhrase ? originalTokens : searchTokens,
             snippetsLimit,
           );
         });
@@ -287,209 +295,219 @@ class MegaSearch {
   }
 
   /**
-   * Helper method to create empty result with proper pagination
+   * Check if document contains fuzzy phrase - all tokens must appear close together
+   * with fuzzy matching enabled for each token
    */
-  private createEmptyResult(
-    page: number,
-    pageSize: number,
-  ): PaginatedSearchResult {
-    return {
-      results: [],
-      pagination: {
-        currentPage: page,
-        totalPages: 0,
-        totalResults: 0,
-        resultsPerPage: pageSize,
-        hasNextPage: false,
-        hasPreviousPage: false,
-      },
-    };
-  }
-
-  /**
-   * Process individual search result with proper error handling
-   */
-  private processSearchResult(
-    docId: string,
-    score: number,
-    docCache: Map<string, DocumentIndex>,
-    uniqueQueryTokens: string[],
-    fuzzy: boolean,
-    isPhrase: boolean,
-    searchTokens: string[], // Changed from queryTokens to be more generic
-    snippetsLimit: number | 'ALL',
-  ): {
-    doc: any;
-    score: number;
-    snippets: string[];
-    highlights: HighlightInfo[];
-  } {
-    const doc = docCache.get(docId);
-    let snippets: string[] = [];
-    let highlights: HighlightInfo[] = [];
-
-    if (doc) {
-      try {
-        // Extract highlights with character positions (always use stemmed for indexing)
-        uniqueQueryTokens.forEach((queryToken) => {
-          doc.tokens.forEach((docToken: ProcessedSearchToken) => {
-            const docTokenStem = this.textProcessor.stemWord(docToken.term);
-
-            if (docTokenStem === queryToken) {
-              highlights.push({
-                term: queryToken,
-                originalWord: docToken.term,
-                charStart: docToken.charStart,
-                charEnd: docToken.charEnd,
-                confidence: fuzzy
-                  ? this.calculateMatchConfidence(queryToken, docTokenStem)
-                  : 1.0,
-              });
-            }
-          });
-        });
-
-        const text = doc.tokens
-          .map((t: ProcessedSearchToken) => t.term)
-          .join(' ');
-
-        if (isPhrase) {
-          snippets = this.extractPhraseSnippets(text, searchTokens); // Use original tokens for phrase snippets
-        } else {
-          snippets = this.extractTokenSnippets(doc, uniqueQueryTokens);
-        }
-
-        // Limit snippets if not 'ALL'
-        if (snippetsLimit !== 'ALL' && typeof snippetsLimit === 'number') {
-          snippets = snippets.slice(0, snippetsLimit);
-        }
-      } catch (error) {
-        console.error(
-          `Error processing snippets for document ${doc.metadata.fileName}:`,
-          error instanceof Error ? error.message : String(error),
-        );
-        // Continue with empty snippets rather than failing
-      }
-    } else {
-      console.warn(`Document not found in cache: "${docId}"`);
-    }
-
-    return {
-      doc: doc?.metadata,
-      score,
-      snippets,
-      highlights,
-    };
-  }
-
-  /**
-   * Extract snippets for phrase search
-   */
-  private extractPhraseSnippets(
-    text: string,
-    searchTokens: string[],
-  ): string[] {
-    const snippets: string[] = [];
-    const phraseText = searchTokens.join(' ');
-
-    // Case-insensitive search for phrase
-    const lowerText = text.toLowerCase();
-    const lowerPhrase = phraseText.toLowerCase();
-
-    let idx = 0;
-    while ((idx = lowerText.indexOf(lowerPhrase, idx)) !== -1) {
-      let rawSnippet = text.substring(
-        Math.max(0, idx - 30),
-        idx + phraseText.length + 40,
-      );
-
-      // Highlight the matched phrase (preserve original case in snippet)
-      const actualPhrase = text.substring(idx, idx + phraseText.length);
-      rawSnippet = rawSnippet.replace(actualPhrase, `<b>${actualPhrase}</b>`);
-
-      snippets.push(rawSnippet + '...');
-      idx += phraseText.length;
-    }
-
-    return snippets;
-  }
-
-  /**
-   * Extract snippets for token-based search with paragraph awareness
-   */
-  private extractTokenSnippets(
+  private containsFuzzyPhrase(
     doc: DocumentIndex,
-    uniqueQueryTokens: string[],
-  ): string[] {
-    const snippetSet = new Set<string>();
-
-    uniqueQueryTokens.forEach((queryToken) => {
-      doc.tokens.forEach(
-        (docToken: ProcessedSearchToken, tokenIndex: number) => {
-          const docTokenStem = this.textProcessor.stemWord(docToken.term);
-
-          if (docTokenStem === queryToken) {
-            // Find which paragraph contains this token
-            const containingParagraph = doc.paragraphs?.find(
-              (p) => tokenIndex >= p.tokenStart && tokenIndex < p.tokenEnd,
-            );
-
-            if (containingParagraph) {
-              // Use paragraph as context (more natural than token windows)
-              let rawSnippet = containingParagraph.content;
-
-              // Highlight the matched term
-              rawSnippet = rawSnippet.replace(
-                new RegExp(`\\b${docToken.term}\\b`, 'gi'),
-                (m: string) => `<b>${m}</b>`,
-              );
-
-              // Truncate if paragraph is too long
-              if (rawSnippet.length > 300) {
-                const matchPos = rawSnippet
-                  .toLowerCase()
-                  .indexOf(docToken.term.toLowerCase());
-                const start = Math.max(0, matchPos - 150);
-                const end = Math.min(rawSnippet.length, matchPos + 150);
-                rawSnippet = '...' + rawSnippet.substring(start, end) + '...';
-              }
-
-              snippetSet.add(rawSnippet);
-            } else {
-              // Fallback to token-based context if no paragraph info
-              const startPos = Math.max(0, tokenIndex - 8);
-              const endPos = Math.min(doc.tokens.length, tokenIndex + 12);
-              const contextTokens = doc.tokens.slice(startPos, endPos);
-
-              let rawSnippet = contextTokens
-                .map((t: ProcessedSearchToken) => t.term)
-                .join(' ');
-              rawSnippet = rawSnippet.replace(
-                new RegExp(`\\b${docToken.term}\\b`, 'gi'),
-                (m: string) => `<b>${m}</b>`,
-              );
-
-              snippetSet.add(rawSnippet + '...');
-            }
-          }
-        },
+    queryTokens: string[],
+    options: {
+      fuzzyThreshold: number;
+      maxDistance: number;
+    },
+  ): boolean {
+    if (queryTokens.length === 0) return false;
+    if (queryTokens.length === 1) {
+      // Single token - just check fuzzy match
+      return doc.tokens.some(
+        (docToken) =>
+          levenshtein(docToken.term.toLowerCase(), queryTokens[0]) <=
+          options.fuzzyThreshold,
       );
+    }
+
+    // Find all possible fuzzy matches for each query token
+    const tokenMatches = queryTokens.map((queryToken) => {
+      const matches: Array<{
+        token: ProcessedSearchToken;
+        position: number;
+        distance: number;
+      }> = [];
+
+      doc.tokens.forEach((docToken, position) => {
+        const distance = levenshtein(docToken.term.toLowerCase(), queryToken);
+        if (distance <= options.fuzzyThreshold) {
+          matches.push({ token: docToken, position, distance });
+        }
+      });
+
+      return matches;
     });
 
-    return Array.from(snippetSet);
+    // Check if any token has no matches
+    if (tokenMatches.some((matches) => matches.length === 0)) {
+      return false;
+    }
+
+    // Try to find a sequence where all tokens appear within maxDistance of each other
+    return this.findFuzzyPhraseSequence(tokenMatches, options.maxDistance);
   }
 
-  private calculateMatchConfidence(
-    queryTerm: string,
-    matchedTerm: string,
-  ): number {
-    if (queryTerm === matchedTerm) return 1.0;
+  /**
+   * Find if there's a valid sequence of fuzzy matches within the distance limit
+   */
+  private findFuzzyPhraseSequence(
+    tokenMatches: Array<
+      Array<{ token: ProcessedSearchToken; position: number; distance: number }>
+    >,
+    maxDistance: number,
+  ): boolean {
+    // Start with matches for the first token
+    const firstTokenMatches = tokenMatches[0];
 
-    // Use Levenshtein distance for confidence calculation
-    const distance = levenshtein(queryTerm, matchedTerm);
-    const maxLength = Math.max(queryTerm.length, matchedTerm.length);
+    for (const firstMatch of firstTokenMatches) {
+      if (
+        this.canCompleteSequence(
+          firstMatch.position,
+          tokenMatches,
+          1,
+          maxDistance,
+        )
+      ) {
+        return true;
+      }
+    }
 
-    return Math.max(0, (maxLength - distance) / maxLength);
+    return false;
+  }
+
+  /**
+   * Recursively check if we can complete the fuzzy phrase sequence
+   */
+  private canCompleteSequence(
+    currentPosition: number,
+    tokenMatches: Array<
+      Array<{ token: ProcessedSearchToken; position: number; distance: number }>
+    >,
+    tokenIndex: number,
+    maxDistance: number,
+  ): boolean {
+    // Base case - we've matched all tokens
+    if (tokenIndex >= tokenMatches.length) {
+      return true;
+    }
+
+    // Try each possible match for the current token
+    const currentTokenMatches = tokenMatches[tokenIndex];
+
+    for (const match of currentTokenMatches) {
+      // Check if this match is within acceptable distance from the current position
+      const distance = Math.abs(match.position - currentPosition);
+
+      if (distance <= maxDistance && match.position > currentPosition) {
+        // This match is valid, try to complete the rest of the sequence
+        if (
+          this.canCompleteSequence(
+            match.position,
+            tokenMatches,
+            tokenIndex + 1,
+            maxDistance,
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Extract snippets for fuzzy phrase search
+   */
+  private extractFuzzyPhraseSnippets(
+    doc: DocumentIndex,
+    queryTokens: string[],
+    fuzzyThreshold: number,
+    maxDistance: number,
+  ): string[] {
+    const snippets: string[] = [];
+
+    // Find fuzzy phrase matches and extract context
+    const tokenMatches = queryTokens.map((queryToken) => {
+      return doc.tokens
+        .map((docToken, position) => ({ docToken, position }))
+        .filter(
+          ({ docToken }) =>
+            levenshtein(docToken.term.toLowerCase(), queryToken) <=
+            fuzzyThreshold,
+        );
+    });
+
+    // Find valid sequences and create snippets
+    const firstTokenMatches = tokenMatches[0] || [];
+
+    for (const firstMatch of firstTokenMatches) {
+      const sequence = this.findBestSequence(
+        firstMatch.position,
+        tokenMatches,
+        maxDistance,
+      );
+
+      if (sequence.length === queryTokens.length) {
+        // Found a complete sequence, create snippet
+        const startPos = Math.min(...sequence.map((s) => s.position));
+        const endPos = Math.max(...sequence.map((s) => s.position));
+
+        const snippetStart = Math.max(0, startPos - 5);
+        const snippetEnd = Math.min(doc.tokens.length, endPos + 6);
+
+        let snippet = doc.tokens
+          .slice(snippetStart, snippetEnd)
+          .map((t) => t.term)
+          .join(' ');
+
+        // Highlight the matched tokens
+        sequence.forEach((match) => {
+          const token = match.docToken.term;
+          snippet = snippet.replace(
+            new RegExp(`\\b${token}\\b`, 'gi'),
+            `<b>${token}</b>`,
+          );
+        });
+
+        snippets.push(snippet + '...');
+      }
+    }
+
+    return Array.from(new Set(snippets)); // Remove duplicates
+  }
+
+  /**
+   * Find the best sequence of fuzzy matches starting from a position
+   */
+  private findBestSequence(
+    startPosition: number,
+    tokenMatches: Array<
+      Array<{ docToken: ProcessedSearchToken; position: number }>
+    >,
+    maxDistance: number,
+  ): Array<{ docToken: ProcessedSearchToken; position: number }> {
+    const sequence = [
+      { docToken: tokenMatches[0][0].docToken, position: startPosition },
+    ];
+    let currentPosition = startPosition;
+
+    for (let i = 1; i < tokenMatches.length; i++) {
+      const candidates = tokenMatches[i]
+        .filter(
+          (match) =>
+            match.position > currentPosition &&
+            Math.abs(match.position - currentPosition) <= maxDistance,
+        )
+        .sort(
+          (a, b) =>
+            Math.abs(a.position - currentPosition) -
+            Math.abs(b.position - currentPosition),
+        );
+
+      if (candidates.length > 0) {
+        sequence.push(candidates[0]);
+        currentPosition = candidates[0].position;
+      }
+    }
+
+    return sequence;
   }
 
   async testDocumentParsing(): Promise<void> {
@@ -576,6 +594,176 @@ class MegaSearch {
 
     console.log(`\n${'='.repeat(50)}`);
     console.log('Document parsing test completed');
+  }
+
+  /**
+   * Helper method to create empty result with proper pagination
+   */
+  private createEmptyResult(
+    page: number,
+    pageSize: number,
+  ): PaginatedSearchResult {
+    return {
+      results: [],
+      pagination: {
+        currentPage: page,
+        totalPages: 0,
+        totalResults: 0,
+        resultsPerPage: pageSize,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    };
+  }
+
+  /**
+   * Process individual search result with proper error handling
+   */
+  private processSearchResult(
+    docId: string,
+    score: number,
+    docCache: Map<string, DocumentIndex>,
+    uniqueQueryTokens: string[],
+    fuzzy: boolean,
+    isPhrase: boolean,
+    searchTokens: string[], // Changed from queryTokens to be more generic
+    snippetsLimit: number | 'ALL',
+  ): {
+    doc: any;
+    score: number;
+    snippets: string[];
+    highlights: HighlightInfo[];
+  } {
+    const doc = docCache.get(docId);
+    let snippets: string[] = [];
+    let highlights: HighlightInfo[] = [];
+
+    if (doc) {
+      try {
+        // Extract highlights with character positions
+        if (isPhrase && fuzzy) {
+          // For fuzzy phrase, find all fuzzy matches
+          searchTokens.forEach((queryToken) => {
+            doc.tokens.forEach((docToken: ProcessedSearchToken) => {
+              const distance = levenshtein(
+                docToken.term.toLowerCase(),
+                queryToken,
+              );
+              if (distance <= 2) {
+                // Use higher threshold for phrase fuzzy matching
+                highlights.push({
+                  term: queryToken,
+                  originalWord: docToken.term,
+                  charStart: docToken.charStart,
+                  charEnd: docToken.charEnd,
+                  confidence:
+                    distance === 0 ? 1.0 : Math.max(0.5, 1.0 - distance * 0.2),
+                });
+              }
+            });
+          });
+        } else {
+          // Regular highlight extraction for non-fuzzy phrase searches
+          uniqueQueryTokens.forEach((queryToken) => {
+            doc.tokens.forEach((docToken: ProcessedSearchToken) => {
+              const docTokenStem = this.textProcessor.stemWord(docToken.term);
+
+              if (docTokenStem === queryToken) {
+                highlights.push({
+                  term: queryToken,
+                  originalWord: docToken.term,
+                  charStart: docToken.charStart,
+                  charEnd: docToken.charEnd,
+                  confidence: fuzzy
+                    ? this.calculateMatchConfidence(queryToken, docTokenStem)
+                    : 1.0,
+                });
+              }
+            });
+          });
+        }
+
+        const text = doc.tokens
+          .map((t: ProcessedSearchToken) => t.term)
+          .join(' ');
+
+        if (isPhrase) {
+          if (fuzzy) {
+            // Use fuzzy phrase snippet extraction - THIS WAS MISSING!
+            snippets = this.extractFuzzyPhraseSnippets(doc, searchTokens, 2, 2);
+          } else {
+            snippets = this.extractPhraseSnippets(text, searchTokens);
+          }
+        } else {
+          snippets = this.extractTokenSnippets(doc, uniqueQueryTokens);
+        }
+
+        // Limit snippets if not 'ALL'
+        if (snippetsLimit !== 'ALL' && typeof snippetsLimit === 'number') {
+          snippets = snippets.slice(0, snippetsLimit);
+        }
+      } catch (error) {
+        console.error(
+          `Error processing snippets for document ${doc.metadata.fileName}:`,
+          error instanceof Error ? error.message : String(error),
+        );
+        // Continue with empty snippets rather than failing
+      }
+    } else {
+      console.warn(`Document not found in cache: "${docId}"`);
+    }
+
+    return {
+      doc: doc?.metadata,
+      score,
+      snippets,
+      highlights,
+    };
+  }
+
+  /**
+   * Extract snippets for phrase search
+   */
+  private extractPhraseSnippets(
+    text: string,
+    searchTokens: string[],
+  ): string[] {
+    const snippets: string[] = [];
+    const phraseText = searchTokens.join(' ');
+
+    // Case-insensitive search for phrase
+    const lowerText = text.toLowerCase();
+    const lowerPhrase = phraseText.toLowerCase();
+
+    let idx = 0;
+    while ((idx = lowerText.indexOf(lowerPhrase, idx)) !== -1) {
+      let rawSnippet = text.substring(
+        Math.max(0, idx - 30),
+        idx + phraseText.length + 40,
+      );
+
+      // Highlight the matched phrase (preserve original case in snippet)
+      const actualPhrase = text.substring(idx, idx + phraseText.length);
+      rawSnippet = rawSnippet.replace(actualPhrase, `<b>${actualPhrase}</b>`);
+
+      snippets.push(rawSnippet + '...');
+      idx += phraseText.length;
+    }
+
+    return snippets;
+  }
+
+  private calculateMatchConfidence(
+    queryTerm: string,
+    matchedTerm: string,
+  ): number {
+    if (queryTerm === matchedTerm) return 1.0;
+
+    // Use Levenshtein distance for confidence calculation
+    const distance = levenshtein(queryTerm, matchedTerm);
+    const maxLength = Math.max(queryTerm.length, matchedTerm.length);
+
+    return Math.max(0, (maxLength - distance) / maxLength);
   }
 }
 
