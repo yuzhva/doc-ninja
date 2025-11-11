@@ -42,24 +42,27 @@ type PaginationInfo = {
 };
 
 class MegaSearch {
-  private indexer: FileIndexer;
+  private fileIndexer: FileIndexer;
   private textProcessor: UkrainianTextProcessor;
   private bm25Scorer: BM25Scorer;
 
   // ADD: Query preprocessing cache
-  private queryCache = new Map<string, {
-    queryTokens: string[];
-    originalTokens: string[];
-    uniqueQueryTokens: string[];
-    searchTokens: string[];
-    isPhrase: boolean;
-    timestamp: number;
-  }>();
+  private queryCache = new Map<
+    string,
+    {
+      queryTokens: string[];
+      originalTokens: string[];
+      uniqueQueryTokens: string[];
+      searchTokens: string[];
+      isPhrase: boolean;
+      timestamp: number;
+    }
+  >();
   private readonly QUERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private readonly MAX_QUERY_CACHE_SIZE = 1000;
 
   constructor(private config: SearchConfig) {
-    this.indexer = new FileIndexer(config);
+    this.fileIndexer = new FileIndexer(config);
     this.textProcessor = new UkrainianTextProcessor();
 
     // Initialize BM25 scorer with config or defaults
@@ -80,26 +83,89 @@ class MegaSearch {
       `Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`,
     );
 
-    await this.indexer.buildFullIndex();
+    const startTime = Date.now();
+
+    await this.fileIndexer.buildFullIndex();
 
     // Calculate average document length for BM25
     if (this.config.useBM25 !== false) {
-      const docCache = this.indexer.getDocumentCache(); // Now synchronous
+      const docCache = this.fileIndexer.getDocumentCache();
       this.bm25Scorer.calculateAverageDocLength(docCache);
     }
 
-    const stats = this.indexer.getStats();
+    // ✅ Pre-warm search caches for better performance (with safe check)
+    try {
+      if (
+        this.fileIndexer.preWarmSearchCaches &&
+        typeof this.fileIndexer.preWarmSearchCaches === 'function'
+      ) {
+        /*
+         * Pre-warming means loading frequently-used data into memory before it's actually needed,
+         * so the first searches don't have "cold cache" penalties.
+         *
+         * Positive Effects:
+         *  ✅ Faster first searches - no "cold start" delay
+         *  ✅ Predictable performance - consistent response times
+         *  ✅ Better user experience - immediate responsiveness
+         *
+         *  Negative Effects:
+         *  ⚠️ Longer startup time - system takes more time to initialize
+         *  ⚠️ Higher memory usage - more RAM consumed upfront
+         *  ⚠️ Potential startup failures - if pre-warming fails, could break initialization
+         *
+         * Without Pre-warming:
+         *   First search:  800ms (cache miss penalty)
+         *   Second search: 150ms (cache hit)
+         *   Third search:  145ms (cache hit)
+         *
+         * With Pre-warming:
+         *   Startup: +2000ms (pre-warming cost)
+         *   First search:  150ms (cache hit)
+         *   Second search: 145ms (cache hit)
+         *   Third search:  140ms (cache hit)
+         */
+        await this.fileIndexer.preWarmSearchCaches();
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to pre-warm search caches:', error);
+      // Continue without pre-warming - it's an optimization, not critical
+    }
+
+    const stats = this.fileIndexer.getStats();
+    const indexTime = Date.now() - startTime;
+
     console.log(
-      `Indexing complete: ${stats.documentsCount} documents, ${stats.termsCount} unique terms`,
+      `✅ Indexing complete: ${stats.documentsCount} documents, ${stats.termsCount} unique terms (${indexTime}ms)`,
     );
+
+    // Log memory usage
+    const memStats = this.fileIndexer.getMemoryStats?.();
+    if (memStats) {
+      console.log(
+        `💾 Memory usage: ${memStats.heap.used}MB heap, ${memStats.rss}MB RSS`,
+      );
+    }
   }
 
   async reindex(): Promise<void> {
-    await this.indexer.buildFullIndex();
+    await this.fileIndexer.buildFullIndex();
   }
 
   getStats() {
-    return this.indexer.getStats();
+    const baseStats = this.fileIndexer.getStats();
+    const memStats = this.fileIndexer.getMemoryStats?.() || null;
+
+    return {
+      ...baseStats,
+      memory: memStats,
+    };
+  }
+
+  /**
+   * Get the indexer instance for advanced operations
+   */
+  get indexer(): FileIndexer {
+    return this.fileIndexer; // ✅ Updated to return the private property
   }
 
   /**
@@ -138,8 +204,8 @@ class MegaSearch {
     invertedIndex: Map<string, InvertedIndexEntry[]>;
   } {
     try {
-      const docCache = this.indexer.getDocumentCache(); // Now synchronous
-      const invertedIndex = this.indexer.getInvertedIndex(); // Now synchronous
+      const docCache = this.fileIndexer.getDocumentCache();
+      const invertedIndex = this.fileIndexer.getInvertedIndex();
 
       if (!docCache || !invertedIndex) {
         throw new Error('Search indexes not properly initialized');
@@ -181,7 +247,11 @@ class MegaSearch {
         // Phrase search: detect if query is wrapped in quotes OR fuzzyPhrase is enabled
         const phraseMatch = query.match(/^"(.*)"$/);
         const isPhrase = !!phraseMatch || fuzzyPhrase;
-        const phrase = phraseMatch ? phraseMatch[1] : fuzzyPhrase ? query : null;
+        const phrase = phraseMatch
+          ? phraseMatch[1]
+          : fuzzyPhrase
+            ? query
+            : null;
 
         // Tokenize the query
         const rawTokens = this.textProcessor.tokenize(phrase || query);
@@ -203,7 +273,7 @@ class MegaSearch {
           uniqueQueryTokens,
           searchTokens,
           isPhrase,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         };
 
         // CACHE the processed query
@@ -902,7 +972,7 @@ class MegaSearch {
       const docTokenStem = this.textProcessor.stemWord(docToken.term);
 
       // Find which query token this matches
-      const queryToken = uniqueQueryTokens.find(qt => qt === docTokenStem);
+      const queryToken = uniqueQueryTokens.find((qt) => qt === docTokenStem);
       if (!queryToken) return;
 
       // Create snippet with sentence boundary awareness
@@ -926,11 +996,14 @@ class MegaSearch {
       if (!termRegexCache.has(docToken.term)) {
         termRegexCache.set(
           docToken.term,
-          new RegExp(`\\b${this.escapeRegExp(docToken.term)}\\b`, 'gi')
+          new RegExp(`\\b${this.escapeRegExp(docToken.term)}\\b`, 'gi'),
         );
       }
 
-      snippet = snippet.replace(termRegexCache.get(docToken.term)!, `<b>${docToken.term}</b>`);
+      snippet = snippet.replace(
+        termRegexCache.get(docToken.term)!,
+        `<b>${docToken.term}</b>`,
+      );
       snippetSet.add(snippet + '...');
     });
 
@@ -940,7 +1013,7 @@ class MegaSearch {
   async testDocumentParsing(): Promise<void> {
     console.log('Testing document parsing...');
 
-    const files = await this.indexer.discoverFiles();
+    const files = await this.fileIndexer.discoverFiles();
     console.log(`Found ${files.length} files to test`);
 
     for (const file of files.slice(0, 5)) {
@@ -1068,8 +1141,8 @@ async function createFileIndexer(
   config: Partial<SearchConfig> = {},
 ): Promise<FileIndexer> {
   const finalConfig = { ...defaultConfig, ...config };
-  const indexer = new FileIndexer(finalConfig);
-  return indexer;
+  const fileIndexer = new FileIndexer(finalConfig);
+  return fileIndexer;
 }
 
 // Test function for CLI usage

@@ -72,6 +72,10 @@ interface SearchConfig {
   bm25K1?: number; // Default: 1.2 (term frequency saturation parameter)
   bm25B?: number; // Default: 0.75 (length normalization parameter)
   useBM25?: boolean; // Default: true (use BM25 instead of TF-IDF)
+
+  // Index rebuild threshold configuration
+  indexRebuildThreshold?: number; // Default: 0.001 (0.1%)
+  minFilesForRebuild?: number; // Default: 1 (minimum files to trigger rebuild)
 }
 
 interface SearchResult {
