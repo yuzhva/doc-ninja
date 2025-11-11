@@ -1,6 +1,18 @@
-import type { NameMatch } from './name-matcher.mts';
+import fs from 'fs/promises';
 
-interface ExtractedInfo {
+import type { SearchResult } from '../features/document-intelligence-service/index.mjs';
+
+type NameMatch = {
+  searchQuery: string;
+  foundInDocument: string;
+  matchedText: string;
+  position: number;
+};
+
+type ExtractedInfo = Pick<
+  NameMatch,
+  'searchQuery' | 'foundInDocument' | 'matchedText'
+> & {
   content: string | null;
   sectionTitle: string | null;
   reason: string | null;
@@ -8,7 +20,7 @@ interface ExtractedInfo {
   actionDateContent: string | null;
   actionDate: string | null;
   context: string | null;
-}
+};
 
 class InformationExtractor {
   /**
@@ -41,7 +53,7 @@ class InformationExtractor {
 
     const paragraphContent = this.getParagraphContent(
       containingSectionText,
-      match.declension,
+      match.matchedText,
     );
     const actionDateContent = this.findActionDateContent(containingSectionText);
     const actionDate =
@@ -50,6 +62,9 @@ class InformationExtractor {
     const reason = this.findReason(containingSectionText);
 
     return {
+      searchQuery: match.searchQuery,
+      foundInDocument: match.foundInDocument,
+      matchedText: match.matchedText,
       content: paragraphContent,
       sectionTitle,
       reason,
@@ -58,6 +73,44 @@ class InformationExtractor {
       actionDate,
       context: containingSectionText,
     };
+  }
+
+  static async extractSearchResults(
+    searchResults: SearchResult[],
+  ): Promise<ExtractedInfo[]> {
+    const extractedResults: ExtractedInfo[] = [];
+    for (const searchResult of searchResults) {
+      const searchMatches = searchResult.results;
+
+      for (const searchMatch of searchMatches) {
+        const docPath = searchMatch.doc.textFilePath;
+        const docName = searchMatch.doc.fileName;
+
+        try {
+          const content = await fs.readFile(docPath, 'utf-8');
+
+          // Process each snippet in this document
+          for (const matchedSnippet of searchMatch.snippets) {
+            // Create a proper NameMatch object for the extract method
+            const nameMatch = {
+              searchQuery: searchResult.query,
+              foundInDocument: docName,
+              matchedText: matchedSnippet.match || '',
+              position: matchedSnippet.matchCharStart || 0,
+            };
+
+            const extractedResult = this.extract(content, nameMatch);
+
+            extractedResults.push(extractedResult);
+          }
+        } catch (error) {
+          console.error(`Failed to read file ${docPath}:`, error);
+          // Continue processing other files
+        }
+      }
+    }
+
+    return extractedResults;
   }
 
   /**

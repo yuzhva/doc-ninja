@@ -1,12 +1,16 @@
 import type { Request, Response } from 'express';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 
-import { extractInformation } from '../../features/nlp-extract-info.mts';
+import {
+  DocumentIntelligenceService,
+  ExcelReportGenerator,
+} from '../../features/document-intelligence-service/index.mts';
+import { InformationExtractor } from '../../nlp/information-extractor.mts';
 
 const postProcessDocuments = async (req: Request, res: Response) => {
   try {
     // Get queries from bulkNames payload
-    const bulkNames: string = req.body.bulkNames || '';
+    const bulkNames = req.body.bulkNames || '';
     const queries = bulkNames
       .split(/[,\n]/)
       .map((name) => name.trim())
@@ -18,11 +22,44 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       });
     }
 
-    // TODO: replace ols {extractInformation} with DocumentIntelligenceService usage
-    await extractInformation({ queries });
+    // Use DocumentIntelligenceService for search
+    const documentIntelligenceService = new DocumentIntelligenceService();
+    const excelReportGenerator = new ExcelReportGenerator();
+
+    const searchResults =
+      await documentIntelligenceService.searchDocuments(queries);
+
+    const extractedResults =
+      await InformationExtractor.extractSearchResults(searchResults);
+
+    // Generate Excel report
+    const reportFilename = `document-intelligence-report-${new Date().toISOString().split('T')[0]}.xlsx`;
+    const reportRows = extractedResults.map((extractedResult) => ({
+      inputName: extractedResult.searchQuery,
+      foundInDocument: extractedResult.foundInDocument,
+      documentDate: extractedResult.documentDate,
+      foundDeclension: extractedResult.matchedText,
+      sectionTitle: extractedResult.sectionTitle,
+      content: extractedResult.content,
+      actionDateContent: extractedResult.actionDateContent,
+      reason: extractedResult.reason,
+      actionDate: extractedResult.actionDate,
+
+      // TODO:
+      confidence: '',
+    }));
+    const reportPath = await excelReportGenerator.generateReport(
+      reportRows,
+      reportFilename,
+    );
 
     res.status(StatusCodes.OK).json({
-      message: ReasonPhrases.OK,
+      success: true,
+      totalQueries: queries.length,
+      results: searchResults,
+      extractedResults,
+      reportPath,
+      reportFilename,
     });
   } catch (error) {
     console.error('Process documents error:', error);

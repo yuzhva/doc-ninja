@@ -17,7 +17,6 @@ const FormConvertDocToTextTabItem = ({
   isFileSystemAccessSupported,
   isProcessing,
 }) => {
-  // Simplified API call functions using unified fetchRequest
   const postConvertDocToText = React.useCallback(
     async (formDataJSON) => {
       return initFileSystemApiCallExecutor({
