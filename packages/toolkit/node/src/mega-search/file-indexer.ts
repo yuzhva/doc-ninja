@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
 import * as zlib from 'zlib';
@@ -22,9 +23,9 @@ class FileIndexer {
   private documentCache = new Map<string, DocumentIndex>();
   private invertedIndex = new Map<string, InvertedIndexEntry[]>();
 
-  // Add LRU caches
-  private documentLRU = new LRUCache<string, DocumentIndex>(100); // Cache 100 most recent docs
-  private textLRU = new LRUCache<string, string>(50); // Cache 50 most recent text extractions
+  // Optimized LRU cache sizes for better memory management
+  private documentLRU = new LRUCache<string, DocumentIndex>(50); // Reduced from 100
+  private textLRU = new LRUCache<string, string>(25); // Reduced from 50
 
   constructor(private config: SearchConfig) {}
 
@@ -76,7 +77,7 @@ class FileIndexer {
           }
         }
 
-        // Extract and cache - use class instance instead of require
+        // Extract and cache
         const text = await this.documentExtractor.extractText(filePath);
 
         // Save to cache file
@@ -91,7 +92,7 @@ class FileIndexer {
           diskError instanceof Error ? diskError.message : String(diskError),
         );
 
-        // Fallback to direct extraction - use class instance instead of require
+        // Fallback to direct extraction
         const text = await this.documentExtractor.extractText(filePath);
         this.textLRU.set(filePath, text);
         return text;
@@ -105,6 +106,50 @@ class FileIndexer {
         `Failed to extract text from ${path.basename(filePath)}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+  }
+
+  /**
+   * Check if file should be skipped (temp files, system files, etc.)
+   */
+  private shouldSkipFile(fileName: string, filePath: string): boolean {
+    // Skip Microsoft Office temp files
+    if (fileName.startsWith('~$')) {
+      console.log(`⏭️ Skipping temp file: ${fileName}`);
+      return true;
+    }
+
+    // Skip system files
+    if (fileName.startsWith('.') || fileName.startsWith('~')) {
+      console.log(`⏭️ Skipping system file: ${fileName}`);
+      return true;
+    }
+
+    // Skip very large files that might cause memory issues
+    try {
+      const stats = fs.statSync(filePath);
+      if (stats.size > (this.config.maxFileSize || 50 * 1024 * 1024)) {
+        console.log(
+          `⏭️ Skipping large file: ${fileName} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`,
+        );
+        return true;
+      }
+    } catch (error) {
+      console.log(`⏭️ Skipping inaccessible file: ${fileName}`);
+      return true;
+    }
+
+    // Skip empty files
+    try {
+      const stats = fs.statSync(filePath);
+      if (stats.size === 0) {
+        console.log(`⏭️ Skipping empty file: ${fileName}`);
+        return true;
+      }
+    } catch (error) {
+      return true;
+    }
+
+    return false;
   }
 
   async discoverFiles(): Promise<DocumentMetadata[]> {
@@ -122,18 +167,26 @@ class FileIndexer {
         },
       );
 
-      const documentMetadata: DocumentMetadata[] = fileInfos.map((file) => ({
-        filePath: file.filePath,
-        fileName: file.fileName,
-        lastModified: file.lastModified,
-        size: file.size,
-        indexed: false,
-        language: 'mixed' as const,
-      }));
+      // Filter out temp and system files
+      const filteredFileInfos = fileInfos.filter(
+        (file) => !this.shouldSkipFile(file.fileName, file.filePath),
+      );
+
+      const documentMetadata: DocumentMetadata[] = filteredFileInfos.map(
+        (file) => ({
+          filePath: file.filePath,
+          fileName: file.fileName,
+          lastModified: file.lastModified,
+          size: file.size,
+          indexed: false,
+          language: 'mixed' as const,
+        }),
+      );
 
       this.logger.info('File discovery completed', {
         filesFound: documentMetadata.length,
         totalSize: documentMetadata.reduce((sum, f) => sum + f.size, 0),
+        filteredOut: fileInfos.length - filteredFileInfos.length,
       });
 
       return documentMetadata;
@@ -146,27 +199,105 @@ class FileIndexer {
   }
 
   needsReindexing(metadata: DocumentMetadata): boolean {
+    // Check memory cache first for faster lookup
     const cached = this.documentCache.get(metadata.filePath);
+    if (cached) {
+      if (!cached.metadata.indexed) return true;
+      if (cached.metadata.lastModified !== metadata.lastModified) return true;
+      return false; // Already indexed and up to date
+    }
 
-    if (!cached) return true;
-    if (!cached.metadata.indexed) return true;
-    if (cached.metadata.lastModified !== metadata.lastModified) return true;
+    // Check if index cache file exists and is up to date
+    const indexPath = this.getIndexCachePath(metadata.filePath);
+    if (fs.existsSync(indexPath)) {
+      try {
+        const indexStat = fs.statSync(indexPath);
+        const sourceStat = fs.statSync(metadata.filePath);
 
-    return false;
+        // If index is newer than source, no need to reindex
+        if (indexStat.mtimeMs >= sourceStat.mtimeMs) {
+          console.log(
+            `📋 Cache exists for ${metadata.fileName}, skipping reindex`,
+          );
+          return false;
+        }
+      } catch (error) {
+        // If we can't check stats, safer to reindex
+        console.log(
+          `⚠️ Cannot check cache stats for ${metadata.fileName}, will reindex`,
+        );
+      }
+    }
+
+    return true;
   }
 
   async indexDocument(metadata: DocumentMetadata): Promise<DocumentIndex> {
-    const startTime = Date.now();
+    // Add timeout protection for individual documents
+    const DOCUMENT_TIMEOUT = 30000; // 30 seconds per document
+    let timeoutHandle: NodeJS.Timeout;
 
     try {
-      this.logger.debug('Starting document indexing', {
-        fileName: metadata.fileName,
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(
+            new Error(`Document indexing timeout after ${DOCUMENT_TIMEOUT}ms`),
+          );
+        }, DOCUMENT_TIMEOUT);
       });
 
-      const indexPath = this.getIndexCachePath(metadata.filePath);
-      // Ensure directory exists
-      await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
+      // Create indexing promise
+      const indexingPromise = this.indexDocumentInternal(metadata);
 
+      // Race between indexing and timeout
+      const result = await Promise.race([indexingPromise, timeoutPromise]);
+
+      clearTimeout(timeoutHandle);
+      return result;
+    } catch (error) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+
+      this.logger.error('Document indexing failed', {
+        fileName: metadata.fileName,
+        error,
+      });
+
+      // Don't throw for individual document failures - log and continue
+      console.error(
+        `❌ Failed to index ${metadata.fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+
+      // Return a minimal index to keep processing going
+      return {
+        metadata: {
+          ...metadata,
+          indexed: false,
+          indexedAt: Date.now(),
+          language: 'unknown' as const,
+        },
+        tokens: [],
+        termFrequency: new Map(),
+        wordCount: 0,
+        originalText: '',
+      };
+    }
+  }
+
+  private async indexDocumentInternal(
+    metadata: DocumentMetadata,
+  ): Promise<DocumentIndex> {
+    const startTime = Date.now();
+
+    this.logger.debug('Starting document indexing', {
+      fileName: metadata.fileName,
+    });
+
+    const indexPath = this.getIndexCachePath(metadata.filePath);
+    // Ensure directory exists
+    await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
+
+    try {
       const srcStat = await promisify(fs.stat)(metadata.filePath);
 
       // Use cached index if up-to-date
@@ -181,8 +312,10 @@ class FileIndexer {
             cached.termFrequency = new Map(
               Object.entries(cached.termFrequency),
             );
+
+            // Store in cache but don't update inverted index yet (do it later in batch)
             this.documentCache.set(metadata.filePath, cached);
-            this.updateInvertedIndex(metadata.filePath, cached);
+            console.log(`📋 Loaded cached index for ${metadata.fileName}`);
             return cached;
           }
         } catch (cacheError) {
@@ -196,9 +329,45 @@ class FileIndexer {
         }
       }
 
-      const text = await this.extractTextFromFile(metadata.filePath);
+      // Extract text with better error handling
+      let text: string;
+      try {
+        text = await this.extractTextFromFile(metadata.filePath);
+      } catch (extractError) {
+        console.warn(
+          `Text extraction failed for ${metadata.fileName}, creating empty index`,
+        );
+        // Create empty index for files that can't be processed
+        return {
+          metadata: {
+            ...metadata,
+            indexed: false,
+            indexedAt: Date.now(),
+            language: 'unknown' as const,
+          },
+          tokens: [],
+          termFrequency: new Map(),
+          wordCount: 0,
+          originalText: '',
+        };
+      }
+
       if (!text || text.trim().length === 0) {
-        throw new Error('No text content extracted from file');
+        console.warn(
+          `No text content in ${metadata.fileName}, creating empty index`,
+        );
+        return {
+          metadata: {
+            ...metadata,
+            indexed: false,
+            indexedAt: Date.now(),
+            language: 'unknown' as const,
+          },
+          tokens: [],
+          termFrequency: new Map(),
+          wordCount: 0,
+          originalText: '',
+        };
       }
 
       const tokens = this.textProcessor.tokenize(text);
@@ -225,23 +394,26 @@ class FileIndexer {
         tokens,
         termFrequency,
         wordCount: tokens.length,
-        originalText: text, // Store original text for highlighting
+        // Don't store original text for large documents to save memory
+        originalText: text.length > 100000 ? '' : text,
       };
 
       this.documentCache.set(metadata.filePath, documentIndex);
-      this.updateInvertedIndex(metadata.filePath, documentIndex);
 
       // Save index to disk (convert Map to object)
       try {
         const toSave = {
           ...documentIndex,
           termFrequency: Object.fromEntries(termFrequency),
+          // Don't save original text to disk to save space
+          originalText: '',
         };
         await promisify(fs.writeFile)(
           indexPath,
           JSON.stringify(toSave),
           'utf8',
         );
+        console.log(`💾 Cached index for ${metadata.fileName}`);
       } catch (saveError) {
         console.warn(
           `Failed to save index cache for ${metadata.fileName}:`,
@@ -259,10 +431,6 @@ class FileIndexer {
 
       return documentIndex;
     } catch (error) {
-      this.logger.error('Document indexing failed', {
-        fileName: metadata.fileName,
-        error,
-      });
       throw new Error(
         `Failed to index document ${metadata.fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -407,13 +575,92 @@ class FileIndexer {
     }
   }
 
+  /**
+   * Enhanced intelligent selection based on system characteristics
+   */
+  private async selectIndexingMethod(): Promise<'sequential' | 'parallel'> {
+    // Get system info
+    const totalMemory = os.totalmem() / 1024 / 1024 / 1024; // GB
+    const cpuCount = os.cpus().length;
+
+    // Estimate corpus size
+    const files = await this.fileIndexer.discoverFiles();
+    const avgFileSize =
+      files.length > 0
+        ? files.reduce((sum, f) => sum + f.size, 0) / files.length
+        : 0;
+    const estimatedCorpusSize = (files.length * avgFileSize) / 1024 / 1024; // MB
+
+    console.log(
+      `🖥️  System: ${totalMemory.toFixed(1)}GB RAM, ${cpuCount} CPUs`,
+    );
+    console.log(
+      `📊 Corpus: ${files.length} files, ~${estimatedCorpusSize.toFixed(0)}MB`,
+    );
+
+    // Decision matrix
+    const useParallel =
+      totalMemory >= 8 && // At least 8GB RAM
+      cpuCount >= 4 && // At least quad-core
+      files.length >= 100 && // Meaningful corpus size
+      estimatedCorpusSize <= 2000 && // Not too large (< 2GB)
+      this.config.concurrency >= 3; // User allows parallelism
+
+    const method = useParallel ? 'parallel' : 'sequential';
+
+    if (useParallel) {
+      console.log(
+        `🚀 Auto-selected parallel indexing (good hardware + medium corpus)`,
+      );
+    } else {
+      console.log(`🐢 Auto-selected sequential indexing (conservative choice)`);
+
+      // Explain why parallel wasn't chosen
+      if (totalMemory < 8)
+        console.log(`   • Low memory: ${totalMemory.toFixed(1)}GB < 8GB`);
+      if (cpuCount < 4) console.log(`   • Few CPUs: ${cpuCount} < 4`);
+      if (files.length < 100)
+        console.log(`   • Small corpus: ${files.length} < 100 files`);
+      if (estimatedCorpusSize > 2000)
+        console.log(
+          `   • Large corpus: ${estimatedCorpusSize.toFixed(0)}MB > 2GB`,
+        );
+    }
+
+    return method;
+  }
+
   async buildFullIndex(): Promise<void> {
+    // Choose indexing method based on system analysis
+    const indexingMethod = await this.selectIndexingMethod();
+    console.log(`📂 Using indexing method: ${indexingMethod}`);
+
+    // Make threshold configurable
+    const buildFullIndexConfig = {
+      rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001, // Default 0.1%
+      minFiles: this.config.minFilesForRebuild ?? 5, // Default to 1 file
+    };
+
+    // Use the selected indexing method
+    if (indexingMethod === 'parallel') {
+      await this.fileIndexer.buildFullIndexParallel(buildFullIndexConfig);
+    } else {
+      await this.fileIndexer.buildFullIndexSequential(buildFullIndexConfig);
+    }
+  }
+
+  async buildFullIndexSequential({
+    rebuildThreshold,
+    minFiles,
+  }: { rebuildThreshold?: number; minFiles?: number } = {}): Promise<void> {
     try {
       const files = await this.discoverFiles();
       if (files.length === 0) {
         console.log('No files found to index.');
         return;
       }
+
+      console.log(`📁 Found ${files.length} documents to process...`);
 
       const globalIndexPath =
         this.config.globalIndexPath ||
@@ -422,57 +669,144 @@ class FileIndexer {
           '.cache',
           'global-inverted-index.json.gz',
         );
-      const isStale = await this.isGlobalIndexStale(globalIndexPath, files);
 
-      if (!isStale) {
-        const loaded = await this.loadGlobalInvertedIndex();
-        if (loaded) {
-          console.log('Loaded existing index from cache.');
+      // Check if we can load existing index
+      const loaded = await this.loadGlobalInvertedIndex();
+      if (loaded) {
+        console.log('📋 Loaded existing global index from cache.');
+
+        // Still need to check if any files need reindexing
+        const filesToReindex = files.filter((file) =>
+          this.needsReindexing(file),
+        );
+
+        if (filesToReindex.length === 0) {
+          console.log('✅ All files are up to date. No reindexing needed.');
           return;
         }
+
+        console.log(
+          `📝 Need to reindex ${filesToReindex.length} files out of ${files.length} total.`,
+        );
+        files.length = 0;
+        files.push(...filesToReindex);
       }
 
-      // Try to load chunked index first
-      const loaded = await this.loadChunkedInvertedIndex();
-      if (loaded) {
-        console.log('Loaded sharded index from cache.');
-        return;
-      }
-
-      console.log(`Indexing ${files.length} documents...`);
+      console.log(`🔄 Indexing ${files.length} documents...`);
       let indexed = 0;
       let skipped = 0;
       let errors = 0;
 
-      for (const file of files) {
-        try {
-          if (this.needsReindexing(file)) {
-            await this.indexDocument(file);
-            indexed++;
-            // Only log every 10th file to reduce noise
-            if (indexed % 10 === 0 || indexed === files.length) {
-              console.log(`Progress: ${indexed}/${files.length} files indexed`);
-            }
-          } else {
-            skipped++;
-          }
-        } catch (error) {
-          errors++;
-          console.error(
-            `Failed to index ${file.fileName}:`,
-            error instanceof Error ? error.message : String(error),
-          );
-          // Continue processing other files
-        }
+      // Process in smaller batches to prevent memory issues
+      const BATCH_SIZE = 25; // Optimized batch size
+      const batches = [];
+      for (let i = 0; i < files.length; i += BATCH_SIZE) {
+        batches.push(files.slice(i, i + BATCH_SIZE));
       }
 
       console.log(
-        `Indexing complete: ${indexed} indexed, ${skipped} skipped, ${errors} errors`,
+        `📦 Processing ${batches.length} batches of ${BATCH_SIZE} files each...`,
       );
 
-      if (indexed > 0) {
+      // Track documents that need inverted index updates
+      const documentsToUpdate: string[] = [];
+
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        console.log(
+          `📦 Processing batch ${batchIndex + 1}/${batches.length}...`,
+        );
+
+        // Process batch with individual error handling
+        const batchPromises = batch.map(async (file) => {
+          try {
+            if (this.needsReindexing(file)) {
+              await this.indexDocument(file);
+              return {
+                success: true,
+                type: 'indexed',
+                filePath: file.filePath,
+              };
+            } else {
+              return {
+                success: true,
+                type: 'skipped',
+                filePath: file.filePath,
+              };
+            }
+          } catch (error) {
+            console.error(
+              `❌ Failed to index ${file.fileName}:`,
+              error instanceof Error ? error.message : String(error),
+            );
+            return { success: false, type: 'error', filePath: file.filePath };
+          }
+        });
+
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+
+        // Update counters and track indexed documents
+        batchResults.forEach((result) => {
+          if (result.success) {
+            if (result.type === 'indexed') {
+              indexed++;
+              documentsToUpdate.push(result.filePath);
+            } else if (result.type === 'skipped') {
+              skipped++;
+              // Also add skipped files to ensure they're in the inverted index
+              documentsToUpdate.push(result.filePath);
+            }
+          } else {
+            errors++;
+          }
+        });
+
+        // Progress update
+        const totalProcessed = (batchIndex + 1) * BATCH_SIZE;
+        const actualProcessed = Math.min(totalProcessed, files.length);
+        console.log(
+          `📊 Progress: ${actualProcessed}/${files.length} files processed (${indexed} indexed, ${skipped} skipped, ${errors} errors)`,
+        );
+
+        // Force garbage collection between batches if available
+        if (global.gc && batchIndex % 3 === 0) {
+          global.gc();
+        }
+
+        // Small delay to prevent overwhelming the system
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      // Only update inverted index if we have significant NEW content
+      const significantChanges =
+        indexed > Math.max(minFiles, files.length * rebuildThreshold);
+
+      if (documentsToUpdate.length > 0 && significantChanges) {
+        console.log(
+          `🔗 Updating inverted index for ${documentsToUpdate.length} documents...`,
+        );
+        console.log(
+          `📊 Threshold: ${(rebuildThreshold * 100).toFixed(1)}% (${Math.max(minFiles, Math.round(files.length * rebuildThreshold))} files)`,
+        );
+        await this.updateInvertedIndexBatch(documentsToUpdate);
+      } else if (documentsToUpdate.length > 0) {
+        console.log(
+          `🚀 Skipping inverted index rebuild - only ${indexed} new documents (< ${(rebuildThreshold * 100).toFixed(1)}% threshold)`,
+        );
+        console.log(`💡 Search will use existing cached inverted index`);
+        // Load existing inverted index if available
+        await this.loadGlobalInvertedIndex();
+      }
+
+      console.log(
+        `✅ Indexing complete: ${indexed} indexed, ${skipped} skipped, ${errors} errors`,
+      );
+
+      if (indexed > 0 || documentsToUpdate.length > 0) {
+        console.log('💾 Saving global index...');
         await this.saveGlobalInvertedIndex();
-        console.log('Index saved successfully.');
+        console.log('✅ Index saved successfully.');
       }
     } catch (error) {
       console.error(
@@ -485,54 +819,219 @@ class FileIndexer {
     }
   }
 
-  private async loadChunkedInvertedIndex(): Promise<boolean> {
-    const chunkDir = path.join(
-      this.config.rootDirectory,
-      '.cache',
-      'sharded-index',
-    );
-    if (!fs.existsSync(chunkDir)) return false;
-    const files = await fs.promises.readdir(chunkDir);
-    this.invertedIndex.clear();
-    for (const file of files) {
-      if (!file.endsWith('.json.gz')) continue;
-      const gzipped = await fs.promises.readFile(path.join(chunkDir, file));
-      const data = zlib.gunzipSync(gzipped).toString('utf8');
-      const obj = JSON.parse(data);
-      for (const term of Object.keys(obj)) {
-        this.invertedIndex.set(term, obj[term]);
+  /**
+   * NEW: True parallel processing for independent documents
+   */
+  async buildFullIndexParallel({
+    rebuildThreshold,
+    minFiles,
+  }: { rebuildThreshold?: number; minFiles?: number } = {}): Promise<void> {
+    try {
+      const files = await this.discoverFiles();
+      if (files.length === 0) {
+        console.log('No files found to index.');
+        return;
       }
-    }
-    return this.invertedIndex.size > 0;
-  }
 
-  getInvertedIndex(): Map<string, InvertedIndexEntry[]> {
-    return new Map(this.invertedIndex);
-  }
+      console.log(
+        `📁 Found ${files.length} documents to process in parallel...`,
+      );
 
-  getDocumentCache(): Map<string, DocumentIndex> {
-    // Enhanced to use LRU for frequently accessed documents
-    const result = new Map(this.documentCache);
-
-    // Add LRU cached items
-    for (const [key, value] of this.documentLRU['cache']) {
-      if (!result.has(key)) {
-        result.set(key, value);
+      // Check existing index
+      const loaded = await this.loadGlobalInvertedIndex();
+      if (loaded) {
+        const filesToReindex = files.filter((file) =>
+          this.needsReindexing(file),
+        );
+        if (filesToReindex.length === 0) {
+          console.log('✅ All files are up to date. No reindexing needed.');
+          return;
+        }
+        files.length = 0;
+        files.push(...filesToReindex);
       }
-    }
 
-    return result;
+      console.log(
+        `🚀 Processing ${files.length} documents with parallel workers...`,
+      );
+
+      // Use actual parallel processing with worker pool
+      const PARALLEL_WORKERS = Math.min(
+        this.config.concurrency || 4,
+        files.length,
+      );
+      const chunks = this.chunkArray(
+        files,
+        Math.ceil(files.length / PARALLEL_WORKERS),
+      );
+
+      console.log(
+        `👥 Starting ${PARALLEL_WORKERS} parallel workers for ${chunks.length} chunks`,
+      );
+
+      let totalIndexed = 0;
+      let totalErrors = 0;
+
+      const workerPromises = chunks.map(async (chunk, workerIndex) => {
+        let workerIndexed = 0;
+        let workerErrors = 0;
+
+        for (const file of chunk) {
+          try {
+            await this.indexDocument(file);
+            workerIndexed++;
+            totalIndexed++;
+
+            // Progress update from worker
+            if (workerIndexed % 5 === 0) {
+              console.log(
+                `👷 Worker ${workerIndex + 1}: processed ${workerIndexed}/${chunk.length} files`,
+              );
+            }
+          } catch (error) {
+            workerErrors++;
+            totalErrors++;
+            console.error(
+              `❌ Worker ${workerIndex + 1} failed on ${file.fileName}:`,
+              error,
+            );
+          }
+        }
+
+        return { workerIndex, workerIndexed, workerErrors };
+      });
+
+      // Wait for all workers to complete
+      const results = await Promise.all(workerPromises);
+
+      // Log worker results
+      results.forEach(({ workerIndex, workerIndexed, workerErrors }) => {
+        console.log(
+          `👷 Worker ${workerIndex + 1} completed: ${workerIndexed} indexed, ${workerErrors} errors`,
+        );
+      });
+
+      console.log(
+        `✅ Parallel indexing complete: ${totalIndexed} indexed, ${totalErrors} errors`,
+      );
+
+      // Rebuild inverted index if significant changes
+      if (totalIndexed > Math.max(minFiles, files.length * rebuildThreshold)) {
+        console.log(
+          `📊 Threshold met: ${totalIndexed} files > ${(rebuildThreshold * 100).toFixed(1)}% threshold`,
+        );
+        await this.updateInvertedIndexBatch(files.map((f) => f.filePath));
+      } else {
+        console.log(
+          `🚀 Skipping rebuild - ${totalIndexed} files < ${(rebuildThreshold * 100).toFixed(1)}% threshold`,
+        );
+      }
+
+      // Save and validate
+      await this.saveGlobalInvertedIndex();
+      const health = await this.validateIndexHealth();
+
+      if (!health.isHealthy) {
+        console.warn(`⚠️ Index health issues detected:`, health.issues);
+      }
+    } catch (error) {
+      console.error('Parallel index building failed:', error);
+      throw error;
+    }
   }
 
-  getStats() {
-    return {
-      documentsCount: this.documentCache.size,
-      termsCount: this.invertedIndex.size,
-      totalTokens: Array.from(this.documentCache.values()).reduce(
-        (sum, doc) => sum + doc.wordCount,
-        0,
-      ),
+  /**
+   * Helper: Split array into chunks for parallel processing
+   */
+  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }
+
+  /**
+   * OPTIONAL: Enhanced progress callbacks for UI integration
+   */
+  async buildFullIndexWithCallbacks(
+    progressCallback?: (progress: {
+      phase:
+        | 'discovery'
+        | 'indexing'
+        | 'inverted-index'
+        | 'saving'
+        | 'validation';
+      current: number;
+      total: number;
+      message: string;
+      percentage: number;
+    }) => void,
+  ): Promise<void> {
+    const progress = (
+      phase: any,
+      current: number,
+      total: number,
+      message: string,
+    ) => {
+      const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+      progressCallback?.({ phase, current, total, message, percentage });
     };
+
+    try {
+      // Phase 1: Discovery
+      progress('discovery', 0, 1, 'Discovering files...');
+      const files = await this.discoverFiles();
+      progress('discovery', 1, 1, `Found ${files.length} files`);
+
+      if (files.length === 0) return;
+
+      // Phase 2: Indexing
+      let indexed = 0;
+      for (const file of files) {
+        if (this.needsReindexing(file)) {
+          await this.indexDocument(file);
+          indexed++;
+          progress(
+            'indexing',
+            indexed,
+            files.length,
+            `Indexing ${file.fileName}`,
+          );
+        }
+      }
+
+      // Phase 3: Inverted Index
+      if (indexed > 0) {
+        progress('inverted-index', 0, 1, 'Building inverted index...');
+        await this.updateInvertedIndexBatch(files.map((f) => f.filePath));
+        progress('inverted-index', 1, 1, 'Inverted index complete');
+      }
+
+      // Phase 4: Saving
+      progress('saving', 0, 1, 'Saving index to disk...');
+      await this.saveGlobalInvertedIndex();
+      progress('saving', 1, 1, 'Index saved');
+
+      // Phase 5: Validation
+      progress('validation', 0, 1, 'Validating index health...');
+      const health = await this.validateIndexHealth();
+      progress(
+        'validation',
+        1,
+        1,
+        health.isHealthy ? 'Index healthy' : 'Health issues detected',
+      );
+    } catch (error) {
+      progressCallback?.({
+        phase: 'indexing',
+        current: 0,
+        total: 1,
+        message: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        percentage: 0,
+      });
+      throw error;
+    }
   }
 }
 
