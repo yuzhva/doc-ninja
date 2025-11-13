@@ -60,7 +60,7 @@ function getProcessingConfig(
   }
 }
 
-async function extractInformation() {
+async function extractInformation({ queries }: { queries?: string[] } = {}) {
   const config = getProcessingConfig();
 
   // Start timing
@@ -74,10 +74,19 @@ async function extractInformation() {
   console.log(`⏱️ Started at: ${new Date().toLocaleTimeString()}`);
 
   try {
-    // 1. Read input names from Excel
-    const inputPath = path.join(runtimePathById.assets, 'nlp-input/data.xlsx');
-    const allBaseNames = await readExcelData(inputPath);
-    console.log(`📊 Loaded ${allBaseNames.length} names from input file.`);
+    let allBaseNames: string[] = [];
+
+    if (queries) {
+      allBaseNames = queries;
+    } else {
+      // 1. Read input names from Excel
+      const inputPath = path.join(
+        runtimePathById.assets,
+        'nlp-input/data.xlsx',
+      );
+      allBaseNames = await readExcelData(inputPath);
+      console.log(`📊 Loaded ${allBaseNames.length} names from input file.`);
+    }
 
     // Remove duplicates to process each unique name only once
     const baseNames = [...new Set(allBaseNames)];

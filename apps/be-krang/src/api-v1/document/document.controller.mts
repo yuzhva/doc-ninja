@@ -172,54 +172,16 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
     const failedFiles = [];
 
     try {
-      /*
-      // Convert formulas to values and get the processed buffer
-      const convertedBuffer = await convertFormulasToValues(buffer);
-
-      // Create the processed file object
-      const processedFile = {
-        name: fileName.replace('.xlsx', '_converted.xlsx'),
-        content: convertedBuffer.toString('base64'),
-        relativePath: fileName.replace('.xlsx', '_converted.xlsx'),
-        originalPath: fileName,
-      };
-
-      processedFiles.push(processedFile);
-
-      console.log(`✅ Successfully converted formulas in ${fileName}`);
-      */
-
-      // Process the Excel file
       const chunkFiles = await sliceDocumentForChunks({
         buffer,
-        sheetToChunkPosition: 2,
-        headerRows: 5,
-        splitColumnPosition: 11,
-        maxColumnsToInclude: 17,
+        sheetToChunkPosition: parseInt(req.body.sheetToChunkPosition),
+        headerRows: parseInt(req.body.headerRows),
+        splitColumnPosition: parseInt(req.body.splitColumnPosition),
+        maxColumnsToInclude: parseInt(req.body.maxColumnsToInclude),
         chunkNamePattern: '^([0-9]+\\s+[а-яА-ЯіІїЇєЄ]+|[а-яА-ЯіІїЇєЄ]+)',
         includeHiddenSheets: false,
-        additionalSheets: [
-          {
-            sheetIndex: 8,
-            filterColumnPosition: 19,
-            headerRows: 3,
-          },
-          {
-            sheetIndex: 9,
-            filterColumnPosition: 5,
-            headerRows: 2,
-          },
-        ],
+        additionalSheets: [...JSON.parse(req.body.additionalSheets || '[]')],
       });
-      // const chunkFiles = await sliceDocumentForChunks({
-      //   buffer,
-      //   sheetToChunkPosition: 1,
-      //   headerRows: 5,
-      //   splitColumnPosition: 11,
-      //   maxColumnsToInclude: 17,
-      //   chunkNamePattern: '^([0-9]+\\s+[а-яА-ЯіІїЇєЄ]+|[а-яА-ЯіІїЇєЄ]+)',
-      //   includeHiddenSheets: false,
-      // });
 
       // Convert chunk files to the unified format
       for (const chunkFile of chunkFiles) {
