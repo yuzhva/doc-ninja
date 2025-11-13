@@ -699,31 +699,24 @@ class FileIndexer {
 
       if (!fs.existsSync(globalIndexPath)) return false;
 
-      const gzipped = await fs.promises.readFile(globalIndexPath);
-      const data = zlib.gunzipSync(gzipped).toString('utf8');
-      const obj = JSON.parse(data);
+      // Check if it's a chunked format
+      const content = await fs.promises.readFile(globalIndexPath, 'utf8');
 
-      // Validate the loaded data
-      if (!obj.invertedIndex || !obj.documentCache) {
-        console.warn('Invalid global index format, rebuilding...');
-        return false;
+      try {
+        const marker = JSON.parse(content);
+        if (marker.format === 'chunked') {
+          console.log('📦 Loading chunked index format...');
+          return await this.loadGlobalInvertedIndexChunked(
+            globalIndexPath,
+            marker,
+          );
+        }
+      } catch (parseError) {
+        // Not JSON, probably compressed standard format - continue with standard loading
       }
 
-      // Restore invertedIndex
-      this.invertedIndex.clear();
-      for (const term of Object.keys(obj.invertedIndex)) {
-        this.invertedIndex.set(term, obj.invertedIndex[term]);
-      }
-
-      // Restore documentCache
-      this.documentCache.clear();
-      for (const filePath of Object.keys(obj.documentCache)) {
-        const doc = obj.documentCache[filePath];
-        doc.termFrequency = new Map(Object.entries(doc.termFrequency));
-        this.documentCache.set(filePath, doc);
-      }
-
-      return true;
+      console.log('📋 Loading standard index format...');
+      return await this.loadGlobalInvertedIndexStandard(globalIndexPath);
     } catch (error) {
       console.warn(
         'Failed to load global inverted index:',
@@ -744,27 +737,22 @@ class FileIndexer {
         );
       const tempPath = globalIndexPath + '.tmp';
 
-      // Save both invertedIndex and documentCache
-      const obj: Record<string, any> = {
-        invertedIndex: Object.fromEntries(this.invertedIndex),
-        documentCache: Object.fromEntries(
-          Array.from(this.documentCache.entries()).map(([k, v]) => [
-            k,
-            { ...v, termFrequency: Object.fromEntries(v.termFrequency) },
-          ]),
-        ),
-      };
+      // ✅ NEW: Check if the data is too large for JSON serialization
+      const estimatedSize = this.estimateIndexSize();
+      console.log(
+        `💾 Estimated index size: ${Math.round(estimatedSize / 1024 / 1024)}MB`,
+      );
 
-      await fs.promises.mkdir(path.dirname(globalIndexPath), {
-        recursive: true,
-      });
-      const json = JSON.stringify(obj);
-      const gzipped = zlib.gzipSync(json);
-
-      // Write to temp file first
-      await fs.promises.writeFile(tempPath, gzipped);
-      // Atomically replace the old file
-      await fs.promises.rename(tempPath, globalIndexPath);
+      if (estimatedSize > 800 * 1024 * 1024) {
+        // > 800MB
+        console.log(
+          `🚨 Index too large for JSON serialization, using chunked approach`,
+        );
+        await this.saveGlobalInvertedIndexChunked(globalIndexPath, tempPath);
+      } else {
+        console.log(`💾 Using standard JSON serialization`);
+        await this.saveGlobalInvertedIndexStandard(globalIndexPath, tempPath);
+      }
     } catch (error) {
       console.error(
         'Failed to save global inverted index:',
@@ -773,6 +761,385 @@ class FileIndexer {
       throw new Error(
         `Failed to save index: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
+    }
+  }
+
+  /**
+   * ✅ NEW: Estimate the serialized size before attempting to serialize
+   */
+  private estimateIndexSize(): number {
+    let estimatedSize = 0;
+
+    // Estimate inverted index size
+    this.invertedIndex.forEach((entries, term) => {
+      // Term key: ~term.length bytes
+      estimatedSize += term.length * 2; // UTF-16 encoding
+
+      // Entries array: each entry has ~100-200 bytes when serialized
+      estimatedSize += entries.length * 150;
+
+      // Positions arrays: each position is ~10 bytes when serialized
+      entries.forEach((entry) => {
+        estimatedSize += entry.positions.length * 10;
+      });
+    });
+
+    // Estimate document cache size
+    this.documentCache.forEach((doc) => {
+      // Metadata: ~500 bytes
+      estimatedSize += 500;
+
+      // Tokens: each token ~50 bytes
+      estimatedSize += doc.tokens.length * 50;
+
+      // Term frequency map: ~30 bytes per entry
+      estimatedSize += doc.termFrequency.size * 30;
+
+      // Original text (if present): full text size
+      if (doc.originalText) {
+        estimatedSize += doc.originalText.length * 2;
+      }
+    });
+
+    // Add JSON overhead (~30%)
+    return Math.round(estimatedSize * 1.3);
+  }
+
+  /**
+   * ✅ NEW: Standard JSON serialization for smaller indexes
+   */
+  private async saveGlobalInvertedIndexStandard(
+    globalIndexPath: string,
+    tempPath: string,
+  ): Promise<void> {
+    // Save both invertedIndex and documentCache
+    const obj: Record<string, any> = {
+      invertedIndex: Object.fromEntries(this.invertedIndex),
+      documentCache: Object.fromEntries(
+        Array.from(this.documentCache.entries()).map(([k, v]) => [
+          k,
+          { ...v, termFrequency: Object.fromEntries(v.termFrequency) },
+        ]),
+      ),
+    };
+
+    await fs.promises.mkdir(path.dirname(globalIndexPath), {
+      recursive: true,
+    });
+
+    const json = JSON.stringify(obj);
+    const gzipped = zlib.gzipSync(json);
+
+    // Write to temp file first
+    await fs.promises.writeFile(tempPath, gzipped);
+    // Atomically replace the old file
+    await fs.promises.rename(tempPath, globalIndexPath);
+
+    console.log(
+      `✅ Standard index saved: ${Math.round(gzipped.length / 1024 / 1024)}MB compressed`,
+    );
+  }
+
+  /**
+   * ✅ NEW: Chunked serialization for very large indexes
+   */
+  private async saveGlobalInvertedIndexChunked(
+    globalIndexPath: string,
+    tempPath: string,
+  ): Promise<void> {
+    await fs.promises.mkdir(path.dirname(globalIndexPath), { recursive: true });
+
+    // Create chunked directory structure
+    const chunkedDir = globalIndexPath.replace('.json.gz', '.chunks');
+    await fs.promises.mkdir(chunkedDir, { recursive: true });
+
+    console.log(`📦 Saving index in chunks to: ${chunkedDir}`);
+
+    try {
+      // Save metadata first
+      const metadata = {
+        version: '1.0',
+        timestamp: Date.now(),
+        totalDocuments: this.documentCache.size,
+        totalTerms: this.invertedIndex.size,
+        chunkInfo: {
+          documentChunks: 0,
+          invertedIndexChunks: 0,
+        },
+      };
+
+      // ✅ Chunk 1: Save document cache in smaller pieces
+      const docChunks = this.chunkMapEntries(
+        Array.from(this.documentCache.entries()),
+        100,
+      );
+      console.log(`📑 Saving document cache in ${docChunks.length} chunks`);
+
+      for (let i = 0; i < docChunks.length; i++) {
+        const chunk = Object.fromEntries(
+          docChunks[i].map(([k, v]) => [
+            k,
+            {
+              ...v,
+              termFrequency: Object.fromEntries(v.termFrequency),
+              originalText: '',
+            }, // Remove original text to save space
+          ]),
+        );
+
+        const chunkPath = path.join(chunkedDir, `documents_${i}.json.gz`);
+        const chunkJson = JSON.stringify({ documents: chunk });
+        const compressed = zlib.gzipSync(chunkJson);
+        await fs.promises.writeFile(chunkPath, compressed);
+
+        if (i % 10 === 0 || i === docChunks.length - 1) {
+          console.log(`  📄 Document chunk ${i + 1}/${docChunks.length} saved`);
+        }
+      }
+      metadata.chunkInfo.documentChunks = docChunks.length;
+
+      // ✅ Chunk 2: Save inverted index in smaller pieces
+      const invertedChunks = this.chunkMapEntries(
+        Array.from(this.invertedIndex.entries()),
+        1000,
+      );
+      console.log(
+        `🔗 Saving inverted index in ${invertedChunks.length} chunks`,
+      );
+
+      for (let i = 0; i < invertedChunks.length; i++) {
+        const chunk = Object.fromEntries(invertedChunks[i]);
+        const chunkPath = path.join(chunkedDir, `inverted_${i}.json.gz`);
+        const chunkJson = JSON.stringify({ inverted: chunk });
+        const compressed = zlib.gzipSync(chunkJson);
+        await fs.promises.writeFile(chunkPath, compressed);
+
+        if (i % 5 === 0 || i === invertedChunks.length - 1) {
+          console.log(
+            `  🔗 Inverted index chunk ${i + 1}/${invertedChunks.length} saved`,
+          );
+        }
+      }
+      metadata.chunkInfo.invertedIndexChunks = invertedChunks.length;
+
+      // Save metadata
+      const metadataPath = path.join(chunkedDir, 'metadata.json');
+      await fs.promises.writeFile(
+        metadataPath,
+        JSON.stringify(metadata, null, 2),
+      );
+
+      // Create a marker file to indicate chunked format
+      const markerContent = JSON.stringify({
+        format: 'chunked',
+        version: '1.0',
+        chunkedDir: path.relative(path.dirname(globalIndexPath), chunkedDir),
+        createdAt: new Date().toISOString(),
+      });
+      await fs.promises.writeFile(globalIndexPath, markerContent);
+
+      console.log(
+        `✅ Chunked index saved successfully with ${metadata.chunkInfo.documentChunks + metadata.chunkInfo.invertedIndexChunks} total chunks`,
+      );
+    } catch (error) {
+      // Clean up on failure
+      try {
+        await fs.promises.rm(chunkedDir, { recursive: true, force: true });
+        await fs.promises.rm(globalIndexPath, { force: true });
+      } catch (cleanupError) {
+        console.warn(
+          'Failed to clean up after chunked save failure:',
+          cleanupError,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW: Helper to chunk array entries
+   */
+  private chunkMapEntries<T>(entries: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < entries.length; i += chunkSize) {
+      chunks.push(entries.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }
+
+  /**
+   * ✅ UPDATED: Load global index with chunked format support
+   */
+  private async loadGlobalInvertedIndex(): Promise<boolean> {
+    try {
+      const globalIndexPath =
+        this.config.globalIndexPath ||
+        path.join(
+          this.config.rootDirectory,
+          '.cache',
+          'global-inverted-index.json.gz',
+        );
+
+      if (!fs.existsSync(globalIndexPath)) return false;
+
+      // Check if it's a chunked format
+      const content = await fs.promises.readFile(globalIndexPath, 'utf8');
+
+      try {
+        const marker = JSON.parse(content);
+        if (marker.format === 'chunked') {
+          console.log('📦 Loading chunked index format...');
+          return await this.loadGlobalInvertedIndexChunked(
+            globalIndexPath,
+            marker,
+          );
+        }
+      } catch (parseError) {
+        // Not JSON, probably compressed standard format - continue with standard loading
+      }
+
+      console.log('📋 Loading standard index format...');
+      return await this.loadGlobalInvertedIndexStandard(globalIndexPath);
+    } catch (error) {
+      console.warn(
+        'Failed to load global inverted index:',
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    }
+  }
+
+  /**
+   * ✅ NEW: Load standard format index
+   */
+  private async loadGlobalInvertedIndexStandard(
+    globalIndexPath: string,
+  ): Promise<boolean> {
+    const gzipped = await fs.promises.readFile(globalIndexPath);
+    const data = zlib.gunzipSync(gzipped).toString('utf8');
+    const obj = JSON.parse(data);
+
+    // Validate the loaded data
+    if (!obj.invertedIndex || !obj.documentCache) {
+      console.warn('Invalid global index format, rebuilding...');
+      return false;
+    }
+
+    // Restore invertedIndex
+    this.invertedIndex.clear();
+    for (const term of Object.keys(obj.invertedIndex)) {
+      this.invertedIndex.set(term, obj.invertedIndex[term]);
+    }
+
+    // Restore documentCache
+    this.documentCache.clear();
+    for (const filePath of Object.keys(obj.documentCache)) {
+      const doc = obj.documentCache[filePath];
+      doc.termFrequency = new Map(Object.entries(doc.termFrequency));
+      this.documentCache.set(filePath, doc);
+    }
+
+    console.log(
+      `✅ Standard index loaded: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms`,
+    );
+    return true;
+  }
+
+  /**
+   * ✅ NEW: Load chunked format index
+   */
+  private async loadGlobalInvertedIndexChunked(
+    globalIndexPath: string,
+    marker: any,
+  ): Promise<boolean> {
+    const chunkedDir = path.resolve(
+      path.dirname(globalIndexPath),
+      marker.chunkedDir,
+    );
+
+    if (!fs.existsSync(chunkedDir)) {
+      console.warn('Chunked directory not found, rebuilding index...');
+      return false;
+    }
+
+    // Load metadata
+    const metadataPath = path.join(chunkedDir, 'metadata.json');
+    if (!fs.existsSync(metadataPath)) {
+      console.warn('Chunked metadata not found, rebuilding index...');
+      return false;
+    }
+
+    const metadata = JSON.parse(
+      await fs.promises.readFile(metadataPath, 'utf8'),
+    );
+    console.log(
+      `📦 Loading chunked index: ${metadata.totalDocuments} docs, ${metadata.totalTerms} terms`,
+    );
+
+    try {
+      // Clear existing data
+      this.documentCache.clear();
+      this.invertedIndex.clear();
+
+      // Load document chunks
+      console.log(
+        `📑 Loading ${metadata.chunkInfo.documentChunks} document chunks...`,
+      );
+      for (let i = 0; i < metadata.chunkInfo.documentChunks; i++) {
+        const chunkPath = path.join(chunkedDir, `documents_${i}.json.gz`);
+        const compressed = await fs.promises.readFile(chunkPath);
+        const chunkJson = zlib.gunzipSync(compressed).toString('utf8');
+        const chunk = JSON.parse(chunkJson);
+
+        // Restore document cache entries
+        Object.entries(chunk.documents).forEach(
+          ([filePath, doc]: [string, any]) => {
+            doc.termFrequency = new Map(Object.entries(doc.termFrequency));
+            this.documentCache.set(filePath, doc);
+          },
+        );
+
+        if (i % 10 === 0 || i === metadata.chunkInfo.documentChunks - 1) {
+          console.log(
+            `  📄 Loaded document chunk ${i + 1}/${metadata.chunkInfo.documentChunks}`,
+          );
+        }
+      }
+
+      // Load inverted index chunks
+      console.log(
+        `🔗 Loading ${metadata.chunkInfo.invertedIndexChunks} inverted index chunks...`,
+      );
+      for (let i = 0; i < metadata.chunkInfo.invertedIndexChunks; i++) {
+        const chunkPath = path.join(chunkedDir, `inverted_${i}.json.gz`);
+        const compressed = await fs.promises.readFile(chunkPath);
+        const chunkJson = zlib.gunzipSync(compressed).toString('utf8');
+        const chunk = JSON.parse(chunkJson);
+
+        // Restore inverted index entries
+        Object.entries(chunk.inverted).forEach(
+          ([term, entries]: [string, any]) => {
+            this.invertedIndex.set(term, entries);
+          },
+        );
+
+        if (i % 5 === 0 || i === metadata.chunkInfo.invertedIndexChunks - 1) {
+          console.log(
+            `  🔗 Loaded inverted index chunk ${i + 1}/${metadata.chunkInfo.invertedIndexChunks}`,
+          );
+        }
+      }
+
+      console.log(
+        `✅ Chunked index loaded successfully: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms`,
+      );
+      return true;
+    } catch (error) {
+      console.error('Failed to load chunked index:', error);
+      // Clear partially loaded data
+      this.documentCache.clear();
+      this.invertedIndex.clear();
+      return false;
     }
   }
 
