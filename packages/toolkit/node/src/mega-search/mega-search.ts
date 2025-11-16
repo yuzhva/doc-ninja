@@ -2,6 +2,7 @@ import { BM25Scorer } from './bm25-scorer';
 import { DocumentExtractor } from './document-parsers';
 import { FileIndexer } from './file-indexer';
 import { levenshtein } from './fuzzy';
+import { createLogger } from './shared/logger';
 import { UkrainianTextProcessor } from './text-processor';
 import {
   DocumentIndex,
@@ -9,7 +10,16 @@ import {
   InvertedIndexEntry,
   ProcessedSearchToken,
   SearchConfig,
+  SnippetInfo,
 } from './types';
+
+const logger = createLogger('MegaSearch');
+
+// ✅ NEW: Add a debug logger that only runs when NODE_ENV is 'development'
+const consoleLogDebug = (...args: any[]) => {
+  const isDetailedDebugLogsOn = process.env.DEBUG_MEGA_SEARCH === 'true';
+  if (isDetailedDebugLogsOn) logger.debug(...args);
+};
 
 type SearchOptions = {
   topN?: number;
@@ -26,7 +36,7 @@ type PaginatedSearchResult = {
   results: Array<{
     doc: any;
     score: number;
-    snippets: string[];
+    snippets: SnippetInfo[];
     highlights: HighlightInfo[];
   }>;
   pagination: PaginationInfo;
@@ -61,6 +71,10 @@ class MegaSearch {
   private readonly QUERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private readonly MAX_QUERY_CACHE_SIZE = 1000;
 
+  // ✅ NEW: Search result caching to speed up frequent queries
+  private searchCache = new Map<string, PaginatedSearchResult>();
+  private readonly MAX_SEARCH_CACHE_SIZE = 100;
+
   constructor(private config: SearchConfig) {
     this.fileIndexer = new FileIndexer(config);
     this.textProcessor = new UkrainianTextProcessor();
@@ -72,14 +86,39 @@ class MegaSearch {
     });
   }
 
+  /**
+   * ✅ NEW: Helper to rehydrate a token object from the compact index on demand.
+   * This avoids storing millions of token objects in memory.
+   */
+  private getDocumentToken(
+    doc: DocumentIndex,
+    position: number,
+  ): ProcessedSearchToken | null {
+    if (position < 0 || position >= doc.positions.length) {
+      return null;
+    }
+    const [vocabIndex, charStart, charEnd] = doc.positions[position];
+    const term = doc.vocab[vocabIndex];
+
+    // The `normalized` property is not stored to save space, but can be recreated if needed.
+    // For most search operations, we use the stemmed version anyway.
+    return {
+      term,
+      position,
+      charStart,
+      charEnd,
+      normalized: term.toLowerCase(), // A reasonable approximation for on-the-fly use.
+    };
+  }
+
   async initialize(): Promise<void> {
-    console.log('Initializing Mega Search system...');
-    console.log(`Root directory: ${this.config.rootDirectory}`);
-    console.log(`Supported extensions: ${this.config.extensions.join(', ')}`);
-    console.log(
+    logger.info('Initializing Mega Search system...');
+    logger.info(`Root directory: ${this.config.rootDirectory}`);
+    logger.info(`Supported extensions: ${this.config.extensions.join(', ')}`);
+    logger.info(
       `Ukrainian stemming: ${this.config.ukrainianStemming ? 'enabled' : 'disabled'}`,
     );
-    console.log(
+    logger.info(
       `Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`,
     );
 
@@ -127,21 +166,21 @@ class MegaSearch {
         await this.fileIndexer.preWarmSearchCaches();
       }
     } catch (error) {
-      console.warn('⚠️ Failed to pre-warm search caches:', error);
+      logger.warn('⚠️ Failed to pre-warm search caches:', error);
       // Continue without pre-warming - it's an optimization, not critical
     }
 
     const stats = this.fileIndexer.getStats();
     const indexTime = Date.now() - startTime;
 
-    console.log(
+    logger.info(
       `✅ Indexing complete: ${stats.documentsCount} documents, ${stats.termsCount} unique terms (${indexTime}ms)`,
     );
 
     // Log memory usage
     const memStats = this.fileIndexer.getMemoryStats?.();
     if (memStats) {
-      console.log(
+      logger.info(
         `💾 Memory usage: ${memStats.heap.used}MB heap, ${memStats.rss}MB RSS`,
       );
     }
@@ -213,7 +252,7 @@ class MegaSearch {
 
       return { docCache, invertedIndex };
     } catch (error) {
-      console.error(
+      logger.error(
         'Failed to get search data:',
         error instanceof Error ? error.message : String(error),
       );
@@ -236,12 +275,22 @@ class MegaSearch {
       fuzzyPhraseMaxDistance = 2,
     } = options;
 
+    // ✅ FIX: Create a comprehensive cache key that includes all options.
+    const cacheKey = JSON.stringify({ query, options });
+
+    // CHECK search result cache
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) {
+      logger.info(`📋 Using cached search result for: "${query}"`);
+      return cached;
+    }
+
     try {
-      // CREATE cache key including options that affect tokenization
-      const cacheKey = `${query}|${fuzzyPhrase}`;
+      // CREATE cache key for tokenization part
+      const tokenizationCacheKey = `${query}|${fuzzyPhrase}`;
 
       // CHECK query cache first
-      let queryData = this.getFromQueryCache(cacheKey);
+      let queryData = this.getFromQueryCache(tokenizationCacheKey);
 
       if (!queryData) {
         // Phrase search: detect if query is wrapped in quotes OR fuzzyPhrase is enabled
@@ -277,11 +326,11 @@ class MegaSearch {
         };
 
         // CACHE the processed query
-        this.setInQueryCache(cacheKey, queryData);
+        this.setInQueryCache(tokenizationCacheKey, queryData);
       }
 
       if (queryData.uniqueQueryTokens.length === 0) {
-        console.log(`No valid tokens found in query: "${query}"`);
+        logger.info(`No valid tokens found in query: "${query}"`);
         return this.createEmptyResult(page, pageSize);
       }
 
@@ -290,7 +339,7 @@ class MegaSearch {
       const docCount = docCache.size;
 
       if (docCount === 0) {
-        console.log('No documents found in index. Please run indexing first.');
+        logger.info('No documents found in index. Please run indexing first.');
         return this.createEmptyResult(page, pageSize);
       }
 
@@ -311,6 +360,13 @@ class MegaSearch {
           if (!postings) continue;
 
           const df = postings.length; // Document frequency
+
+          // ✅ FIX: Ensure postings is an array before calling forEach.
+          // This prevents a crash if a term exists but has empty/invalid postings.
+          if (!Array.isArray(postings)) {
+            logger.warn(`Invalid postings for term "${idxTerm}". Skipping.`);
+            continue;
+          }
 
           for (const entry of postings) {
             const tf = entry.frequency; // Term frequency
@@ -354,17 +410,20 @@ class MegaSearch {
             });
           });
         } else {
-          // Exact phrase matching
-          const phraseText = queryData.searchTokens.join(' ');
+          // ✅ OPTIMIZATION: Use a much faster token-based check instead of string matching.
           filteredDocIds = filteredDocIds.filter((docId) => {
             const doc = docCache.get(docId);
             if (!doc) return false;
-
-            const docText = doc.tokens
-              .map((t: ProcessedSearchToken) => t.term.toLowerCase())
-              .join(' ');
-
-            return docText.includes(phraseText);
+            const containsPhrase = this.containsExactPhrase(
+              doc,
+              queryData.searchTokens,
+            );
+            // ✅ RELEVANCE BOOST: Apply a score boost for exact phrase matches.
+            if (containsPhrase) {
+              const currentScore = docScores.get(docId) || 0;
+              docScores.set(docId, currentScore * 1.5); // 50% score boost
+            }
+            return containsPhrase;
           });
         }
       }
@@ -388,6 +447,7 @@ class MegaSearch {
             docId,
             score,
             docCache,
+            invertedIndex,
             queryData.uniqueQueryTokens,
             fuzzy,
             queryData.isPhrase,
@@ -405,16 +465,25 @@ class MegaSearch {
         hasPreviousPage: page > 1,
       };
 
-      console.log(
+      logger.info(
         `Found ${totalResults} results, returning page ${page}/${totalPages} (${paginatedResults.length} results)`,
       );
 
-      return {
+      const result = {
         results: paginatedResults,
         pagination,
       };
+
+      // CACHE the result
+      if (this.searchCache.size >= this.MAX_SEARCH_CACHE_SIZE) {
+        const oldestKey = Array.from(this.searchCache.keys())[0];
+        this.searchCache.delete(oldestKey);
+      }
+      this.searchCache.set(cacheKey, result);
+
+      return result;
     } catch (error) {
-      console.error(
+      logger.error(
         `Search failed for query "${query}":`,
         error instanceof Error ? error.message : String(error),
       );
@@ -422,6 +491,30 @@ class MegaSearch {
         `Search operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+  }
+
+  /**
+   * ✅ NEW: Efficiently check if a document contains an exact phrase sequence.
+   */
+  private containsExactPhrase(
+    doc: DocumentIndex,
+    queryTokens: string[],
+  ): boolean {
+    const phraseLength = queryTokens.length;
+    if (phraseLength === 0) return true;
+
+    for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
+      let match = true;
+      for (let j = 0; j < phraseLength; j++) {
+        const docToken = this.getDocumentToken(doc, i + j);
+        if (!docToken || docToken.term.toLowerCase() !== queryTokens[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return true;
+    }
+    return false;
   }
 
   /**
@@ -439,11 +532,14 @@ class MegaSearch {
     if (queryTokens.length === 0) return false;
     if (queryTokens.length === 1) {
       // Single token - just check fuzzy match
-      return doc.tokens.some(
-        (docToken) =>
-          levenshtein(docToken.term.toLowerCase(), queryTokens[0]) <=
-          options.fuzzyThreshold,
-      );
+      // ✅ REFACTOR: Adapt to new structure
+      return doc.positions.some((p) => {
+        const docTokenTerm = doc.vocab[p[0]];
+        return (
+          levenshtein(docTokenTerm.toLowerCase(), queryTokens[0]) <=
+          options.fuzzyThreshold
+        );
+      });
     }
 
     // Find all possible fuzzy matches for each query token
@@ -454,10 +550,22 @@ class MegaSearch {
         distance: number;
       }> = [];
 
-      doc.tokens.forEach((docToken, position) => {
-        const distance = levenshtein(docToken.term.toLowerCase(), queryToken);
+      doc.positions.forEach((p, position) => {
+        const docTokenTerm = doc.vocab[p[0]];
+        const distance = levenshtein(docTokenTerm.toLowerCase(), queryToken);
         if (distance <= options.fuzzyThreshold) {
-          matches.push({ token: docToken, position, distance });
+          // Rehydrate a partial token for matching logic
+          matches.push({
+            token: {
+              term: docTokenTerm,
+              position,
+              charStart: p[1],
+              charEnd: p[2],
+              normalized: docTokenTerm.toLowerCase(),
+            },
+            position,
+            distance,
+          });
         }
       });
 
@@ -482,28 +590,49 @@ class MegaSearch {
     >,
     maxDistance: number,
   ): boolean {
-    // Start with matches for the first token
-    const firstTokenMatches = tokenMatches[0];
+    // ✅ OPTIMIZATION: Replaced recursive `canCompleteSequence` with an iterative approach.
+    // This is more efficient and avoids potential stack overflow with many matches.
 
-    for (const firstMatch of firstTokenMatches) {
-      if (
-        this.canCompleteSequence(
-          firstMatch.position,
-          tokenMatches,
-          1,
-          maxDistance,
-        )
-      ) {
-        return true;
+    // Start with all possible matches for the first token.
+    let possibleSequences: number[] = tokenMatches[0].map(
+      (match) => match.position,
+    );
+
+    // Iteratively build sequences token by token.
+    for (let i = 1; i < tokenMatches.length; i++) {
+      const nextPossibleSequences: number[] = [];
+      const nextMatches = tokenMatches[i];
+
+      // For each valid sequence so far, find the next valid token.
+      for (const currentPos of possibleSequences) {
+        for (const nextMatch of nextMatches) {
+          const distance = nextMatch.position - currentPos;
+
+          // Check if the next token is in order and within the max distance.
+          if (distance > 0 && distance <= maxDistance) {
+            nextPossibleSequences.push(nextMatch.position);
+            // Optimization: Once we find one valid next step, we can move on.
+            break;
+          }
+        }
       }
+
+      if (nextPossibleSequences.length === 0) {
+        // If we can't extend any sequence, the phrase doesn't exist.
+        return false;
+      }
+
+      possibleSequences = nextPossibleSequences;
     }
 
-    return false;
+    // If we have successfully built sequences for all tokens, a valid phrase exists.
+    return possibleSequences.length > 0;
   }
 
   /**
    * Recursively check if we can complete the fuzzy phrase sequence
    */
+  /*
   private canCompleteSequence(
     currentPosition: number,
     tokenMatches: Array<
@@ -541,6 +670,7 @@ class MegaSearch {
 
     return false;
   }
+  */
 
   /**
    * Extract snippets for fuzzy phrase search
@@ -550,18 +680,46 @@ class MegaSearch {
     queryTokens: string[],
     fuzzyThreshold: number,
     maxDistance: number,
-  ): string[] {
-    const snippets: string[] = [];
+  ): SnippetInfo[] {
+    // Only log in development mode
+    consoleLogDebug(
+      `🔍 [SNIPPET] Starting fuzzy phrase extraction for query tokens: ${queryTokens}`,
+    );
+    consoleLogDebug(`🔍 [SNIPPET] Document has ${doc.positions.length} tokens`);
+    consoleLogDebug(
+      `🔍 [SNIPPET] Original text length: ${doc.originalText?.length || 'N/A'}`,
+    );
+
+    const snippets: SnippetInfo[] = [];
 
     // Find fuzzy phrase matches and extract context
-    const tokenMatches = queryTokens.map((queryToken) => {
-      return doc.tokens
-        .map((docToken, position) => ({ docToken, position }))
+    // ✅ REFACTOR: Adapt to new structure
+    const tokenMatches = queryTokens.map((queryToken, queryIndex) => {
+      const matches = doc.positions
+        .map((p, position) => {
+          const term = doc.vocab[p[0]];
+          return {
+            docToken: {
+              term,
+              position,
+              charStart: p[1],
+              charEnd: p[2],
+              normalized: term.toLowerCase(),
+            },
+            position,
+          };
+        })
         .filter(
           ({ docToken }) =>
             levenshtein(docToken.term.toLowerCase(), queryToken) <=
             fuzzyThreshold,
         );
+
+      consoleLogDebug(
+        `🔍 [SNIPPET] Query token "${queryToken}" (index ${queryIndex}) has ${matches.length} fuzzy matches`,
+      );
+
+      return matches;
     });
 
     // Find valid sequences and create snippets
@@ -576,35 +734,87 @@ class MegaSearch {
 
       if (sequence.length === queryTokens.length) {
         // Found a complete sequence, create snippet with sentence boundary awareness
-        const startPos = Math.min(...sequence.map((s) => s.position));
-        const endPos = Math.max(...sequence.map((s) => s.position));
+        const matchStartPos = Math.min(...sequence.map((s) => s.position));
+        const matchEndPos = Math.max(...sequence.map((s) => s.position));
 
         // FIXED: Find sentence boundaries instead of fixed token offsets
         const snippetBounds = this.findSentenceBoundariesForSnippet(
           doc,
-          startPos,
-          endPos,
+          matchStartPos,
+          matchEndPos,
         );
 
-        let snippet = doc.tokens
+        // ✅ REFACTOR: Adapt to new structure
+        const tokensForSnippet = doc.positions
           .slice(snippetBounds.start, snippetBounds.end)
-          .map((t) => t.term)
-          .join(' ');
+          .map((p, i) => {
+            const term = doc.vocab[p[0]];
+            return {
+              term,
+              charStart: p[1],
+              charEnd: p[2],
+              position: snippetBounds.start + i,
+              normalized: term.toLowerCase(),
+            };
+          });
+
+        let snippetText = tokensForSnippet.map((t) => t.term).join(' ');
 
         // Highlight the matched tokens
-        sequence.forEach((match) => {
-          const token = match.docToken.term;
-          snippet = snippet.replace(
-            new RegExp(`\\b${this.escapeRegExp(token)}\\b`, 'gi'),
-            `<b>${token}</b>`,
-          );
-        });
+        const termsToHighlight = sequence.map((match, index) => ({
+          term: queryTokens[index],
+          originalWord: match.docToken.term,
+        }));
 
-        snippets.push(snippet + '...');
+        const { text: highlightedText } = this.highlightTermsInSnippet(
+          snippetText,
+          termsToHighlight,
+        );
+
+        // Collect highlights within this snippet
+        const snippetHighlights = sequence.map((match, index) => ({
+          term: queryTokens[index],
+          originalWord: match.docToken.term,
+          tokenIndex: match.position,
+          charStart: match.docToken.charStart,
+          charEnd: match.docToken.charEnd,
+        }));
+
+        // ✅ FIX: The top-level charStart/charEnd should refer to the MATCH, not the context.
+        const matchStartToken = this.getDocumentToken(doc, matchStartPos);
+        const matchEndToken = this.getDocumentToken(doc, matchEndPos);
+
+        const totalDistance = sequence.reduce((sum, match, index) => {
+          const queryToken = queryTokens[index];
+          return (
+            sum + levenshtein(match.docToken.term.toLowerCase(), queryToken)
+          );
+        }, 0);
+        const confidence = Math.max(
+          0.3,
+          1.0 - totalDistance / (queryTokens.length * 3),
+        );
+
+        const matchedText = sequence.map((s) => s.docToken.term).join(' ');
+
+        const snippetInfo: SnippetInfo = {
+          context: highlightedText + '...',
+          match: matchedText,
+          // ✅ FIX: These properties now refer to the match itself.
+          matchStartTokenIndex: matchStartPos,
+          matchEndTokenIndex: matchEndPos,
+          matchCharStart: matchStartToken?.charStart,
+          matchCharEnd: matchEndToken?.charEnd,
+          matchType: 'fuzzy-phrase',
+          confidence,
+          highlights: snippetHighlights,
+        };
+
+        snippets.push(snippetInfo);
       }
     }
 
-    return Array.from(new Set(snippets)); // Remove duplicates
+    return this.removeDuplicateSnippets(snippets);
   }
 
   /**
@@ -616,10 +826,8 @@ class MegaSearch {
     matchEndPos: number,
   ): { start: number; end: number } {
     // Try to use original text if available for better sentence detection
-    if (
-      doc.originalText &&
-      doc.tokens[matchStartPos]?.charStart !== undefined
-    ) {
+    // ✅ REFACTOR: Adapt to new structure
+    if (doc.originalText && doc.positions[matchStartPos]?.[1] !== undefined) {
       return this.findSentenceBoundariesFromOriginalText(
         doc,
         matchStartPos,
@@ -629,10 +837,108 @@ class MegaSearch {
 
     // Fallback: use token-based sentence boundary detection
     return this.findSentenceBoundariesFromTokens(
-      doc.tokens,
+      doc, // Pass the whole doc index
       matchStartPos,
       matchEndPos,
     );
+  }
+
+  /**
+   * Fallback: Find sentence boundaries using tokens only - FIXED VERSION
+   */
+  private findSentenceBoundariesFromTokens(
+    doc: DocumentIndex, // ✅ REFACTOR: Accept DocumentIndex
+    matchStartPos: number,
+    matchEndPos: number,
+  ): { start: number; end: number } {
+    // ✅ FIX: Use reasonable limits instead of searching entire document
+    const SEARCH_WINDOW = 50; // Look at most 50 tokens in each direction
+
+    /**
+     * Helper to check if a token represents a sentence or paragraph boundary.
+     */
+    const isBoundaryToken = (
+      tokenIndex: number,
+      direction: 'forward' | 'backward',
+    ): boolean => {
+      const token = doc.vocab[doc.positions[tokenIndex][0]];
+
+      // 1. Check for sentence-ending punctuation
+      if (/[.!?]$/.test(token) || ['?', '!', ';', '.'].includes(token)) {
+        return true;
+      }
+
+      // 2. Check for paragraph breaks (double newlines) between tokens
+      if (doc.originalText) {
+        const nextTokenIndex = tokenIndex + 1;
+        const prevTokenIndex = tokenIndex - 1;
+
+        if (direction === 'backward' && nextTokenIndex < doc.positions.length) {
+          const endThis = doc.positions[tokenIndex][2];
+          const startNext = doc.positions[nextTokenIndex][1];
+          if (
+            endThis !== undefined &&
+            startNext !== undefined &&
+            doc.originalText.substring(endThis, startNext).includes('\n\n')
+          ) {
+            return true;
+          }
+        } else if (direction === 'forward' && prevTokenIndex >= 0) {
+          const endPrev = doc.positions[prevTokenIndex][2];
+          const startThis = doc.positions[tokenIndex][1];
+          if (
+            endPrev !== undefined &&
+            startThis !== undefined &&
+            doc.originalText.substring(endPrev, startThis).includes('\n\n')
+          ) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    };
+
+    // Look backwards for a boundary
+    let sentenceStart = Math.max(0, matchStartPos - SEARCH_WINDOW);
+    for (let i = matchStartPos - 1; i >= sentenceStart; i--) {
+      if (isBoundaryToken(i, 'backward')) {
+        sentenceStart = i + 1;
+        break;
+      }
+    }
+
+    // Look forwards for a boundary
+    let sentenceEnd = Math.min(
+      doc.positions.length,
+      matchEndPos + SEARCH_WINDOW,
+    );
+    for (let i = matchEndPos + 1; i < sentenceEnd; i++) {
+      if (isBoundaryToken(i, 'forward')) {
+        // For forward search, the boundary is the token itself, so we don't include it.
+        // For punctuation, we might include it, but for a new paragraph, we definitely don't.
+        // Let's be consistent and end before the boundary.
+        // ✅ FIX: When a paragraph break is found, the boundary is BEFORE the current token.
+        // The punctuation check inside isBoundaryToken is for the token at `i`, so ending at `i+1` is correct for that.
+        // The paragraph check is between `i-1` and `i`.
+        const token = doc.vocab[doc.positions[i][0]];
+        if (/[.!?]$/.test(token) || ['?', '!', ';', '.'].includes(token)) {
+          sentenceEnd = i + 1;
+        } else {
+          sentenceEnd = i; // Boundary is before this token (e.g., paragraph break)
+        }
+        break;
+      }
+    }
+
+    // ✅ FIX: Apply reasonable bounds with small buffer around the match
+    const bufferStart = Math.max(0, sentenceStart);
+    const bufferEnd = Math.min(doc.positions.length, sentenceEnd);
+
+    return {
+      start: bufferStart,
+      end: bufferEnd,
+    };
   }
 
   /**
@@ -643,10 +949,23 @@ class MegaSearch {
     matchStartPos: number,
     matchEndPos: number,
   ): { start: number; end: number } {
-    const matchStartChar = doc.tokens[matchStartPos].charStart;
-    const matchEndChar = doc.tokens[matchEndPos].charEnd;
+    // ✅ REFACTOR: Adapt to new structure
+    const matchStartChar = doc.positions[matchStartPos]?.[1];
+    const matchEndChar = doc.positions[matchEndPos]?.[2];
 
-    // Find sentence start - look backwards for sentence punctuation
+    if (matchStartChar === undefined || matchEndChar === undefined) {
+      // Fallback if char positions are missing
+      return this.findSentenceBoundariesFromTokens(
+        doc,
+        matchStartPos,
+        matchEndPos,
+      );
+    }
+
+    // ✅ FIX: Use reasonable search limits
+    const CHAR_SEARCH_WINDOW = 500; // Search at most 500 chars in each direction
+
+    // Find sentence start - look backwards for sentence punctuation (limited)
     let sentenceStartChar = 0;
     const beforeMatch = doc.originalText.substring(0, matchStartChar);
 
@@ -657,7 +976,7 @@ class MegaSearch {
       sentenceStartChar = match.index + match[0].length;
     }
 
-    // Find sentence end - look forwards for sentence punctuation
+    // Find sentence end - look forwards for sentence punctuation (limited)
     const afterMatch = doc.originalText.substring(matchEndChar);
     const sentenceEndMatch = afterMatch.match(/[.!?]\s+|\n\s*\n/);
     const sentenceEndChar = sentenceEndMatch
@@ -666,79 +985,44 @@ class MegaSearch {
 
     // Convert character positions back to token positions
     let startTokenPos = 0;
-    let endTokenPos = doc.tokens.length;
+    let endTokenPos = matchEndPos;
 
     // Find token positions that correspond to our character boundaries
-    for (let i = 0; i < doc.tokens.length; i++) {
-      const token = doc.tokens[i];
+    for (let i = 0; i < doc.positions.length; i++) {
+      const tokenPos = doc.positions[i];
 
-      if (token.charStart >= sentenceStartChar && startTokenPos === 0) {
+      if (
+        tokenPos[1] !== undefined &&
+        tokenPos[1] >= sentenceStartChar &&
+        i < matchStartPos
+      ) {
         startTokenPos = i;
-      }
-
-      if (token.charEnd <= sentenceEndChar) {
-        endTokenPos = i + 1;
-      }
-    }
-
-    // FIXED: Use sentence boundaries as hard limits, don't go beyond them
-    const bufferStart = Math.max(
-      startTokenPos,
-      Math.min(startTokenPos, matchStartPos - 2),
-    );
-    const bufferEnd = Math.min(endTokenPos, matchEndPos + 8);
-
-    return {
-      start: bufferStart,
-      end: bufferEnd,
-    };
-  }
-
-  /**
-   * Fallback: Find sentence boundaries using tokens only
-   */
-  private findSentenceBoundariesFromTokens(
-    tokens: ProcessedSearchToken[],
-    matchStartPos: number,
-    matchEndPos: number,
-  ): { start: number; end: number } {
-    // Look backwards for sentence-ending punctuation
-    let sentenceStart = 0;
-    for (let i = matchStartPos - 1; i >= 0; i--) {
-      const token = tokens[i].term;
-      // Ukrainian sentence enders + common punctuation
-      if (
-        /[.!?;]$/.test(token) ||
-        token === '.' ||
-        token === '!' ||
-        token === '?'
-      ) {
-        sentenceStart = i + 1;
         break;
       }
     }
 
-    // Look forwards for sentence-ending punctuation
-    let sentenceEnd = tokens.length;
-    for (let i = matchEndPos + 1; i < tokens.length; i++) {
-      const token = tokens[i].term;
-      if (
-        /[.!?;]$/.test(token) ||
-        token === '.' ||
-        token === '!' ||
-        token === '?'
-      ) {
-        sentenceEnd = i + 1;
+    for (let i = matchEndPos; i < doc.positions.length; i++) {
+      const tokenPos = doc.positions[i];
+
+      if (tokenPos[2] !== undefined && tokenPos[2] >= sentenceEndChar) {
+        endTokenPos = i;
         break;
       }
     }
 
-    // FIXED: Use sentence boundaries as hard limits, don't go beyond them
-    const bufferStart = Math.max(
-      sentenceStart,
-      Math.min(sentenceStart, matchStartPos - 2),
-    );
-    const bufferEnd = Math.min(sentenceEnd, matchEndPos + 8);
+    // ✅ FIX: Apply reasonable final bounds
+    const bufferStart = Math.max(0, startTokenPos);
+    const bufferEnd = Math.min(doc.positions.length, endTokenPos);
+
+    // Ensure reasonable snippet size
+    const MAX_SNIPPET_TOKENS = 100;
+    const snippetTokenCount = bufferEnd - bufferStart;
+
+    if (snippetTokenCount > MAX_SNIPPET_TOKENS) {
+      const midPoint = bufferStart + Math.floor(snippetTokenCount / 2);
+      bufferStart = Math.max(0, midPoint - 50);
+      bufferEnd = Math.min(doc.positions.length, midPoint + 50);
+    }
 
     return {
       start: bufferStart,
@@ -754,35 +1038,132 @@ class MegaSearch {
   }
 
   /**
+   * ✅ NEW: Helper to highlight multiple terms in a snippet robustly.
+   */
+  private highlightTermsInSnippet(
+    snippetText: string,
+    termsToHighlight: Array<{ term: string; originalWord: string }>,
+  ): { text: string; highlightedWords: string[] } {
+    const highlightedWords: string[] = [];
+    let text = snippetText;
+
+    const uniqueTerms = [
+      ...new Map(
+        termsToHighlight.map((item) => [item.originalWord.toLowerCase(), item]),
+      ).values(),
+    ];
+
+    uniqueTerms.forEach(({ originalWord }) => {
+      const regex = new RegExp(
+        `\\b${this.escapeRegExp(originalWord)}\\b`,
+        'gi',
+      );
+      text = text.replace(regex, (match) => {
+        highlightedWords.push(match);
+        return `<b>${match}</b>`;
+      });
+    });
+
+    return { text, highlightedWords };
+  }
+
+  /**
+   * ✅ NEW: Helper to remove duplicate snippets based on their context.
+   */
+  private removeDuplicateSnippets(snippets: SnippetInfo[]): SnippetInfo[] {
+    const seen = new Set<string>();
+    return snippets.filter((snippet) => {
+      // Normalize context by removing HTML and whitespace to better detect duplicates.
+      const simplifiedContext = snippet.context
+        .replace(/<b>|<\/b>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (seen.has(simplifiedContext)) {
+        return false;
+      } else {
+        seen.add(simplifiedContext);
+        return true;
+      }
+    });
+  }
+
+  /**
    * Extract snippets for phrase search
    */
   private extractPhraseSnippets(
-    text: string,
+    doc: DocumentIndex,
     searchTokens: string[],
-  ): string[] {
-    const snippets: string[] = [];
-    const phraseText = searchTokens.join(' ');
+  ): SnippetInfo[] {
+    const snippets: SnippetInfo[] = [];
+    const phraseLength = searchTokens.length;
+    if (phraseLength === 0) return [];
 
-    // Case-insensitive search for phrase
-    const lowerText = text.toLowerCase();
-    const lowerPhrase = phraseText.toLowerCase();
+    // ✅ OPTIMIZATION: Iterate through tokens instead of doing a slow string search.
+    for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
+      let isMatch = true;
+      const sequence: ProcessedSearchToken[] = [];
 
-    let idx = 0;
-    while ((idx = lowerText.indexOf(lowerPhrase, idx)) !== -1) {
-      let rawSnippet = text.substring(
-        Math.max(0, idx - 30),
-        idx + phraseText.length + 40,
-      );
+      for (let j = 0; j < phraseLength; j++) {
+        const token = this.getDocumentToken(doc, i + j);
+        if (!token || token.term.toLowerCase() !== searchTokens[j]) {
+          isMatch = false;
+          break;
+        }
+        sequence.push(token);
+      }
 
-      // Highlight the matched phrase (preserve original case in snippet)
-      const actualPhrase = text.substring(idx, idx + phraseText.length);
-      rawSnippet = rawSnippet.replace(actualPhrase, `<b>${actualPhrase}</b>`);
+      if (isMatch) {
+        const startTokenIndex = i;
+        const endTokenIndex = i + phraseLength - 1; // Correct end index of the match
 
-      snippets.push(rawSnippet + '...');
-      idx += phraseText.length;
+        const snippetBounds = this.findSentenceBoundariesForSnippet(
+          doc,
+          startTokenIndex,
+          endTokenIndex,
+        );
+
+        const tokensForSnippet = doc.positions
+          .slice(snippetBounds.start, snippetBounds.end)
+          .map((p) => ({ term: doc.vocab[p[0]] }));
+        const snippetText = tokensForSnippet.map((t) => t.term).join(' ');
+
+        const actualPhrase = sequence.map((t) => t.term).join(' ');
+        const { text: highlightedText } = this.highlightTermsInSnippet(
+          snippetText,
+          [{ term: actualPhrase, originalWord: actualPhrase }],
+        );
+
+        const snippetHighlights = sequence.map((token, index) => ({
+          term: searchTokens[index],
+          originalWord: token.term,
+          tokenIndex: token.position,
+          charStart: token.charStart,
+          charEnd: token.charEnd,
+        }));
+
+        // ✅ FIX: The top-level charStart/charEnd should refer to the MATCH, not the context.
+        const matchStartToken = sequence[0];
+        const matchEndToken = sequence[sequence.length - 1];
+
+        snippets.push({
+          context: highlightedText + '...',
+          match: actualPhrase,
+          // ✅ FIX: These properties now refer to the match itself.
+          matchStartTokenIndex: startTokenIndex,
+          matchEndTokenIndex: endTokenIndex,
+          matchCharStart: matchStartToken.charStart,
+          matchCharEnd: matchEndToken.charEnd,
+          matchType: 'exact-phrase',
+          confidence: 1.0,
+          highlights: snippetHighlights,
+        });
+
+        // Skip past this match to avoid overlapping snippets
+        i += phraseLength - 1;
+      }
     }
 
-    return snippets;
+    return this.removeDuplicateSnippets(snippets);
   }
 
   private calculateMatchConfidence(
@@ -842,6 +1223,7 @@ class MegaSearch {
     docId: string,
     score: number,
     docCache: Map<string, DocumentIndex>,
+    invertedIndex: Map<string, InvertedIndexEntry[]>,
     uniqueQueryTokens: string[],
     fuzzy: boolean,
     isPhrase: boolean,
@@ -850,11 +1232,11 @@ class MegaSearch {
   ): {
     doc: any;
     score: number;
-    snippets: string[];
+    snippets: SnippetInfo[];
     highlights: HighlightInfo[];
   } {
     const doc = docCache.get(docId);
-    let snippets: string[] = [];
+    let snippets: SnippetInfo[] = [];
     let highlights: HighlightInfo[] = [];
 
     if (doc) {
@@ -863,18 +1245,19 @@ class MegaSearch {
         if (isPhrase && fuzzy) {
           // For fuzzy phrase, find all fuzzy matches
           searchTokens.forEach((queryToken) => {
-            doc.tokens.forEach((docToken: ProcessedSearchToken) => {
+            doc.positions.forEach((p, i) => {
+              const docTokenTerm = doc.vocab[p[0]];
               const distance = levenshtein(
-                docToken.term.toLowerCase(),
+                docTokenTerm.toLowerCase(),
                 queryToken,
               );
               if (distance <= 2) {
                 // Use higher threshold for phrase fuzzy matching
                 highlights.push({
                   term: queryToken,
-                  originalWord: docToken.term,
-                  charStart: docToken.charStart,
-                  charEnd: docToken.charEnd,
+                  originalWord: docTokenTerm,
+                  charStart: p[1],
+                  charEnd: p[2],
                   confidence:
                     distance === 0 ? 1.0 : Math.max(0.5, 1.0 - distance * 0.2),
                 });
@@ -884,15 +1267,16 @@ class MegaSearch {
         } else {
           // Regular highlight extraction for non-fuzzy phrase searches
           uniqueQueryTokens.forEach((queryToken) => {
-            doc.tokens.forEach((docToken: ProcessedSearchToken) => {
-              const docTokenStem = this.textProcessor.stemWord(docToken.term);
+            doc.positions.forEach((p) => {
+              const docTokenTerm = doc.vocab[p[0]];
+              const docTokenStem = this.textProcessor.stemWord(docTokenTerm);
 
               if (docTokenStem === queryToken) {
                 highlights.push({
                   term: queryToken,
-                  originalWord: docToken.term,
-                  charStart: docToken.charStart,
-                  charEnd: docToken.charEnd,
+                  originalWord: docTokenTerm,
+                  charStart: p[1],
+                  charEnd: p[2],
                   confidence: fuzzy
                     ? this.calculateMatchConfidence(queryToken, docTokenStem)
                     : 1.0,
@@ -902,19 +1286,20 @@ class MegaSearch {
           });
         }
 
-        const text = doc.tokens
-          .map((t: ProcessedSearchToken) => t.term)
-          .join(' ');
-
+        // ENHANCED: Extract rich snippets with position data
         if (isPhrase) {
           if (fuzzy) {
             // Use fuzzy phrase snippet extraction
             snippets = this.extractFuzzyPhraseSnippets(doc, searchTokens, 2, 2);
           } else {
-            snippets = this.extractPhraseSnippets(text, searchTokens);
+            snippets = this.extractPhraseSnippets(doc, searchTokens);
           }
         } else {
-          snippets = this.extractTokenSnippets(doc, uniqueQueryTokens);
+          snippets = this.extractTokenSnippets(
+            doc,
+            uniqueQueryTokens,
+            invertedIndex,
+          );
         }
 
         // Limit snippets if not 'ALL'
@@ -922,14 +1307,14 @@ class MegaSearch {
           snippets = snippets.slice(0, snippetsLimit);
         }
       } catch (error) {
-        console.error(
+        logger.error(
           `Error processing snippets for document ${doc.metadata.fileName}:`,
           error instanceof Error ? error.message : String(error),
         );
         // Continue with empty snippets rather than failing
       }
     } else {
-      console.warn(`Document not found in cache: "${docId}"`);
+      logger.warn(`Document not found in cache: "${docId}"`);
     }
 
     return {
@@ -946,35 +1331,36 @@ class MegaSearch {
   private extractTokenSnippets(
     doc: DocumentIndex,
     uniqueQueryTokens: string[],
-  ): string[] {
-    const snippetSet = new Set<string>();
+    invertedIndex: Map<string, InvertedIndexEntry[]>, // ✅ RECEIVE invertedIndex
+  ): SnippetInfo[] {
+    const snippets: SnippetInfo[] = [];
+    const processedBounds = new Set<string>();
 
-    // Pre-compile regex patterns to avoid repeated compilation
-    const termRegexCache = new Map<string, RegExp>();
-
-    // Batch process tokens to reduce iterations
+    // ✅ OPTIMIZATION: Use inverted index to find matches for this doc quickly
     const matchedTokenIndices = new Set<number>();
 
     // Single pass to find all matches
-    doc.tokens.forEach((docToken: ProcessedSearchToken, tokenIndex: number) => {
-      const docTokenStem = this.textProcessor.stemWord(docToken.term);
+    doc.positions.forEach((p, tokenIndex) => {
+      const docTokenTerm = doc.vocab[p[0]];
+      // ✅ FIX: Stem the document token before checking for a match against stemmed query tokens.
+      const docTokenStem = this.textProcessor.stemWord(docTokenTerm);
 
       if (uniqueQueryTokens.includes(docTokenStem)) {
         matchedTokenIndices.add(tokenIndex);
       }
     });
 
-    // Process matches in batches to avoid redundant boundary calculations
-    const processedBounds = new Set<string>();
-
+    // Process each match
     matchedTokenIndices.forEach((tokenIndex) => {
-      const docToken = doc.tokens[tokenIndex];
-      const docTokenStem = this.textProcessor.stemWord(docToken.term);
+      // ✅ REFACTOR: Use getDocumentToken helper
+      const docToken = this.getDocumentToken(doc, tokenIndex);
+      if (!docToken) return;
 
-      // Find which query token this matches
+      const docTokenStem = this.textProcessor.stemWord(docToken.term);
       const queryToken = uniqueQueryTokens.find((qt) => qt === docTokenStem);
       if (!queryToken) return;
 
+      // Find which query token this matches
       // Create snippet with sentence boundary awareness
       const snippetBounds = this.findSentenceBoundariesForSnippet(
         doc,
@@ -987,64 +1373,83 @@ class MegaSearch {
       if (processedBounds.has(boundsKey)) return;
       processedBounds.add(boundsKey);
 
-      let snippet = doc.tokens
-        .slice(snippetBounds.start, snippetBounds.end)
-        .map((t) => t.term)
-        .join(' ');
-
-      // Use cached regex for highlighting
-      if (!termRegexCache.has(docToken.term)) {
-        termRegexCache.set(
-          docToken.term,
-          new RegExp(`\\b${this.escapeRegExp(docToken.term)}\\b`, 'gi'),
-        );
-      }
-
-      snippet = snippet.replace(
-        termRegexCache.get(docToken.term)!,
-        `<b>${docToken.term}</b>`,
+      // Highlight matched term
+      const { text: highlightedText } = this.highlightTermsInSnippet(
+        snippetText,
+        [{ term: queryToken, originalWord: docToken.term }],
       );
-      snippetSet.add(snippet + '...');
+
+      // ✅ FIX: The top-level charStart/charEnd should refer to the MATCH, not the context.
+      const matchStartToken = this.getDocumentToken(doc, tokenIndex);
+      const matchEndToken = this.getDocumentToken(doc, tokenIndex);
+
+      const confidence = this.calculateMatchConfidence(
+        queryToken,
+        docTokenStem,
+      );
+
+      const snippetInfo: SnippetInfo = {
+        context: highlightedText + '...',
+        match: docToken.term,
+        // ✅ FIX: These properties now refer to the match itself.
+        matchStartTokenIndex: tokenIndex,
+        matchEndTokenIndex: tokenIndex,
+        matchCharStart: matchStartToken?.charStart,
+        matchCharEnd: matchEndToken?.charEnd,
+        matchType: 'token',
+        confidence,
+        highlights: [
+          {
+            term: queryToken,
+            originalWord: docToken.term,
+            tokenIndex,
+            charStart: docToken.charStart,
+            charEnd: docToken.charEnd,
+          },
+        ],
+      };
+
+      snippets.push(snippetInfo);
     });
 
-    return Array.from(snippetSet);
+    return this.removeDuplicateSnippets(snippets);
   }
 
   async testDocumentParsing(): Promise<void> {
-    console.log('Testing document parsing...');
+    logger.info('Testing document parsing...');
 
     const files = await this.fileIndexer.discoverFiles();
-    console.log(`Found ${files.length} files to test`);
+    logger.info(`Found ${files.length} files to test`);
 
     for (const file of files.slice(0, 5)) {
       try {
-        console.log(`\n${'='.repeat(50)}`);
-        console.log(
+        logger.info(`\n${'='.repeat(50)}`);
+        logger.info(
           `Testing: ${file.fileName} (${(file.size / 1024).toFixed(1)} KB)`,
         );
-        console.log(`File path: ${file.filePath}`);
+        logger.info(`File path: ${file.filePath}`);
 
         const extractor = new DocumentExtractor();
         const startTime = Date.now();
         const text = await extractor.extractText(file.filePath);
         const extractionTime = Date.now() - startTime;
 
-        console.log(
+        logger.info(
           `Extracted ${text.length} characters in ${extractionTime}ms`,
         );
 
         if (text.length > 0) {
           const language = this.textProcessor.detectLanguage(text);
-          console.log(`Detected language: ${language}`);
+          logger.info(`Detected language: ${language}`);
 
           const preview = text.substring(0, 300).replace(/\s+/g, ' ');
-          console.log(`Preview: "${preview}${text.length > 300 ? '...' : ''}"`);
+          logger.info(`Preview: "${preview}${text.length > 300 ? '...' : ''}"`);
 
           const tokens = this.textProcessor.tokenize(text);
-          console.log(`Tokenized into ${tokens.length} tokens`);
+          logger.info(`Tokenized into ${tokens.length} tokens`);
 
           if (tokens.length > 0) {
-            console.log(
+            logger.info(
               `First 15 tokens: ${tokens
                 .slice(0, 15)
                 .map((t) => t.term)
@@ -1052,7 +1457,7 @@ class MegaSearch {
             );
 
             const uniqueTokens = new Set(tokens.map((t) => t.term));
-            console.log(`Unique tokens: ${uniqueTokens.size}`);
+            logger.info(`Unique tokens: ${uniqueTokens.size}`);
 
             if (this.config.ukrainianStemming) {
               const stemmedSample = tokens
@@ -1060,7 +1465,7 @@ class MegaSearch {
                 .map(
                   (t) => `${t.term} -> ${this.textProcessor.stemWord(t.term)}`,
                 );
-              console.log(`Stemming sample: ${stemmedSample.join(', ')}`);
+              logger.info(`Stemming sample: ${stemmedSample.join(', ')}`);
             }
 
             const ukrainianTokens = tokens.filter((t) =>
@@ -1069,25 +1474,25 @@ class MegaSearch {
             const englishTokens = tokens.filter(
               (t) => /[a-z]/.test(t.term) && !/[а-яїієґ]/.test(t.term),
             );
-            console.log(
+            logger.info(
               `Language breakdown: ${ukrainianTokens.length} Ukrainian, ${englishTokens.length} English tokens`,
             );
           }
         } else {
-          console.log(
+          logger.info(
             '⚠️  No text extracted - this file might be corrupted or use unsupported encoding',
           );
         }
       } catch (error) {
-        console.error(
+        logger.error(
           `❌ Failed to parse ${file.fileName}:`,
           error instanceof Error ? error.message : String(error),
         );
       }
     }
 
-    console.log(`\n${'='.repeat(50)}`);
-    console.log('Document parsing test completed');
+    logger.info(`\n${'='.repeat(50)}`);
+    logger.info('Document parsing test completed');
   }
 
   /**

@@ -35,7 +35,8 @@ interface ParagraphInfo {
 
 interface DocumentIndex {
   metadata: DocumentMetadata;
-  tokens: ProcessedSearchToken[]; // Use more specific type
+  vocab: string[]; // Array of unique words in the document
+  positions: Array<[number, number, number]>; // Tuples of [vocabIndex, charStart, charEnd]
   termFrequency: Map<string, number>;
   wordCount: number;
   originalText: string; // Store original text for highlighting
@@ -48,6 +49,25 @@ interface HighlightInfo {
   charStart: number; // Character position in original text
   charEnd: number; // End character position
   confidence: number; // Match confidence (1.0 for exact, lower for fuzzy)
+}
+
+// NEW: Enhanced snippet information with position data
+interface SnippetInfo {
+  context: string; // The snippet context with highlighting
+  match: string; // The exact matched text from the document
+  matchStartTokenIndex: number; // Starting token position of the match in the document
+  matchEndTokenIndex: number; // Ending token position of the match in the document
+  matchCharStart?: number; // Character position of the match in the original text (if available)
+  matchCharEnd?: number; // End character position of the match in the original text (if available)
+  matchType: 'token' | 'exact-phrase' | 'fuzzy-phrase'; // Type of match
+  confidence: number; // Overall confidence score for this snippet
+  highlights: Array<{
+    term: string;
+    originalWord: string;
+    tokenIndex: number;
+    charStart?: number;
+    charEnd?: number;
+  }>; // Highlight positions within this snippet
 }
 
 interface InvertedIndexEntry {
@@ -103,7 +123,7 @@ interface PaginatedSearchResult {
   results: Array<{
     doc: any;
     score: number;
-    snippets: string[];
+    snippets: SnippetInfo[];
     highlights: HighlightInfo[];
   }>;
   pagination: PaginationInfo;
@@ -127,6 +147,7 @@ export type {
   ProcessedSearchToken, // Export the new type
   ParagraphInfo, // Export new type
   HighlightInfo,
+  SnippetInfo,
   PaginationInfo,
   PaginatedSearchResult,
   SafeSearchResult, // Export error handling type
