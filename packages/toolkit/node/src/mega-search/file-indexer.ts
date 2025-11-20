@@ -12,6 +12,7 @@ import { UkrainianTextProcessor } from './text-processor';
 import {
   DocumentIndex,
   DocumentMetadata,
+  GlobalIndex,
   InvertedIndexEntry,
   SearchConfig,
 } from './types';
@@ -22,6 +23,7 @@ class FileIndexer {
   private documentExtractor = new DocumentExtractor();
   private documentCache = new Map<string, DocumentIndex>();
   private invertedIndex = new Map<string, InvertedIndexEntry[]>();
+  private stemDictionary = new Map<string, Set<string>>();
 
   // Optimized LRU cache sizes for better memory management
   private documentLRU = new LRUCache<string, DocumentIndex>(50); // Reduced from 100
@@ -154,9 +156,7 @@ class FileIndexer {
 
   async discoverFiles(): Promise<DocumentMetadata[]> {
     try {
-      this.logger.info('Starting file discovery', {
-        rootDirectory: this.config.rootDirectory,
-      });
+      this.logger.info(`Starting file discovery ${this.config.rootDirectory}`);
 
       const fileInfos = await scanDirectory(
         this.config.rootDirectory,
@@ -462,7 +462,7 @@ class FileIndexer {
           JSON.stringify(toSave),
           'utf8',
         );
-        this.logger.info(`💾 Cached index for ${metadata.fileName}`);
+        this.logger.debug(`💾 Cached index for ${metadata.fileName}`);
       } catch (saveError) {
         this.logger.warn(
           `Failed to save index cache for ${metadata.fileName}:`,
@@ -487,9 +487,8 @@ class FileIndexer {
   }
 
   /**
-   * DEPRECATED and BUGGY: This method is no longer used and contains logic
-   * for the old data structure. It should be removed.
-   * The `updateInvertedIndexBatch` method is the correct implementation.
+   * DEPRECATED: This method is no longer used. The `updateInvertedIndexBatch`
+   * method is the correct implementation.
    */
   /*
   private updateInvertedIndex(
@@ -547,6 +546,7 @@ class FileIndexer {
         `🗑️ Clearing existing inverted index (${this.invertedIndex.size} terms)...`,
       );
       this.invertedIndex.clear();
+      this.stemDictionary.clear();
 
       // Get all documents that should be in the index (cached + new)
       const allDocuments = Array.from(this.documentCache.values()).filter(
@@ -593,6 +593,12 @@ class FileIndexer {
               termPositions.set(stemmedTerm, []);
             }
             termPositions.get(stemmedTerm)!.push(i); // Push the position index `i`
+
+            // STAGE 1: Populate the stem dictionary
+            if (!this.stemDictionary.has(stemmedTerm)) {
+              this.stemDictionary.set(stemmedTerm, new Set());
+            }
+            this.stemDictionary.get(stemmedTerm)!.add(term);
           }
 
           // Update the inverted index from the collected positions.
@@ -682,7 +688,9 @@ class FileIndexer {
         `   - Processed docs: ${processedDocs}/${allDocuments.length}`,
       );
       this.logger.info(`   - Total terms: ${totalTermsProcessed}`);
-      this.logger.info(`   - Unique terms: ${this.invertedIndex.size}`);
+      this.logger.info(
+        `   - Unique terms: ${this.invertedIndex.size} (stems: ${this.stemDictionary.size})`,
+      );
       this.logger.info(
         `   - Duration: ${duration}ms (${Math.round(duration / 1000)}s)`,
       );
@@ -725,6 +733,7 @@ class FileIndexer {
   }
 
   private async loadGlobalInvertedIndex(): Promise<boolean> {
+    const startTime = Date.now();
     try {
       const globalIndexPath =
         this.config.globalIndexPath ||
@@ -742,7 +751,7 @@ class FileIndexer {
       try {
         const marker = JSON.parse(content);
         if (marker.format === 'chunked') {
-          this.logger.info('📦 Loading chunked index format...');
+          this.logger.debug('📦 Loading chunked index format...');
           return await this.loadGlobalInvertedIndexChunked(
             globalIndexPath,
             marker,
@@ -753,7 +762,12 @@ class FileIndexer {
       }
 
       this.logger.info('📋 Loading standard index format...');
-      return await this.loadGlobalInvertedIndexStandard(globalIndexPath);
+      const result =
+        await this.loadGlobalInvertedIndexStandard(globalIndexPath);
+      this.logger.info(
+        `Global index loading completed in ${Date.now() - startTime}ms`,
+      );
+      return result;
     } catch (error) {
       this.logger.warn(
         'Failed to load global inverted index:',
@@ -764,6 +778,7 @@ class FileIndexer {
   }
 
   private async saveGlobalInvertedIndex(): Promise<void> {
+    const startTime = Date.now();
     try {
       const globalIndexPath =
         this.config.globalIndexPath ||
@@ -792,6 +807,9 @@ class FileIndexer {
         this.logger.info(`💾 Using standard JSON serialization`);
         await this.saveGlobalInvertedIndexStandard(globalIndexPath, tempPath);
       }
+      this.logger.info(
+        `Global index saving completed in ${Date.now() - startTime}ms`,
+      );
     } catch (error) {
       this.logger.error(
         'Failed to save global inverted index:',
@@ -866,6 +884,13 @@ class FileIndexer {
           { ...v, termFrequency: Object.fromEntries(v.termFrequency) },
         ]),
       ),
+      // STAGE 1: Serialize stemDictionary (convert Set to Array)
+      stemDictionary: Object.fromEntries(
+        Array.from(this.stemDictionary.entries()).map(([k, v]) => [
+          k,
+          Array.from(v),
+        ]),
+      ),
     };
 
     await fs.promises.mkdir(path.dirname(globalIndexPath), {
@@ -907,9 +932,11 @@ class FileIndexer {
         timestamp: Date.now(),
         totalDocuments: this.documentCache.size,
         totalTerms: this.invertedIndex.size,
+        totalStems: this.stemDictionary.size, // STAGE 1: Add stem count
         chunkInfo: {
           documentChunks: 0,
           invertedIndexChunks: 0,
+          stemChunks: 0, // Initialize stemChunks
         },
       };
 
@@ -971,6 +998,32 @@ class FileIndexer {
       }
       metadata.chunkInfo.invertedIndexChunks = invertedChunks.length;
 
+      // STAGE 1: Chunk 3: Save stem dictionary
+      const stemChunks = this.chunkMapEntries(
+        Array.from(this.stemDictionary.entries()),
+        5000, // Stems are smaller, can use larger chunk size
+      );
+      this.logger.info(
+        `📚 Saving stem dictionary in ${stemChunks.length} chunks`,
+      );
+
+      for (let i = 0; i < stemChunks.length; i++) {
+        const chunk = Object.fromEntries(
+          stemChunks[i].map(([k, v]) => [k, Array.from(v)]),
+        );
+        const chunkPath = path.join(chunkedDir, `stems_${i}.json.gz`);
+        const chunkJson = JSON.stringify({ stems: chunk });
+        const compressed = zlib.gzipSync(chunkJson);
+        await fs.promises.writeFile(chunkPath, compressed);
+
+        if (i % 5 === 0 || i === stemChunks.length - 1) {
+          this.logger.info(
+            `  📚 Stem dictionary chunk ${i + 1}/${stemChunks.length} saved`,
+          );
+        }
+      }
+      metadata.chunkInfo.stemChunks = stemChunks.length;
+
       // Save metadata
       const metadataPath = path.join(chunkedDir, 'metadata.json');
       await fs.promises.writeFile(
@@ -988,7 +1041,11 @@ class FileIndexer {
       await fs.promises.writeFile(globalIndexPath, markerContent);
 
       this.logger.info(
-        `✅ Chunked index saved successfully with ${metadata.chunkInfo.documentChunks + metadata.chunkInfo.invertedIndexChunks} total chunks`,
+        `✅ Chunked index saved successfully with ${
+          metadata.chunkInfo.documentChunks +
+          metadata.chunkInfo.invertedIndexChunks +
+          (metadata.chunkInfo.stemChunks || 0)
+        } total chunks`,
       );
     } catch (error) {
       // Clean up on failure
@@ -1017,8 +1074,10 @@ class FileIndexer {
   }
 
   /**
-   * ✅ UPDATED: Load global index with chunked format support
+   * BUG FIX: This is a duplicated, older version of the method.
+   * The correct one is above. This block should be removed.
    */
+  /*
   private async loadGlobalInvertedIndex(): Promise<boolean> {
     try {
       const globalIndexPath =
@@ -1048,7 +1107,11 @@ class FileIndexer {
       }
 
       this.logger.info('📋 Loading standard index format...');
-      return await this.loadGlobalInvertedIndexStandard(globalIndexPath);
+      const result = await this.loadGlobalInvertedIndexStandard(globalIndexPath);
+      this.logger.info(
+        `Global index loading completed in ${Date.now() - startTime}ms`,
+      );
+      return result;
     } catch (error) {
       this.logger.warn(
         'Failed to load global inverted index:',
@@ -1057,6 +1120,7 @@ class FileIndexer {
       return false;
     }
   }
+  */
 
   /**
    * ✅ NEW: Load standard format index
@@ -1088,8 +1152,16 @@ class FileIndexer {
       this.documentCache.set(filePath, doc);
     }
 
+    // STAGE 1: Restore stemDictionary
+    this.stemDictionary.clear();
+    if (obj.stemDictionary) {
+      for (const stem of Object.keys(obj.stemDictionary)) {
+        this.stemDictionary.set(stem, new Set(obj.stemDictionary[stem]));
+      }
+    }
+
     this.logger.info(
-      `✅ Standard index loaded: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms`,
+      `✅ Standard index loaded: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms, ${this.stemDictionary.size} stems`,
     );
     return true;
   }
@@ -1129,9 +1201,10 @@ class FileIndexer {
       // Clear existing data
       this.documentCache.clear();
       this.invertedIndex.clear();
+      this.stemDictionary.clear(); // STAGE 1
 
       // Load document chunks
-      this.logger.info(
+      this.logger.debug(
         `📑 Loading ${metadata.chunkInfo.documentChunks} document chunks...`,
       );
       for (let i = 0; i < metadata.chunkInfo.documentChunks; i++) {
@@ -1149,14 +1222,14 @@ class FileIndexer {
         );
 
         if (i % 10 === 0 || i === metadata.chunkInfo.documentChunks - 1) {
-          this.logger.info(
+          this.logger.debug(
             `  📄 Loaded document chunk ${i + 1}/${metadata.chunkInfo.documentChunks}`,
           );
         }
       }
 
       // Load inverted index chunks
-      this.logger.info(
+      this.logger.debug(
         `🔗 Loading ${metadata.chunkInfo.invertedIndexChunks} inverted index chunks...`,
       );
       for (let i = 0; i < metadata.chunkInfo.invertedIndexChunks; i++) {
@@ -1173,14 +1246,40 @@ class FileIndexer {
         );
 
         if (i % 5 === 0 || i === metadata.chunkInfo.invertedIndexChunks - 1) {
-          this.logger.info(
+          this.logger.debug(
             `  🔗 Loaded inverted index chunk ${i + 1}/${metadata.chunkInfo.invertedIndexChunks}`,
           );
         }
       }
 
+      // STAGE 1: Load stem dictionary chunks
+      if (metadata.chunkInfo.stemChunks > 0) {
+        this.logger.debug(
+          `📚 Loading ${metadata.chunkInfo.stemChunks} stem dictionary chunks...`,
+        );
+        for (let i = 0; i < metadata.chunkInfo.stemChunks; i++) {
+          const chunkPath = path.join(chunkedDir, `stems_${i}.json.gz`);
+          const compressed = await fs.promises.readFile(chunkPath);
+          const chunkJson = zlib.gunzipSync(compressed).toString('utf8');
+          const chunk = JSON.parse(chunkJson);
+
+          // Restore stem dictionary entries
+          Object.entries(chunk.stems).forEach(
+            ([stem, words]: [string, any]) => {
+              this.stemDictionary.set(stem, new Set(words));
+            },
+          );
+
+          if (i % 5 === 0 || i === metadata.chunkInfo.stemChunks - 1) {
+            this.logger.debug(
+              `  📚 Loaded stem dictionary chunk ${i + 1}/${metadata.chunkInfo.stemChunks}`,
+            );
+          }
+        }
+      }
+
       this.logger.info(
-        `✅ Chunked index loaded successfully: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms`,
+        `✅ Chunked index loaded successfully: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms, ${this.stemDictionary.size} stems`,
       );
       return true;
     } catch (error) {
@@ -1188,6 +1287,7 @@ class FileIndexer {
       // Clear partially loaded data
       this.documentCache.clear();
       this.invertedIndex.clear();
+      this.stemDictionary.clear(); // STAGE 1
       return false;
     }
   }
@@ -1195,23 +1295,24 @@ class FileIndexer {
   /**
    * Enhanced intelligent selection based on system characteristics
    */
-  private async selectIndexingMethod(): Promise<'sequential' | 'parallel'> {
+  private async selectIndexingMethod(
+    files: DocumentMetadata[],
+  ): Promise<'sequential' | 'parallel'> {
     // Get system info
     const totalMemory = os.totalmem() / 1024 / 1024 / 1024; // GB
     const cpuCount = os.cpus().length;
 
     // Estimate corpus size
-    const files = await this.discoverFiles();
     const avgFileSize =
       files.length > 0
         ? files.reduce((sum, f) => sum + f.size, 0) / files.length
         : 0;
     const estimatedCorpusSize = (files.length * avgFileSize) / 1024 / 1024; // MB
 
-    this.logger.info(
+    this.logger.debug(
       `🖥️  System: ${totalMemory.toFixed(1)}GB RAM, ${cpuCount} CPUs`,
     );
-    this.logger.info(
+    this.logger.debug(
       `📊 Corpus: ${files.length} files, ~${estimatedCorpusSize.toFixed(0)}MB`,
     );
 
@@ -1226,22 +1327,22 @@ class FileIndexer {
     const method = useParallel ? 'parallel' : 'sequential';
 
     if (useParallel) {
-      this.logger.info(
+      this.logger.debug(
         `🚀 Auto-selected parallel indexing (good hardware + medium corpus)`,
       );
     } else {
-      this.logger.info(
+      this.logger.debug(
         `🐢 Auto-selected sequential indexing (conservative choice)`,
       );
 
       // Explain why parallel wasn't chosen
       if (totalMemory < 8)
-        this.logger.info(`   • Low memory: ${totalMemory.toFixed(1)}GB < 8GB`);
-      if (cpuCount < 4) this.logger.info(`   • Few CPUs: ${cpuCount} < 4`);
+        this.logger.debug(`   • Low memory: ${totalMemory.toFixed(1)}GB < 8GB`);
+      if (cpuCount < 4) this.logger.debug(`   • Few CPUs: ${cpuCount} < 4`);
       if (files.length < 100)
-        this.logger.info(`   • Small corpus: ${files.length} < 100 files`);
+        this.logger.debug(`   • Small corpus: ${files.length} < 100 files`);
       if (estimatedCorpusSize > 2000)
-        this.logger.info(
+        this.logger.debug(
           `   • Large corpus: ${estimatedCorpusSize.toFixed(0)}MB > 2GB`,
         );
     }
@@ -1250,69 +1351,74 @@ class FileIndexer {
   }
 
   async buildFullIndex(): Promise<void> {
+    // REFACTOR: Consolidate file discovery and pre-checks.
+    const allDiscoveredFiles = await this.discoverFiles();
+    if (allDiscoveredFiles.length === 0) {
+      this.logger.info('No files found to index.');
+      return;
+    }
+
     // Choose indexing method based on system analysis
-    const indexingMethod = await this.selectIndexingMethod();
-    this.logger.info(`📂 Using indexing method: ${indexingMethod}`);
+    const indexingMethod = await this.selectIndexingMethod(allDiscoveredFiles);
+    this.logger.debug(`📂 Using indexing method: ${indexingMethod}`);
 
     // Make threshold configurable
     const buildFullIndexConfig = {
       rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001, // Default 0.1%
-      minFiles: this.config.minFilesForRebuild ?? 5, // Default to 1 file
+      minFiles: this.config.minFilesForRebuild ?? 5, // Default to 5 files
     };
 
-    // Use the selected indexing method
-    if (indexingMethod === 'parallel') {
-      await this.buildFullIndexParallel(buildFullIndexConfig);
-    } else {
-      await this.buildFullIndexSequential(buildFullIndexConfig);
-    }
-  }
+    // Load existing index and determine which files *actually* need processing
+    this.logger.info(
+      `📁 Found ${allDiscoveredFiles.length} documents to process...`,
+    );
+    const loaded = await this.loadGlobalInvertedIndex();
+    let filesToIndex = allDiscoveredFiles;
 
-  async buildFullIndexSequential({
-    rebuildThreshold,
-    minFiles,
-  }: { rebuildThreshold?: number; minFiles?: number } = {}): Promise<void> {
-    try {
-      const files = await this.discoverFiles();
-      if (files.length === 0) {
-        this.logger.info('No files found to index.');
+    if (loaded) {
+      this.logger.debug('📋 Loaded existing global index from cache.');
+      this.logger.debug('🔍 Checking which files actually need reindexing...');
+
+      const filesToReindex = allDiscoveredFiles.filter((file) =>
+        this.needsReindexing(file),
+      );
+
+      if (filesToReindex.length === 0) {
+        this.logger.info('✅ All files are up to date. No reindexing needed.');
         return;
       }
 
-      this.logger.info(`📁 Found ${files.length} documents to process...`);
+      this.logger.info(
+        `📝 Found ${filesToReindex.length} files to reindex out of ${allDiscoveredFiles.length} total.`,
+      );
+      filesToIndex = filesToReindex;
+    }
 
-      // Check if we can load existing index
-      const loaded = await this.loadGlobalInvertedIndex();
-      if (loaded) {
-        this.logger.info('📋 Loaded existing global index from cache.');
+    // Use the selected indexing method on the filtered list of files
+    if (indexingMethod === 'parallel') {
+      await this.buildFullIndexParallel(filesToIndex, buildFullIndexConfig);
+    } else {
+      await this.buildFullIndexSequential(filesToIndex, buildFullIndexConfig);
+    }
+  }
 
-        // FIXED: Pre-check all files against cache to avoid false positives
-        this.logger.info('🔍 Checking which files actually need reindexing...');
-
-        const filesToReindex = [];
-        for (const file of files) {
-          if (this.needsReindexing(file)) {
-            filesToReindex.push(file);
-          }
-        }
-
-        if (filesToReindex.length === 0) {
-          this.logger.info(
-            '✅ All files are up to date. No reindexing needed.',
-          );
-          return;
-        }
-
+  async buildFullIndexSequential(
+    files: DocumentMetadata[], // REFACTOR: Receive files to index
+    {
+      rebuildThreshold,
+      minFiles,
+    }: { rebuildThreshold?: number; minFiles?: number } = {},
+  ): Promise<void> {
+    const startTime = Date.now();
+    try {
+      if (files.length === 0) {
         this.logger.info(
-          `📝 Actually need to reindex ${filesToReindex.length} files out of ${files.length} total.`,
+          'No new or modified files to index in sequential mode.',
         );
-
-        // Replace the files array with only those that need reindexing
-        files.length = 0;
-        files.push(...filesToReindex);
+        return;
       }
 
-      this.logger.info(`🔄 Indexing ${files.length} documents...`);
+      this.logger.info(`🔄 Indexing ${files.length} documents sequentially...`);
       let indexed = 0;
       let skipped = 0;
       let errors = 0;
@@ -1450,40 +1556,26 @@ class FileIndexer {
         `Failed to build index: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+    this.logger.info(
+      `Sequential index build completed in ${Date.now() - startTime}ms`,
+    );
   }
 
   /**
    * NEW: True parallel processing for independent documents
    */
-  async buildFullIndexParallel({
-    rebuildThreshold,
-    minFiles,
-  }: { rebuildThreshold?: number; minFiles?: number } = {}): Promise<void> {
+  async buildFullIndexParallel(
+    files: DocumentMetadata[], // REFACTOR: Receive files to index
+    {
+      rebuildThreshold,
+      minFiles,
+    }: { rebuildThreshold?: number; minFiles?: number } = {},
+  ): Promise<void> {
+    const startTime = Date.now();
     try {
-      const files = await this.discoverFiles();
       if (files.length === 0) {
-        this.logger.info('No files found to index.');
+        this.logger.info('No new or modified files to index in parallel mode.');
         return;
-      }
-
-      this.logger.info(
-        `📁 Found ${files.length} documents to process in parallel...`,
-      );
-
-      // Check existing index
-      const loaded = await this.loadGlobalInvertedIndex();
-      if (loaded) {
-        const filesToReindex = files.filter((file) =>
-          this.needsReindexing(file),
-        );
-        if (filesToReindex.length === 0) {
-          this.logger.info(
-            '✅ All files are up to date. No reindexing needed.',
-          );
-          return;
-        }
-        files.length = 0;
-        files.push(...filesToReindex);
       }
 
       this.logger.info(
@@ -1573,6 +1665,9 @@ class FileIndexer {
       this.logger.error('Parallel index building failed:', error);
       throw error;
     }
+    this.logger.info(
+      `Parallel index build completed in ${Date.now() - startTime}ms`,
+    );
   }
 
   /**
@@ -1742,7 +1837,7 @@ class FileIndexer {
    * Pre-warm search caches for better performance
    */
   async preWarmSearchCaches(): Promise<void> {
-    this.logger.info('🔥 Pre-warming search caches...');
+    this.logger.debug('🔥 Pre-warming search caches...');
     const startTime = Date.now();
 
     try {
@@ -1772,7 +1867,7 @@ class FileIndexer {
       };
 
       const duration = Date.now() - startTime;
-      this.logger.info(`🔥 Search caches pre-warmed in ${duration}ms`);
+      this.logger.debug(`🔥 Search caches pre-warmed in ${duration}ms`);
     } catch (error) {
       this.logger.warn('⚠️ Failed to pre-warm search caches:', error);
       // Don't throw - this is an optimization, not critical
@@ -1803,6 +1898,17 @@ class FileIndexer {
    */
   getInvertedIndex(): Map<string, InvertedIndexEntry[]> {
     return new Map(this.invertedIndex);
+  }
+
+  /**
+   * STAGE 1: Add getter for the stem dictionary.
+   */
+  getStemDictionary(): Map<string, string[]> {
+    const result = new Map<string, string[]>();
+    this.stemDictionary.forEach((value, key) => {
+      result.set(key, Array.from(value));
+    });
+    return result;
   }
 
   /**
@@ -1864,11 +1970,13 @@ class FileIndexer {
   getSearchDataOptimized(): {
     docCache: Map<string, DocumentIndex>;
     invertedIndex: Map<string, InvertedIndexEntry[]>;
+    stemDictionary: Map<string, string[]>; // STAGE 1
     searchCache?: any;
   } {
     return {
       docCache: this.getDocumentCache(),
       invertedIndex: this.getInvertedIndex(),
+      stemDictionary: this.getStemDictionary(), // STAGE 1
       searchCache: (this as any).searchCache,
     };
   }
