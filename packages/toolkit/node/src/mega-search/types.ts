@@ -1,6 +1,13 @@
 interface DocumentMetadata {
-  filePath: string;
   fileName: string;
+  /** Absolute path to the original source file (e.g. .doc, .docx) */
+  originalFilePath: string;
+  /**
+   * Absolute path to the converted plain text file in the cache.
+   * This file contains the actual text content used for indexing and snippet generation.
+   * Use this file for reading content based on charStart/charEnd positions.
+   */
+  textFilePath?: string;
   lastModified: number;
   size: number;
   indexed: boolean;

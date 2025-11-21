@@ -1662,11 +1662,17 @@ class MegaSearch {
         logger.info(
           `Testing: ${file.fileName} (${(file.size / 1024).toFixed(1)} KB)`,
         );
-        logger.info(`File path: ${file.filePath}`);
+        logger.info(`Original path: ${file.originalFilePath}`);
+        if (file.textFilePath) {
+          logger.info(`Text cache path: ${file.textFilePath}`);
+        }
 
-        const extractor = new DocumentExtractor();
         const startTime = Date.now();
-        const text = await extractor.extractText(file.filePath);
+        // Use FileIndexer to get text - this uses the cached .txt if available
+        // This ensures we are testing against the actual content used for indexing
+        const text = await this.fileIndexer.extractTextFromFile(
+          file.originalFilePath,
+        );
         const extractionTime = Date.now() - startTime;
 
         logger.info(

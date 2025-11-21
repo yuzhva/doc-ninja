@@ -29,7 +29,10 @@ class FileIndexer {
   private documentLRU = new LRUCache<string, DocumentIndex>(50); // Reduced from 100
   private textLRU = new LRUCache<string, string>(25); // Reduced from 50
 
-  constructor(private config: SearchConfig) {}
+  constructor(private config: SearchConfig) {
+    // Ensure root directory is absolute to avoid path ambiguity
+    this.config.rootDirectory = path.resolve(this.config.rootDirectory);
+  }
 
   private getCacheRelativePath(filePath: string): string {
     // Get relative path from rootDirectory, remove leading slash
@@ -40,20 +43,18 @@ class FileIndexer {
   private getTextCachePath(filePath: string): string {
     const rel = this.getCacheRelativePath(filePath);
     const txtCacheRoot = this.config.txtCacheSubdir || '.cache/txt';
-    return path.join(
-      this.config.rootDirectory,
-      txtCacheRoot,
-      rel.replace(/\.[^.]+$/, '.txt'),
-    );
+    // Append .txt to the full filename including original extension (e.g. file.doc -> file.doc.txt)
+    return path.join(this.config.rootDirectory, txtCacheRoot, `${rel}.txt`);
   }
 
   private getIndexCachePath(filePath: string): string {
     const rel = this.getCacheRelativePath(filePath);
     const indexCacheRoot = this.config.indexCacheSubdir || '.cache/index';
+    // Append .index.json to the full filename including original extension (e.g. file.doc -> file.doc.index.json)
     return path.join(
       this.config.rootDirectory,
       indexCacheRoot,
-      rel.replace(/\.[^.]+$/, '.index.json'),
+      `${rel}.index.json`,
     );
   }
 
@@ -174,12 +175,13 @@ class FileIndexer {
 
       const documentMetadata: DocumentMetadata[] = filteredFileInfos.map(
         (file) => ({
-          filePath: file.filePath,
+          originalFilePath: file.filePath,
           fileName: file.fileName,
           lastModified: file.lastModified,
           size: file.size,
           indexed: false,
           language: 'mixed' as const,
+          textFilePath: this.getTextCachePath(file.filePath),
         }),
       );
 
@@ -200,7 +202,7 @@ class FileIndexer {
 
   needsReindexing(metadata: DocumentMetadata): boolean {
     // Check memory cache first for faster lookup
-    const cached = this.documentCache.get(metadata.filePath);
+    const cached = this.documentCache.get(metadata.originalFilePath);
     if (cached) {
       if (!cached.metadata.indexed) return true;
       if (cached.metadata.lastModified !== metadata.lastModified) return true;
@@ -208,11 +210,11 @@ class FileIndexer {
     }
 
     // Check if index cache file exists and is up to date
-    const indexPath = this.getIndexCachePath(metadata.filePath);
+    const indexPath = this.getIndexCachePath(metadata.originalFilePath);
     if (fs.existsSync(indexPath)) {
       try {
         const indexStat = fs.statSync(indexPath);
-        const sourceStat = fs.statSync(metadata.filePath);
+        const sourceStat = fs.statSync(metadata.originalFilePath);
 
         // FIXED: Use proper comparison and also check if it's already in document cache
         if (indexStat.mtimeMs >= sourceStat.mtimeMs) {
@@ -227,8 +229,23 @@ class FileIndexer {
             cached.metadata.lastModified = sourceStat.mtimeMs;
             cached.metadata.size = sourceStat.size;
 
+            // Migration: Ensure new fields exist
+            if (
+              !cached.metadata.originalFilePath &&
+              (cached.metadata as any).filePath
+            ) {
+              cached.metadata.originalFilePath = (
+                cached.metadata as any
+              ).filePath;
+            }
+            if (!cached.metadata.textFilePath) {
+              cached.metadata.textFilePath = this.getTextCachePath(
+                metadata.originalFilePath,
+              );
+            }
+
             // Store in document cache to prevent future cache misses
-            this.documentCache.set(metadata.filePath, cached);
+            this.documentCache.set(metadata.originalFilePath, cached);
 
             this.logger.info(
               `📋 Pre-loaded cached index for ${metadata.fileName} - no reindexing needed`,
@@ -314,12 +331,12 @@ class FileIndexer {
       fileName: metadata.fileName,
     });
 
-    const indexPath = this.getIndexCachePath(metadata.filePath);
+    const indexPath = this.getIndexCachePath(metadata.originalFilePath);
     // Ensure directory exists
     await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
 
     try {
-      const srcStat = await promisify(fs.stat)(metadata.filePath);
+      const srcStat = await promisify(fs.stat)(metadata.originalFilePath);
 
       // Use cached index if up-to-date
       if (fs.existsSync(indexPath)) {
@@ -339,8 +356,23 @@ class FileIndexer {
             cached.metadata.size = srcStat.size;
             cached.metadata.indexed = true; // Ensure it's marked as indexed
 
+            // Migration: Ensure new fields exist
+            if (
+              !cached.metadata.originalFilePath &&
+              (cached.metadata as any).filePath
+            ) {
+              cached.metadata.originalFilePath = (
+                cached.metadata as any
+              ).filePath;
+            }
+            if (!cached.metadata.textFilePath) {
+              cached.metadata.textFilePath = this.getTextCachePath(
+                metadata.originalFilePath,
+              );
+            }
+
             // Store in cache but don't update inverted index yet (do it later in batch)
-            this.documentCache.set(metadata.filePath, cached);
+            this.documentCache.set(metadata.originalFilePath, cached);
             this.logger.info(`📋 Loaded cached index for ${metadata.fileName}`);
             return cached;
           }
@@ -358,7 +390,7 @@ class FileIndexer {
       // Extract text with better error handling
       let text: string;
       try {
-        text = await this.extractTextFromFile(metadata.filePath);
+        text = await this.extractTextFromFile(metadata.originalFilePath);
       } catch (extractError) {
         this.logger.warn(
           `Text extraction failed for ${metadata.fileName}, creating empty index`,
@@ -438,6 +470,7 @@ class FileIndexer {
           indexed: true,
           indexedAt: Date.now(),
           language,
+          textFilePath: this.getTextCachePath(metadata.originalFilePath),
         },
         vocab,
         positions,
@@ -447,7 +480,7 @@ class FileIndexer {
         originalText: text.length > 100000 ? '' : text,
       };
 
-      this.documentCache.set(metadata.filePath, documentIndex);
+      this.documentCache.set(metadata.originalFilePath, documentIndex);
 
       // Save index to disk (convert Map to object)
       try {
@@ -604,7 +637,7 @@ class FileIndexer {
           // Update the inverted index from the collected positions.
           termPositions.forEach((positions, stemmedTerm) => {
             const entry: InvertedIndexEntry = {
-              documentId: docIndex.metadata.filePath,
+              documentId: docIndex.metadata.originalFilePath,
               frequency: positions.length,
               positions,
             };
@@ -1149,6 +1182,18 @@ class FileIndexer {
     for (const filePath of Object.keys(obj.documentCache)) {
       const doc = obj.documentCache[filePath];
       doc.termFrequency = new Map(Object.entries(doc.termFrequency));
+
+      // Migration: Ensure new fields exist
+      if (!doc.metadata.originalFilePath && (doc.metadata as any).filePath) {
+        doc.metadata.originalFilePath = (doc.metadata as any).filePath;
+        delete (doc.metadata as any).filePath;
+      }
+      if (!doc.metadata.textFilePath) {
+        doc.metadata.textFilePath = this.getTextCachePath(
+          doc.metadata.originalFilePath,
+        );
+      }
+
       this.documentCache.set(filePath, doc);
     }
 
@@ -1217,6 +1262,21 @@ class FileIndexer {
         Object.entries(chunk.documents).forEach(
           ([filePath, doc]: [string, any]) => {
             doc.termFrequency = new Map(Object.entries(doc.termFrequency));
+
+            // Migration: Ensure new fields exist
+            if (
+              !doc.metadata.originalFilePath &&
+              (doc.metadata as any).filePath
+            ) {
+              doc.metadata.originalFilePath = (doc.metadata as any).filePath;
+              delete (doc.metadata as any).filePath;
+            }
+            if (!doc.metadata.textFilePath) {
+              doc.metadata.textFilePath = this.getTextCachePath(
+                doc.metadata.originalFilePath,
+              );
+            }
+
             this.documentCache.set(filePath, doc);
           },
         );
@@ -1448,7 +1508,7 @@ class FileIndexer {
         const batchPromises = batch.map(async (file) => {
           try {
             // FIXED: Double-check if reindexing is still needed (might have been loaded in needsReindexing)
-            const wasInCache = this.documentCache.has(file.filePath);
+            const wasInCache = this.documentCache.has(file.originalFilePath);
 
             if (this.needsReindexing(file)) {
               const result = await this.indexDocument(file);
@@ -1459,13 +1519,13 @@ class FileIndexer {
               return {
                 success: true,
                 type: isNewlyProcessed ? 'newly-indexed' : 'cached-loaded',
-                filePath: file.filePath,
+                filePath: file.originalFilePath,
               };
             } else {
               return {
                 success: true,
                 type: 'skipped',
-                filePath: file.filePath,
+                filePath: file.originalFilePath,
               };
             }
           } catch (error) {
@@ -1473,7 +1533,11 @@ class FileIndexer {
               `❌ Failed to index ${file.fileName}:`,
               error instanceof Error ? error.message : String(error),
             );
-            return { success: false, type: 'error', filePath: file.filePath };
+            return {
+              success: false,
+              type: 'error',
+              filePath: file.originalFilePath,
+            };
           }
         });
 
@@ -1647,7 +1711,9 @@ class FileIndexer {
         this.logger.info(
           `📊 Threshold met: ${totalIndexed} files > ${(rebuildThreshold * 100).toFixed(1)}% threshold`,
         );
-        await this.updateInvertedIndexBatch(files.map((f) => f.filePath));
+        await this.updateInvertedIndexBatch(
+          files.map((f) => f.originalFilePath),
+        );
       } else {
         this.logger.info(
           `🚀 Skipping rebuild - ${totalIndexed} files < ${(rebuildThreshold * 100).toFixed(1)}% threshold`,

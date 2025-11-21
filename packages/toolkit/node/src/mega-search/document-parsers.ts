@@ -174,41 +174,66 @@ class DocxParser implements DocumentParser {
   }
 
   private extractTextFromDocumentXml(xmlContent: string): string {
-    // Enhanced to preserve paragraph structure
-    const paragraphTexts: string[] = [];
+    const paragraphs: string[] = [];
 
-    // Find all paragraph elements
-    const paragraphRegex = /<w:p[^>]*>.*?<\/w:p>/gs;
-    const paragraphs = xmlContent.match(paragraphRegex) || [];
+    // Split by paragraph tags to preserve structure
+    // This is more robust than a global regex which might miss nested tags
+    const pParts = xmlContent.split('<w:p');
 
-    paragraphs.forEach((paragraph) => {
-      const paragraphTextParts: string[] = [];
-      const textMatches = paragraph.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    for (let i = 1; i < pParts.length; i++) {
+      const part = pParts[i];
+      const endP = part.indexOf('</w:p>');
+      if (endP === -1) continue;
 
-      for (const textMatch of textMatches) {
-        if (textMatch[1] && textMatch[1].trim()) {
-          const textContent = textMatch[1]
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&')
-            .replace(/&quot;/g, '"')
-            .replace(/&apos;/g, "'");
+      const pContent = part.substring(0, endP);
+      let pText = '';
 
-          paragraphTextParts.push(textContent.trim());
+      // We want to capture text (<w:t>), tabs (<w:tab/>), and breaks (<w:br/>, <w:cr/>)
+      // We'll use a regex that finds these tags in order
+      const tagRegex = /<w:t[^>]*>([^<]*)<\/w:t>|<w:tab\/>|<w:br\/>|<w:cr\/>/g;
+
+      const matches = pContent.matchAll(tagRegex);
+
+      for (const match of matches) {
+        const fullMatch = match[0];
+
+        if (fullMatch.startsWith('<w:tab')) {
+          pText += '\t';
+        } else if (
+          fullMatch.startsWith('<w:br') ||
+          fullMatch.startsWith('<w:cr')
+        ) {
+          pText += '\n';
+        } else if (match[1]) {
+          // It's a w:t tag with content
+          pText += match[1];
         }
       }
 
-      if (paragraphTextParts.length > 0) {
-        paragraphTexts.push(paragraphTextParts.join(' '));
-      }
-    });
+      // Decode HTML entities
+      if (pText.length > 0) {
+        pText = pText
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'");
 
-    // JOIN WITH DOUBLE NEWLINES to preserve paragraph breaks
-    return paragraphTexts.join('\n\n').trim();
+        paragraphs.push(pText);
+      }
+    }
+
+    return paragraphs.join('\n\n').trim();
   }
 }
 
 class DocParser implements DocumentParser {
+  // Add constants for better maintainability
+  private static readonly FILE_INFO_BLOCK_SIZE = 4096;
+  private static readonly MIN_VALID_WORD_LENGTH = 2;
+  private static readonly MAX_FORMATTING_CODE_RATIO = 0.3;
+  private static readonly CHUNK_SIZE = 1024;
+
   canHandle(filePath: string): boolean {
     return path.extname(filePath).toLowerCase() === '.doc';
   }
@@ -238,44 +263,98 @@ class DocParser implements DocumentParser {
   }
 
   private parseDocBinary(buffer: Buffer): string {
-    try {
-      // DOC files use Microsoft Compound Document format
-      if (!this.isValidDocFile(buffer)) {
-        throw new Error('Invalid DOC file format');
-      }
+    // Strategy: "Strings" extraction with encoding awareness.
+    // Instead of trying to parse the complex binary structure (which leads to data loss),
+    // we scan the entire file for contiguous blocks of valid characters in common encodings.
+    // This ensures we get all text, even if some formatting is lost.
 
-      // Try multiple extraction methods
-      const methods = [
-        () => this.extractFromWordDocument(buffer),
-        () => this.extractTextStreams(buffer),
-        () => this.extractReadableText(buffer),
-      ];
+    // 1. Extract UTF-16LE strings (Standard Word content)
+    const utf16 = this.extractStrings(buffer, 'utf16le');
 
-      for (let i = 0; i < methods.length; i++) {
-        try {
-          const result = methods[i]();
-          if (result && result.trim().length > 10) {
-            return result;
-          }
-        } catch (methodError) {
-          console.warn(
-            `DOC extraction method ${i + 1} failed:`,
-            methodError instanceof Error
-              ? methodError.message
-              : String(methodError),
-          );
-          // Continue to next method
-        }
-      }
+    // 2. Extract Single-byte strings (Older Word content / Metadata / Fallback)
+    // We try Windows-1251 (Cyrillic) as it covers ASCII as well.
+    const win1251 = this.extractStrings(buffer, 'win1251');
 
-      throw new Error(
-        'Could not extract meaningful text from DOC file using any method',
-      );
-    } catch (error) {
-      throw new Error(
-        `DOC parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
+    // Heuristic to choose the best result
+    // UTF-16 is usually the main body in .doc files.
+    // If we found a significant amount of UTF-16 text, prefer it.
+    let text = win1251;
+    if (utf16.length > win1251.length || utf16.length > 200) {
+      text = utf16;
     }
+
+    // ✅ FIX: Normalize line endings.
+    // The binary extraction might capture \r (CR) characters which are valid in the file
+    // but break downstream processing that expects \n (LF).
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    text = this.removeMetadata(text);
+    return this.cleanStart(text);
+  }
+
+  private cleanStart(text: string): string {
+    // Remove short garbage lines at the start (common in binary extractions)
+    // We look for the first "meaningful" line (e.g. > 5 chars)
+    const lines = text.split('\n');
+    let startIndex = 0;
+
+    for (let i = 0; i < Math.min(lines.length, 5); i++) {
+      const line = lines[i].trim();
+      // If line is very short and looks like garbage (unlikely to be a title)
+      if (line.length > 0 && line.length < 5) {
+        startIndex = i + 1;
+      } else if (line.length >= 5) {
+        // Found a substantial line, stop skipping
+        break;
+      }
+    }
+
+    if (startIndex > 0) {
+      return lines.slice(startIndex).join('\n').trim();
+    }
+    return text;
+  }
+
+  private removeMetadata(text: string): string {
+    // Common OLE markers and system strings that appear at the end of .doc files
+    // We cut off the text when we encounter the OLE directory structure or Style definitions
+    const markers = [
+      'Root Entry',
+      'WordDocument',
+      'SummaryInformation',
+      'DocumentSummaryInformation',
+      'MsoDataStore',
+      'CompObj',
+      '1Table',
+      '0Table',
+      'ObjectPool',
+      // Style definitions often start appearing here
+      'PAGE   \\* MERGEFORMAT',
+      'Normal',
+      'Heading 1',
+      'Default Paragraph Font',
+      'Звичайний', // "Normal" in Ukrainian
+      'Шрифт абзацу за замовчуванням', // "Default Paragraph Font" in Ukrainian
+    ];
+
+    let cutIndex = text.length;
+    let foundMarker = false;
+
+    for (const marker of markers) {
+      const index = text.lastIndexOf(marker);
+      if (index !== -1 && index < cutIndex) {
+        // Only consider markers if they appear in the extracted text
+        // We assume these system names don't appear in the user content
+        // console.log(`[DocParser] Found end marker: "${marker}" at index ${index}`);
+        cutIndex = index;
+        foundMarker = true;
+      }
+    }
+
+    if (foundMarker) {
+      return text.substring(0, cutIndex).trim();
+    }
+    return text;
   }
 
   private isValidDocFile(buffer: Buffer): boolean {
@@ -288,180 +367,114 @@ class DocParser implements DocumentParser {
     return signature.equals(expectedSignature);
   }
 
-  private extractFromWordDocument(buffer: Buffer): string {
-    const paragraphs: string[] = [];
+  private extractStrings(
+    buffer: Buffer,
+    encoding: 'utf16le' | 'win1251',
+  ): string {
+    const minLength = 3; // Minimum sequence length to be considered text
+    const foundStrings: string[] = [];
 
-    // Scan through the file in chunks looking for text patterns
-    const chunkSize = 1024;
-    for (let i = 0; i < buffer.length - chunkSize; i += chunkSize) {
-      const chunk = buffer.subarray(i, i + chunkSize);
-      const text = this.extractTextFromChunk(chunk);
-      if (text) {
-        // Split by natural paragraph indicators and preserve them
-        const chunkParagraphs = text
-          .split(/\n{2,}|\r\n{2,}/)
-          .filter((p) => p.trim());
-        paragraphs.push(...chunkParagraphs);
-      }
-    }
+    let start = -1;
+    let currentLength = 0;
+    const step = encoding === 'utf16le' ? 2 : 1;
 
-    // JOIN WITH DOUBLE NEWLINES to preserve paragraph structure
-    return paragraphs
-      .join('\n\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  }
+    for (let i = 0; i <= buffer.length - step; i += step) {
+      const isValid = this.isValidChar(buffer, i, encoding);
 
-  private extractTextFromChunk(chunk: Buffer): string {
-    // Convert chunk to string and look for both Ukrainian and English text
-    let text = '';
-
-    // Try different encodings
-    const encodings = ['utf8', 'utf16le', 'win1251'];
-
-    for (const encoding of encodings) {
-      try {
-        const decoded = chunk.toString(encoding as BufferEncoding);
-
-        // Look for Ukrainian text
-        const ukrainianMatches = decoded.match(
-          /[а-яїієґА-ЯЇІЄҐ][а-яїієґА-ЯЇІЄҐ\s.,!?;:\-()]{5,}/g,
-        );
-        if (ukrainianMatches && ukrainianMatches.length > 0) {
-          text += ukrainianMatches.join(' ') + ' ';
-        }
-
-        // Look for English text
-        const englishMatches = decoded.match(
-          /[a-zA-Z][a-zA-Z\s.,!?;:\-()]{5,}/g,
-        );
-        if (englishMatches && englishMatches.length > 0) {
-          text += englishMatches.join(' ') + ' ';
-        }
-      } catch (error) {
-        // Encoding failed, continue to next
-      }
-    }
-
-    return text.trim();
-  }
-
-  private extractTextStreams(buffer: Buffer): string {
-    const textParts: string[] = [];
-
-    // Look for null-terminated strings
-    let currentString = '';
-    for (let i = 0; i < buffer.length - 1; i++) {
-      const char = buffer[i];
-
-      if (char >= 32 && char <= 126) {
-        // ASCII printable
-        currentString += String.fromCharCode(char);
-      } else if (char >= 0x80) {
-        // Potential Cyrillic
-        // Try to decode as UTF-8 or Windows-1251
-        const bytes = buffer.subarray(i, Math.min(i + 4, buffer.length));
-        const decoded = this.tryDecodeText(bytes);
-        if (decoded) {
-          currentString += decoded;
-          i += decoded.length - 1;
-        }
+      if (isValid) {
+        if (start === -1) start = i;
+        currentLength++;
       } else {
-        // End of string
-        if (currentString.length > 5 && this.isValidText(currentString)) {
-          textParts.push(currentString.trim());
-        }
-        currentString = '';
-      }
-    }
+        if (start !== -1) {
+          // DEBUG: Uncomment to see what breaks the text flow
+          // const brokenBy = buffer.subarray(i, i + step).toString('hex');
+          // console.debug(`[DocParser] Sequence broken at offset ${i} by hex: ${brokenBy} (${encoding})`);
 
-    return textParts.join(' ').replace(/\s+/g, ' ').trim();
-  }
-
-  private tryDecodeText(bytes: Buffer): string | null {
-    const encodings = ['utf8', 'win1251'];
-
-    for (const encoding of encodings) {
-      try {
-        const decoded = bytes.toString(encoding as BufferEncoding);
-        if (this.isValidText(decoded)) {
-          return decoded;
-        }
-      } catch (error) {
-        // Continue to next encoding
-      }
-    }
-
-    return null;
-  }
-
-  private isValidText(text: string): boolean {
-    // Check if text contains Ukrainian or English characters
-    return /[а-яїієґa-z]/i.test(text);
-  }
-
-  private extractReadableText(buffer: Buffer): string {
-    // Last resort: extract any readable text (Ukrainian or English)
-    const words: string[] = [];
-
-    // Try to extract text by looking for character patterns
-    for (let i = 0; i < buffer.length - 10; i++) {
-      const chunk = buffer.subarray(i, i + 100);
-
-      // Try UTF-8 decoding
-      try {
-        const text = chunk.toString('utf8');
-
-        // Extract Ukrainian words
-        const ukrainianMatches = text.match(/[а-яїієґА-ЯЇІЄҐ]+/g);
-        if (ukrainianMatches) {
-          words.push(...ukrainianMatches.filter((word) => word.length > 2));
-        }
-
-        // Extract English words
-        const englishMatches = text.match(/[a-zA-Z]+/g);
-        if (englishMatches) {
-          words.push(...englishMatches.filter((word) => word.length > 2));
-        }
-      } catch (error) {
-        // Continue
-      }
-
-      // Try Windows-1251 decoding for Cyrillic
-      try {
-        const text = chunk.toString('binary');
-        const cyrillicChars = text
-          .split('')
-          .map((char) => {
-            const code = char.charCodeAt(0);
-            if (code >= 0xc0 && code <= 0xff) {
-              // Windows-1251 Cyrillic range
-              return String.fromCharCode(code - 0xc0 + 0x0410);
+          if (currentLength >= minLength) {
+            const chunk = buffer.subarray(start, start + currentLength * step);
+            try {
+              const str = chunk.toString(encoding);
+              // Additional filter: must have at least one letter to be considered text
+              // (avoids sequences of just punctuation or spaces)
+              if (/[a-zA-Zа-яїієґА-ЯЇІЄҐ]/.test(str)) {
+                foundStrings.push(str.trim());
+              }
+            } catch (e) {
+              /* ignore */
             }
-            return char;
-          })
-          .join('');
-
-        const matches = cyrillicChars.match(/[а-яїієґА-ЯЇІЄҐ]+/g);
-        if (matches) {
-          words.push(...matches.filter((word) => word.length > 2));
+          }
         }
-      } catch (error) {
-        // Continue
+        start = -1;
+        currentLength = 0;
       }
     }
 
-    // Filter out garbage characters and keep only valid words
-    const validWords = words.filter((word) => {
-      // Remove words with too many non-letter characters
-      const nonLetterCount = (word.match(/[^a-zA-Zа-яїієґА-ЯЇІЄҐ]/g) || [])
-        .length;
-      return nonLetterCount / word.length < 0.3; // Less than 30% non-letters
-    });
+    // Capture last chunk if exists
+    if (start !== -1 && currentLength >= minLength) {
+      const chunk = buffer.subarray(start, start + currentLength * step);
+      try {
+        const str = chunk.toString(encoding);
+        if (/[a-zA-Zа-яїієґА-ЯЇІЄҐ]/.test(str)) {
+          foundStrings.push(str.trim());
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    }
 
-    // Remove duplicates and join
-    const uniqueWords = Array.from(new Set(validWords));
-    return uniqueWords.join(' ');
+    return foundStrings.join('\n\n');
+  }
+
+  private isValidChar(
+    buffer: Buffer,
+    offset: number,
+    encoding: 'utf16le' | 'win1251',
+  ): boolean {
+    if (encoding === 'utf16le') {
+      const low = buffer[offset];
+      const high = buffer[offset + 1];
+
+      // ASCII range in UTF-16LE: low byte is char, high byte is 0
+      if (high === 0) {
+        return (
+          (low >= 32 && low <= 126) || // ASCII Printable
+          low === 9 ||
+          low === 10 ||
+          low === 13 || // Whitespace
+          low >= 0xa0 // Latin-1 Supplement (includes «, », ©, etc.)
+        );
+      }
+
+      // Cyrillic range (0x04)
+      if (high === 0x04) return true;
+
+      // General Punctuation (0x20) - includes smart quotes (’), dashes, currency (€)
+      // Letterlike Symbols & Number Forms (0x21) - includes №
+      // Mathematical Operators (0x22)
+      if (high >= 0x20 && high <= 0x22) return true;
+
+      return false;
+    } else {
+      // Windows-1251 / ASCII
+      const byte = buffer[offset];
+
+      // ASCII printable + whitespace
+      if (
+        (byte >= 32 && byte <= 126) ||
+        byte === 9 ||
+        byte === 10 ||
+        byte === 13
+      )
+        return true;
+
+      // Allow all upper range (0x80 - 0xFF)
+      // This covers Cyrillic, smart quotes, dashes, number signs (№), etc.
+      // While this might include some undefined chars, it ensures we don't break
+      // text sequences on valid symbols like ’ or №.
+      if (byte >= 0x80 && byte <= 0xff) return true;
+
+      return false;
+    }
   }
 }
 
