@@ -1,119 +1,311 @@
-/**
- * Normalize Ukrainian text:
- *  - lowercase,
- *  - unify whitespace,
- *  - remove punctuation except Cyrillic/Latin letters, digits and spaces,
- *  - normalize some Ukrainian characters (optional mapping)
- */
+const ukrainianStopWords = new Set([
+  'а',
+  'аби',
+  'абиде',
+  'абиким',
+  'абикого',
+  'абикому',
+  'абичим',
+  'абичого',
+  'абичому',
+  'або',
+  'але',
+  'б',
+  'без',
+  'би',
+  'біля',
+  'бо',
+  'був',
+  'буває',
+  'буде',
+  'будем',
+  'будемо',
+  'будете',
+  'будеш',
+  'буду',
+  'будуть',
+  'будь',
+  'була',
+  'були',
+  'було',
+  'бути',
+  'в',
+  'вам',
+  'вами',
+  'вас',
+  'ваш',
+  'ваша',
+  'ваше',
+  'ваші',
+  'вже',
+  'ви',
+  'від',
+  'він',
+  'вона',
+  'вони',
+  'воно',
+  'всі',
+  'всіх',
+  'все',
+  'всього',
+  'всьому',
+  'де',
+  'деколи',
+  'дещо',
+  'для',
+  'до',
+  'дякую',
+  'ж',
+  'же',
+  'з',
+  'за',
+  'зараз',
+  'зі',
+  'і',
+  'із',
+  'її',
+  'їй',
+  'їм',
+  'їх',
+  'їхній',
+  'їхня',
+  'їхнє',
+  'їхні',
+  'й',
+  'його',
+  'йому',
+  'каже',
+  'кажуть',
+  'коли',
+  'кого',
+  'кому',
+  'котрий',
+  'котра',
+  'котре',
+  'котрі',
+  'куди',
+  'лиш',
+  'лише',
+  'має',
+  'мають',
+  'мене',
+  'мені',
+  'ми',
+  'мною',
+  'може',
+  'можуть',
+  'міг',
+  'могла',
+  'могли',
+  'на',
+  'навіть',
+  'над',
+  'нам',
+  'нами',
+  'нас',
+  'наш',
+  'наша',
+  'наше',
+  'наші',
+  'не',
+  'немає',
+  'ні',
+  'ніж',
+  'ним',
+  'ними',
+  'них',
+  'нього',
+  'ньому',
+  'ну',
+  'о',
+  'об',
+  'один',
+  'одна',
+  'одне',
+  'одні',
+  'от',
+  'отакий',
+  'отака',
+  'отаке',
+  'отакі',
+  'під',
+  'після',
+  'по',
+  'при',
+  'про',
+  'ради',
+  'раз',
+  'рівно',
+  'сам',
+  'сама',
+  'саме',
+  'самі',
+  'свій',
+  'своя',
+  'своє',
+  'свої',
+  'себе',
+  'собі',
+  'собою',
+  'сюди',
+  'та',
+  'так',
+  'така',
+  'таке',
+  'такий',
+  'такі',
+  'там',
+  'те',
+  'тебе',
+  'теж',
+  'тепер',
+  'ти',
+  'тільки',
+  'то',
+  'тобі',
+  'тобою',
+  'тоді',
+  'того',
+  'той',
+  'тільки',
+  'тому',
+  'тут',
+  'ти',
+  'ті',
+  'тієї',
+  'тією',
+  'тії',
+  'тільки',
+  'тім',
+  'того',
+  'тоді',
+  'той',
+  'том',
+  'томі',
+  'тому',
+  'тут',
+  'у',
+  'уже',
+  'хай',
+  'хоч',
+  'хто',
+  'хтось',
+  'це',
+  'цей',
+  'цим',
+  'цими',
+  'цих',
+  'ці',
+  'цій',
+  'ціла',
+  'ціле',
+  'цілий',
+  'цілі',
+  'цього',
+  'цьому',
+  'чи',
+  'чий',
+  'чия',
+  'чиє',
+  'чиї',
+  'чого',
+  'чому',
+  'через',
+  'ще',
+  'що',
+  'щоб',
+  'щоби',
+  'як',
+  'яка',
+  'яке',
+  'який',
+  'які',
+  'якої',
+  'якому',
+  'якщо',
+  'я',
+]);
+
 function normalizeUkrainian(text: string): string {
   return text
     .toLowerCase()
     .trim()
+    .replace(/[''`’]/g, '') // Remove apostrophes which are common in Ukrainian
     .replace(/\s+/g, ' ')
-    .replace(/[^\u0400-\u04FFa-zA-Z\u0100-\u017F\s'-]/g, '')
+    .replace(/[^\w\sа-яїієґ-]/g, '')
     .trim();
 }
 
 /**
- * Heuristic lemmatizer for Ukrainian words.
- * Covers common noun/adjective endings.
+ * A robust algorithmic stemmer for Ukrainian.
+ * Unlike English, Ukrainian is highly inflected (7 cases, 3 genders, etc.),
+ * so we need significantly more rules to find the word root.
  */
 function lemmatizeUkrainian(word: string): string {
-  let stem = word;
+  let stem = word.toLowerCase();
 
-  // General stemming rules
-  if (word.endsWith('ння') || word.endsWith('ття')) {
-    stem = word.slice(0, -3) + 'нн';
-  } else if (word.endsWith('ання') || word.endsWith('іння')) {
-    stem = word.slice(0, -4) + 'нн';
-  } else if (
-    word.endsWith('ський') ||
-    word.endsWith('ська') ||
-    word.endsWith('ське')
-  ) {
-    stem = word.slice(0, -4);
-  } else if (
-    word.endsWith('ому') ||
-    word.endsWith('ій') ||
-    word.endsWith('ою')
-  ) {
-    stem = word.slice(0, -2);
-  } else if (
-    word.endsWith('і') ||
-    word.endsWith('у') ||
-    word.endsWith('а') ||
-    word.endsWith('е') ||
-    word.endsWith('я') ||
-    word.endsWith('ю') ||
-    word.endsWith('о')
-  ) {
-    if (word.length > 3) {
-      stem = word.slice(0, -1);
+  // Find the "Region of Variable" (RV) - part of the word after the first vowel
+  const vowel = /([аеєиіїоуюя])/;
+  const rvIndex = stem.search(vowel);
+
+  // If no vowels, return the word as is (e.g. prepositions like "в", "з")
+  if (rvIndex === -1) return stem;
+
+  const head = stem.substring(0, rvIndex + 1);
+  let RV = stem.substring(rvIndex + 1);
+
+  // Step 1: Perfective Gerund
+  // (e.g. написавши -> написа)
+  const perfectiveGerund =
+    /(?:(ив|ивши|ившись|ыв|ывши|ывшись|(?:<=[ая])(в|вши|вшись)))$/;
+  if (perfectiveGerund.test(RV)) {
+    RV = RV.replace(perfectiveGerund, '');
+  } else {
+    // Step 2: Reflexive
+    // (e.g. сміявся -> сміяв)
+    RV = RV.replace(/(?:ся|сь)$/, '');
+
+    // Step 3: Adjective
+    // (e.g. гарний -> гарн)
+    const adjective =
+      /(?:(ими|ій|ий|а|е|ова|ове|ів|є|їй|єє|еє|я|ім|ем|им|ім|их|іх|ою|йми|іми|у|ю|ого|ому|ої|ії))$/;
+    if (adjective.test(RV)) {
+      RV = RV.replace(adjective, '');
+
+      // Step 4: Participle (only if adjective was removed)
+      // (e.g. читаючий -> чита)
+      const participle =
+        /(?:(ивш|ывш|уюч|уючи|явш|явши|ши|ем|им|ім|а|е|у|ю|их|іх|і|й|о|ш))$/;
+      RV = RV.replace(participle, '');
+    } else {
+      // Step 5: Verb
+      // (e.g. читати -> чита)
+      // Removed 'ило' to prevent names like 'Кирило' from being stemmed to 'Кир'
+      const verb =
+        /(?:(ила|ити|или|илю|иш|ите|имо|и|ив|ала|ало|ати|али|алю|аш|ате|амо|ав|яла|яло|яти|яли|ялю|яш|яте|ямо|яв|у|ю|е|є|єш|єт|емо|єт|ють|ять|ймо|йте|ться))$/;
+      if (verb.test(RV)) {
+        RV = RV.replace(verb, '');
+      } else {
+        // Step 6: Noun
+        // (e.g. столом -> стол)
+        // Added 'єві', 'єм' for dative/instrumental cases of names like 'Сергій'
+        const noun =
+          /(?:(а|ев|ов|е|ями|ами|еи|и|ей|ой|ий|й|иям|ям|ием|ем|ам|ом|о|у|ах|иях|ях|ы|ь|ию|ью|ю|ия|ья|я|і|ові|ї|ею|єю|ою|є|еві|єві|ем|єм|ів|їв|ю))$/;
+        RV = RV.replace(noun, '');
+      }
     }
   }
 
-  return stem;
-}
+  // Step 7: Derivational endings
+  RV = RV.replace(/ість$/, '');
 
-const ukrainianStopWords = new Set([
-  'а',
-  'але',
-  'і',
-  'та',
-  'або',
-  'чи',
-  'не',
-  'ні',
-  'на',
-  'в',
-  'у',
-  'з',
-  'до',
-  'від',
-  'за',
-  'під',
-  'над',
-  'про',
-  'для',
-  'як',
-  'що',
-  'це',
-  'той',
-  'та',
-  'те',
-  'який',
-  'яка',
-  'яке',
-  'які',
-  'він',
-  'вона',
-  'воно',
-  'вони',
-  'я',
-  'ти',
-  'ми',
-  'ви',
-  'мене',
-  'тебе',
-  'його',
-  'її',
-  'нас',
-  'вас',
-  'їх',
-  'буде',
-  'був',
-  'була',
-  'було',
-  'були',
-  'є',
-  'бути',
-  'мати',
-  'має',
-  'мають',
-  'мав',
-  'мала',
-  'мало',
-  'мали',
-]);
+  // Step 8: Superlative
+  RV = RV.replace(/^(най)/, '');
+
+  // Step 9: Remove trailing 'ь' if remaining
+  RV = RV.replace(/ь$/, '');
+
+  return head + RV;
+}
 
 export { lemmatizeUkrainian, normalizeUkrainian, ukrainianStopWords };

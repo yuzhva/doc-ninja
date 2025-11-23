@@ -58,6 +58,9 @@ function normalizeEnglish(text: string): string {
     .trim();
 }
 
+// English morphology is "analytic", meaning it relies more on word order and helper words
+// than on complex word endings. This is why the English stemmer has far fewer rules/hardcoded strings
+// compared to the Ukrainian one (which is "synthetic" and highly inflected).
 const englishSuffixes = [
   'ing',
   'ed',
