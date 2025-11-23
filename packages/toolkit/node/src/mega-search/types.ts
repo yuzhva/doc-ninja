@@ -46,7 +46,6 @@ interface DocumentIndex {
   positions: Array<[number, number, number]>; // Tuples of [vocabIndex, charStart, charEnd]
   termFrequency: Map<string, number>;
   wordCount: number;
-  originalText: string; // Store original text for highlighting
   paragraphs?: ParagraphInfo[]; // Add paragraph structure
 }
 

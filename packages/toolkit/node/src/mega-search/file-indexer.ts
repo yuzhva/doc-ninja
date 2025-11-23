@@ -12,7 +12,6 @@ import { UkrainianTextProcessor } from './text-processor';
 import {
   DocumentIndex,
   DocumentMetadata,
-  GlobalIndex,
   InvertedIndexEntry,
   SearchConfig,
 } from './types';
@@ -247,7 +246,7 @@ class FileIndexer {
             // Store in document cache to prevent future cache misses
             this.documentCache.set(metadata.originalFilePath, cached);
 
-            this.logger.info(
+            this.logger.debug(
               `📋 Pre-loaded cached index for ${metadata.fileName} - no reindexing needed`,
             );
             return false; // No need to reindex
@@ -317,7 +316,6 @@ class FileIndexer {
         positions: [],
         termFrequency: new Map(),
         wordCount: 0,
-        originalText: '',
       };
     }
   }
@@ -407,7 +405,6 @@ class FileIndexer {
           positions: [],
           termFrequency: new Map(),
           wordCount: 0,
-          originalText: '',
         };
       }
 
@@ -426,7 +423,6 @@ class FileIndexer {
           positions: [],
           termFrequency: new Map(),
           wordCount: 0,
-          originalText: '',
         };
       }
 
@@ -476,8 +472,6 @@ class FileIndexer {
         positions,
         termFrequency,
         wordCount: positions.length,
-        // Don't store original text for large documents to save memory
-        originalText: text.length > 100000 ? '' : text,
       };
 
       this.documentCache.set(metadata.originalFilePath, documentIndex);
@@ -487,8 +481,6 @@ class FileIndexer {
         const toSave = {
           ...documentIndex,
           termFrequency: Object.fromEntries(termFrequency),
-          // Don't save original text to disk to save space
-          originalText: '',
         };
         await promisify(fs.writeFile)(
           indexPath,
@@ -585,6 +577,16 @@ class FileIndexer {
       const allDocuments = Array.from(this.documentCache.values()).filter(
         (doc) => doc.metadata.indexed,
       );
+
+      // ✅ NEW: Sort documents by date (newest first) and then by name.
+      // This ensures that search results from the inverted index are naturally ordered by relevance (recency).
+      // allDocuments.sort((a, b) => {
+      //   // Primary: Last modified descending (newest first)
+      //   const dateDiff = b.metadata.lastModified - a.metadata.lastModified;
+      //   if (dateDiff !== 0) return dateDiff;
+      //   // Secondary: Filename ascending (A-Z)
+      //   return a.metadata.fileName.localeCompare(b.metadata.fileName);
+      // });
 
       this.logger.info(
         `🔄 Found ${allDocuments.length} indexed documents to process...`,
@@ -891,10 +893,7 @@ class FileIndexer {
       // Term frequency map: ~30 bytes per entry
       estimatedSize += doc.termFrequency.size * 30;
 
-      // Original text (if present): full text size
-      if (doc.originalText) {
-        estimatedSize += doc.originalText.length * 2;
-      }
+      // Original text removed from estimation
     });
 
     // Add JSON overhead (~30%)
@@ -989,8 +988,7 @@ class FileIndexer {
             {
               ...v,
               termFrequency: Object.fromEntries(v.termFrequency),
-              originalText: '',
-            }, // Remove original text to save space
+            },
           ]),
         );
 
