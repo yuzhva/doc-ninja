@@ -1,4 +1,6 @@
 import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import type { SearchResult } from '../features/document-intelligence-service/index.mjs';
 
@@ -20,9 +22,151 @@ type ExtractedInfo = Pick<
   actionDateContent: string | null;
   actionDate: string | null;
   context: string | null;
+  summary: string | null;
+  status: string | null;
+  commandType: string | null;
+};
+
+type StatusRule = {
+  containsText: string[];
+  status: string;
+};
+
+type CommandTypeRule = {
+  containsText: string[];
+  commandType: string;
 };
 
 class InformationExtractor {
+  private static statusRules: StatusRule[] | null = null;
+  private static commandTypeRules: CommandTypeRule[] | null = null;
+
+  private static async loadRules(): Promise<void> {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+    // Load Status Rules
+    if (!this.statusRules) {
+      try {
+        const rulesPath = path.join(__dirname, 'status-rules.json');
+        try {
+          await fs.access(rulesPath);
+          const content = await fs.readFile(rulesPath, 'utf-8');
+          this.statusRules = JSON.parse(content);
+        } catch (e) {
+          this.statusRules = [];
+        }
+      } catch (e) {
+        console.warn('Error initializing status rules:', e);
+        this.statusRules = [];
+      }
+    }
+
+    // Load Command Type Rules
+    if (!this.commandTypeRules) {
+      try {
+        const rulesPath = path.join(__dirname, 'command-type-rules.json');
+        try {
+          await fs.access(rulesPath);
+          const content = await fs.readFile(rulesPath, 'utf-8');
+          this.commandTypeRules = JSON.parse(content);
+        } catch (e) {
+          this.commandTypeRules = [];
+        }
+      } catch (e) {
+        console.warn('Error initializing command type rules:', e);
+        this.commandTypeRules = [];
+      }
+    }
+  }
+
+  private static determineStatus(summary: string | null): string | null {
+    if (!this.statusRules || !summary) return null;
+
+    const lowerSummary = summary.toLowerCase();
+    // Split once for performance
+    const summaryWords = lowerSummary.split(/[\s,.;:!?()"]+/);
+
+    for (const rule of this.statusRules) {
+      // Check if all keywords in the rule are present in the summary
+      if (
+        rule.containsText.every((text) =>
+          this.textContains(lowerSummary, summaryWords, text.toLowerCase()),
+        )
+      ) {
+        return rule.status;
+      }
+    }
+
+    return null;
+  }
+
+  private static determineCommandType(
+    summary: string | null,
+    status: string | null,
+  ): string | null {
+    // If status is present, command type is always "Зміна статусу"
+    if (status) {
+      return 'Зміна статусу';
+    }
+
+    if (!this.commandTypeRules || !summary) return null;
+
+    const lowerSummary = summary.toLowerCase();
+    // Split once for performance
+    const summaryWords = lowerSummary.split(/[\s,.;:!?()"]+/);
+
+    for (const rule of this.commandTypeRules) {
+      if (
+        rule.containsText.every((text) =>
+          this.textContains(lowerSummary, summaryWords, text.toLowerCase()),
+        )
+      ) {
+        return rule.commandType;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Checks if text contains keyword, with support for partial matches (declensions)
+   */
+  private static textContains(
+    text: string,
+    words: string[],
+    keyword: string,
+  ): boolean {
+    // 1. Exact substring match (fastest)
+    if (text.includes(keyword)) return true;
+
+    // 2. Fuzzy match for declensions (e.g. "відпустку" vs "відпустці")
+    // Check if any word in text starts with a significant portion of the keyword
+    // Only for keywords longer than 4 chars to avoid false positives
+    if (keyword.length <= 4) return false;
+
+    const minMatch = Math.ceil(keyword.length * 0.75); // 75% match
+    const keywordPrefix = keyword.substring(0, minMatch);
+
+    return words.some((word) => word.startsWith(keywordPrefix));
+  }
+
+  private static generateSummary(
+    sectionTitle: string | null,
+    content: string | null,
+    actionDateContent: string | null,
+    reason: string | null,
+  ): string {
+    const summaryParts: string[] = [];
+
+    if (sectionTitle) summaryParts.push(sectionTitle);
+    summaryParts.push(''); // Add a blank line for separation
+    if (content) summaryParts.push(content);
+    if (actionDateContent) summaryParts.push(actionDateContent);
+    if (reason) summaryParts.push(reason);
+
+    return summaryParts.join('\n').trim();
+  }
+
   /**
    * Extracts contextual information for a given name match within a document.
    */
@@ -71,6 +215,17 @@ class InformationExtractor {
       // (sectionTitle && this.findActionDate(sectionTitle)) ||
       this.extractDateFromFilename(match.foundInDocument);
 
+    // Generate summary and determine status
+    const summary = this.generateSummary(
+      sectionTitle,
+      paragraphContent,
+      actionDateContent,
+      reason,
+    );
+
+    const status = this.determineStatus(summary);
+    const commandType = this.determineCommandType(summary, status);
+
     return {
       searchQuery: match.searchQuery,
       foundInDocument: match.foundInDocument,
@@ -82,12 +237,18 @@ class InformationExtractor {
       actionDateContent,
       actionDate,
       context: containingSectionText,
+      summary,
+      status,
+      commandType,
     };
   }
 
   static async extractSearchResults(
     searchResults: SearchResult[],
   ): Promise<ExtractedInfo[]> {
+    // Ensure rules are loaded before processing
+    await this.loadRules();
+
     const extractedResults: ExtractedInfo[] = [];
 
     // Cache file contents to avoid reading the same file multiple times for different snippets
@@ -178,7 +339,7 @@ class InformationExtractor {
           }
         }
 
-        // Check if the current prefix is a top-level title (e.g., "5.").
+        // Check if the current prefix is top-level title (e.g., "5.").
         // If we've found a title and its prefix is top-level, we can stop.
         if (lastPrefix && /^\d+\.\s+/.test(lastPrefix)) {
           break;

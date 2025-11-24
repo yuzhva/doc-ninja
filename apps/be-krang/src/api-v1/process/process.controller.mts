@@ -43,7 +43,10 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       content: extractedResult.content,
       actionDateContent: extractedResult.actionDateContent,
       reason: extractedResult.reason,
+      summary: extractedResult.summary,
       actionDate: extractedResult.actionDate,
+      status: extractedResult.status,
+      commandType: extractedResult.commandType,
 
       // TODO:
       confidence: '',

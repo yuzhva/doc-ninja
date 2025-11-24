@@ -14,6 +14,8 @@ interface ExcelReportData {
   actionDateContent: string;
   reason: string;
   summary: string;
+  status: string;
+  commandType: string; // Added commandType field
   actionDate: string;
   confidence: string;
 }
@@ -68,6 +70,8 @@ class ExcelReportGenerator {
         'Reason',
         'Summary',
         'Action Date',
+        'Status',
+        'Command Type', // Added Command Type column
         'Confidence',
         'Learning Status',
       ],
@@ -75,16 +79,6 @@ class ExcelReportGenerator {
 
     // Add data rows
     for (const match of reportRows) {
-      const summaryParts: string[] = [];
-
-      summaryParts.push(match.sectionTitle);
-      summaryParts.push(''); // Add a blank line for separation
-      summaryParts.push(match.content);
-      summaryParts.push(match.actionDateContent);
-      summaryParts.push(match.reason);
-
-      const summary = summaryParts.join('\n').trim();
-
       data.push([
         match.inputName,
         match.foundInDocument,
@@ -94,8 +88,10 @@ class ExcelReportGenerator {
         match.content,
         match.actionDateContent,
         match.reason,
-        summary,
+        match.summary,
         match.actionDate,
+        match.status,
+        match.commandType, // Added commandType value
         match.confidence,
       ]);
     }
@@ -126,6 +122,8 @@ class ExcelReportGenerator {
       { wch: 50 }, // Reason
       { wch: 80 }, // Summary
       { wch: 15 }, // Action Date
+      { wch: 25 }, // Status
+      { wch: 25 }, // Command Type (New)
       { wch: 12 }, // Confidence
       { wch: 25 }, // Learning Status
     ];
