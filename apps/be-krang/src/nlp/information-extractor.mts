@@ -56,10 +56,20 @@ class InformationExtractor {
       match.matchedText,
     );
     const actionDateContent = this.findActionDateContent(containingSectionText);
-    const actionDate =
-      this.findActionDate(actionDateContent || containingSectionText) ||
-      (sectionTitle && this.findActionDate(sectionTitle));
     const reason = this.findReason(containingSectionText);
+
+    // Priority of date extraction:
+    // 1. Explicit action date in the text (e.g. "З 15 жовтня...") or general date in paragraph
+    // 2. Date found in the section title (e.g. parent header)
+    // 3. Date found in the "Reason" (Підстава) block
+    // 4. Fallback: Date extracted from the filename
+    const actionDate =
+      // this.findActionDate(actionDateContent || containingSectionText) ||
+      this.findActionDate(actionDateContent) ||
+      (reason && this.findActionDate(reason)) ||
+      // NOTE: in title / reason: there are dates of legal laws / acts are used, so it's better not to parse them
+      // (sectionTitle && this.findActionDate(sectionTitle)) ||
+      this.extractDateFromFilename(match.foundInDocument);
 
     return {
       searchQuery: match.searchQuery,
@@ -79,6 +89,10 @@ class InformationExtractor {
     searchResults: SearchResult[],
   ): Promise<ExtractedInfo[]> {
     const extractedResults: ExtractedInfo[] = [];
+
+    // Cache file contents to avoid reading the same file multiple times for different snippets
+    const fileContentCache = new Map<string, string>();
+
     for (const searchResult of searchResults) {
       const searchMatches = searchResult.results;
 
@@ -87,7 +101,12 @@ class InformationExtractor {
         const docName = searchMatch.doc.fileName;
 
         try {
-          const content = await fs.readFile(docPath, 'utf-8');
+          // OPTIMIZATION: Read file only once per document
+          let content = fileContentCache.get(docPath);
+          if (!content) {
+            content = await fs.readFile(docPath, 'utf-8');
+            fileContentCache.set(docPath, content);
+          }
 
           // Process each snippet in this document
           for (const matchedSnippet of searchMatch.snippets) {
@@ -255,6 +274,19 @@ class InformationExtractor {
     if (!content) {
       return null;
     }
+
+    // Check for range pattern first: "З 15 по 24 жовтня 2025"
+    // We want the start date (15), using the month and year from the end.
+    const rangeRegex = /З\s+(\d{1,2})\s+по\s+\d{1,2}\s+([а-яіїєґ]+)\s+(\d{4})/i;
+    const rangeMatch = content.match(rangeRegex);
+
+    if (rangeMatch) {
+      const day = rangeMatch[1];
+      const month = rangeMatch[2];
+      const year = rangeMatch[3];
+      return this.convertUkrainianDateToDMY(`${day} ${month} ${year}`);
+    }
+
     const dateRegex = /(\d{1,2}\s+[а-яіїєґ]+\s+\d{4})/;
     const match = content.match(dateRegex);
 
@@ -269,8 +301,9 @@ class InformationExtractor {
    * Finds the relevant action date within a block of text.
    */
   private static findActionDateContent(sectionContent: string): string | null {
-    // Regex for a date pattern like "З 15 жовтня 2025"
-    const actionDateRegex = /З\s+\d{1,2}\s+[а-яіїєґ]+\s+\d{4}/gi;
+    // Regex for a date pattern like "З 15 жовтня 2025" or "З 15 по 24 жовтня 2025"
+    const actionDateRegex =
+      /З\s+\d{1,2}(?:\s+по\s+\d{1,2})?\s+[а-яіїєґ]+\s+\d{4}/gi;
     const matches = [...sectionContent.matchAll(actionDateRegex)];
 
     if (matches.length > 0) {
@@ -288,6 +321,30 @@ class InformationExtractor {
       }
     }
 
+    return null;
+  }
+
+  /**
+   * Extracts date from filename (e.g. "Order_12.05.2023.doc" -> "12.05.2023")
+   */
+  private static extractDateFromFilename(filename: string): string | null {
+    // Matches DD.MM.YYYY or DD-MM-YYYY or DD.MM.YY
+    const dateRegex = /(?:^|\D)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\D|$)/;
+    const match = filename.match(dateRegex);
+
+    if (match) {
+      const day = match[1].padStart(2, '0');
+      const month = match[2].padStart(2, '0');
+      let year = match[3];
+
+      // Handle 2-digit years
+      if (year.length === 2) {
+        const yearNum = parseInt(year, 10);
+        year = (yearNum < 50 ? 2000 + yearNum : 1900 + yearNum).toString();
+      }
+
+      return `${day}.${month}.${year}`;
+    }
     return null;
   }
 
