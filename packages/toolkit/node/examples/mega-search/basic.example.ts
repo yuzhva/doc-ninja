@@ -1,20 +1,10 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import type { PaginatedSearchResult } from '../../src/index';
+import type { PaginatedSearchResult, SearchOptions } from '../../src/index';
 import { MegaSearch, createMegaSearch } from '../../src/index';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Production-ready types that match the actual implementation
-type SearchOptions = {
-  topN?: number;
-  fuzzy?: boolean;
-  fuzzyThreshold?: number;
-  snippetsLimit?: number | 'ALL';
-  page?: number;
-  pageSize?: number;
-};
 
 // Production-ready batch processing function
 async function batchSearch(

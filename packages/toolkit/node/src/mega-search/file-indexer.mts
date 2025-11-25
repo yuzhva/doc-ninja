@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { promisify } from 'util';
+import * as v8 from 'v8';
 import * as zlib from 'zlib';
 
 import { DocumentExtractor } from './document-parser/index.mjs';
@@ -16,6 +17,20 @@ import {
   SearchConfig,
 } from './types.mjs';
 
+// ✅ Added v8 for binary serialization
+
+// ✅ OPTIMIZATION: Attempt to increase thread pool size for parallel unzip operations
+// This must run before the thread pool is initialized (first async fs/zlib call).
+// By default, Node.js has 4 threads. For 8+ CPUs, this limits parallel decompression.
+try {
+  const cpuCount = os.cpus().length;
+  if (!process.env.UV_THREADPOOL_SIZE && cpuCount > 4) {
+    process.env.UV_THREADPOOL_SIZE = String(cpuCount);
+  }
+} catch (e) {
+  // Ignore errors in environments where os.cpus() might fail or env is read-only
+}
+
 class FileIndexer {
   private logger = createLogger('FileIndexer');
   private textProcessor = new UkrainianTextProcessor();
@@ -27,6 +42,9 @@ class FileIndexer {
   // Optimized LRU cache sizes for better memory management
   private documentLRU = new LRUCache<string, DocumentIndex>(50); // Reduced from 100
   private textLRU = new LRUCache<string, string>(25); // Reduced from 50
+
+  // ✅ NEW: Async gunzip for parallel loading
+  private gunzipAsync = promisify(zlib.gunzip);
 
   constructor(private config: SearchConfig) {
     // Ensure root directory is absolute to avoid path ambiguity
@@ -325,7 +343,7 @@ class FileIndexer {
   ): Promise<DocumentIndex> {
     const startTime = Date.now();
 
-    this.logger.debug('Starting document indexing', {
+    this.logger.info('Starting document indexing', {
       fileName: metadata.fileName,
     });
 
@@ -487,7 +505,7 @@ class FileIndexer {
           JSON.stringify(toSave),
           'utf8',
         );
-        this.logger.debug(`💾 Cached index for ${metadata.fileName}`);
+        this.logger.info(`💾 Cached index for ${metadata.fileName}`);
       } catch (saveError) {
         this.logger.warn(
           `Failed to save index cache for ${metadata.fileName}:`,
@@ -497,7 +515,7 @@ class FileIndexer {
       }
 
       const endTime = Date.now();
-      this.logger.debug('Document indexing completed', {
+      this.logger.info('Document indexing completed', {
         fileName: metadata.fileName,
         tokens: documentIndex.wordCount,
         duration: endTime - startTime,
@@ -785,12 +803,18 @@ class FileIndexer {
 
       try {
         const marker = JSON.parse(content);
-        if (marker.format === 'chunked') {
-          this.logger.debug('📦 Loading chunked index format...');
+        // ✅ CHECK: Only load if format is 'v8-chunked' for optimized loading
+        if (marker.format === 'v8-chunked') {
+          this.logger.info('📦 Loading optimized V8 chunked index...');
           return await this.loadGlobalInvertedIndexChunked(
             globalIndexPath,
             marker,
           );
+        } else if (marker.format === 'chunked') {
+          this.logger.warn(
+            '⚠️ Found legacy JSON index. Rebuilding for performance...',
+          );
+          return false; // Force rebuild to upgrade to V8 format
         }
       } catch (parseError) {
         // Not JSON, probably compressed standard format - continue with standard loading
@@ -809,50 +833,6 @@ class FileIndexer {
         error instanceof Error ? error.message : String(error),
       );
       return false;
-    }
-  }
-
-  private async saveGlobalInvertedIndex(): Promise<void> {
-    const startTime = Date.now();
-    try {
-      const globalIndexPath =
-        this.config.globalIndexPath ||
-        path.join(
-          this.config.rootDirectory,
-          '.cache',
-          'global-inverted-index.json.gz',
-        );
-      const tempPath = globalIndexPath + '.tmp';
-
-      // ✅ NEW: Check if the data is too large for JSON serialization
-      const estimatedSize = this.estimateIndexSize();
-      this.logger.info(
-        `💾 Estimated index size: ${Math.round(estimatedSize / 1024 / 1024)}MB`,
-      );
-
-      // ✅ FIX: Lower the threshold significantly to avoid OOM errors.
-      // Use chunked serialization for any index estimated over 50MB.
-      if (estimatedSize > 50 * 1024 * 1024) {
-        // > 50MB
-        this.logger.info(
-          `🚨 Index is large, using memory-safe chunked serialization.`,
-        );
-        await this.saveGlobalInvertedIndexChunked(globalIndexPath, tempPath);
-      } else {
-        this.logger.info(`💾 Using standard JSON serialization`);
-        await this.saveGlobalInvertedIndexStandard(globalIndexPath, tempPath);
-      }
-      this.logger.info(
-        `Global index saving completed in ${Date.now() - startTime}ms`,
-      );
-    } catch (error) {
-      this.logger.error(
-        'Failed to save global inverted index:',
-        error instanceof Error ? error.message : String(error),
-      );
-      throw new Error(
-        `Failed to save index: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
     }
   }
 
@@ -881,7 +861,6 @@ class FileIndexer {
       // Metadata: ~500 bytes
       estimatedSize += 500;
 
-      // ✅ REFACTOR: Estimate based on new structure
       // Vocab size
       estimatedSize += doc.vocab.reduce(
         (sum, term) => sum + term.length * 2,
@@ -892,12 +871,48 @@ class FileIndexer {
 
       // Term frequency map: ~30 bytes per entry
       estimatedSize += doc.termFrequency.size * 30;
-
-      // Original text removed from estimation
     });
 
-    // Add JSON overhead (~30%)
+    // Add overhead (~30%)
     return Math.round(estimatedSize * 1.3);
+  }
+
+  private async saveGlobalInvertedIndex(): Promise<void> {
+    const startTime = Date.now();
+    try {
+      const globalIndexPath =
+        this.config.globalIndexPath ||
+        path.join(
+          this.config.rootDirectory,
+          '.cache',
+          'global-inverted-index.json.gz',
+        );
+      const tempPath = globalIndexPath + '.tmp';
+
+      // ✅ NEW: Check if the data is too large for JSON serialization
+      const estimatedSize = this.estimateIndexSize();
+      this.logger.info(
+        `💾 Estimated index size: ${Math.round(estimatedSize / 1024 / 1024)}MB`,
+      );
+
+      // Always use chunked serialization for V8 format as it's superior for large datasets
+      this.logger.info(
+        `🚀 Saving index using optimized V8 binary serialization...`,
+      );
+      await this.saveGlobalInvertedIndexChunked(globalIndexPath, tempPath);
+
+      this.logger.info(
+        `Global index saving completed in ${Date.now() - startTime}ms`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Failed to save global inverted index:',
+        error instanceof Error ? error.message : String(error),
+      );
+      throw new Error(
+        `Failed to save index: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
 
   /**
@@ -930,7 +945,8 @@ class FileIndexer {
     });
 
     const json = JSON.stringify(obj);
-    const gzipped = zlib.gzipSync(json);
+    // ✅ OPTIMIZATION: Use fast compression (Level 1) to speed up loading
+    const gzipped = zlib.gzipSync(json, { level: zlib.constants.Z_BEST_SPEED });
 
     // Write to temp file first
     await fs.promises.writeFile(tempPath, gzipped);
@@ -943,7 +959,7 @@ class FileIndexer {
   }
 
   /**
-   * ✅ NEW: Chunked serialization for very large indexes
+   * ✅ OPTIMIZED: Chunked serialization using V8 and native Maps
    */
   private async saveGlobalInvertedIndexChunked(
     globalIndexPath: string,
@@ -953,105 +969,86 @@ class FileIndexer {
 
     // Create chunked directory structure
     const chunkedDir = globalIndexPath.replace('.json.gz', '.chunks');
+    // Clean up existing chunks to avoid stale files
+    await fs.promises.rm(chunkedDir, { recursive: true, force: true });
     await fs.promises.mkdir(chunkedDir, { recursive: true });
 
     this.logger.info(`📦 Saving index in chunks to: ${chunkedDir}`);
 
+    // ✅ OPTIMIZATION: Re-enable compression.
+    // Experiments showed that uncompressed files (700MB+) caused a massive I/O bottleneck (Read time > 500ms/chunk),
+    // making startup slower than with compression (CPU bound).
+    // With UV_THREADPOOL_SIZE optimized, parallel unzipping is the fastest approach.
+    const useCompression = true;
+    const gzipOptions = { level: zlib.constants.Z_BEST_SPEED };
+    const chunkExt = useCompression ? '.v8.gz' : '.v8';
+
     try {
       // Save metadata first
       const metadata = {
-        version: '1.0',
+        version: '2.1', // Bump version
         timestamp: Date.now(),
         totalDocuments: this.documentCache.size,
         totalTerms: this.invertedIndex.size,
-        totalStems: this.stemDictionary.size, // STAGE 1: Add stem count
+        totalStems: this.stemDictionary.size,
         chunkInfo: {
           documentChunks: 0,
           invertedIndexChunks: 0,
-          stemChunks: 0, // Initialize stemChunks
+          stemChunks: 0,
         },
       };
 
-      // ✅ Chunk 1: Save document cache in smaller pieces
-      const docChunks = this.chunkMapEntries(
-        Array.from(this.documentCache.entries()),
-        100,
-      );
+      // ✅ Chunk 1: Save document cache
+      // V8 serialize handles Maps natively, so we don't need to convert termFrequency to Object!
+      const docEntries = Array.from(this.documentCache.entries());
+      // ✅ OPTIMIZATION: Smaller chunks (50 docs) for better parallelism and lower latency per chunk
+      const docChunks = this.chunkMapEntries(docEntries, 50);
       this.logger.info(
         `📑 Saving document cache in ${docChunks.length} chunks`,
       );
 
       for (let i = 0; i < docChunks.length; i++) {
-        const chunk = Object.fromEntries(
-          docChunks[i].map(([k, v]) => [
-            k,
-            {
-              ...v,
-              termFrequency: Object.fromEntries(v.termFrequency),
-            },
-          ]),
-        );
-
-        const chunkPath = path.join(chunkedDir, `documents_${i}.json.gz`);
-        const chunkJson = JSON.stringify({ documents: chunk });
-        const compressed = zlib.gzipSync(chunkJson);
-        await fs.promises.writeFile(chunkPath, compressed);
-
-        if (i % 10 === 0 || i === docChunks.length - 1) {
-          this.logger.info(
-            `  📄 Document chunk ${i + 1}/${docChunks.length} saved`,
-          );
-        }
+        const chunkPath = path.join(chunkedDir, `documents_${i}${chunkExt}`);
+        // Serialize array of entries directly
+        const buffer = v8.serialize(docChunks[i]);
+        const dataToWrite = useCompression
+          ? zlib.gzipSync(buffer, gzipOptions)
+          : buffer;
+        await fs.promises.writeFile(chunkPath, dataToWrite);
       }
       metadata.chunkInfo.documentChunks = docChunks.length;
 
-      // ✅ Chunk 2: Save inverted index in smaller pieces
-      const invertedChunks = this.chunkMapEntries(
-        Array.from(this.invertedIndex.entries()),
-        1000,
-      );
+      // ✅ Chunk 2: Save inverted index
+      const invertedEntries = Array.from(this.invertedIndex.entries());
+      const invertedChunks = this.chunkMapEntries(invertedEntries, 1000);
       this.logger.info(
         `🔗 Saving inverted index in ${invertedChunks.length} chunks`,
       );
 
       for (let i = 0; i < invertedChunks.length; i++) {
-        const chunk = Object.fromEntries(invertedChunks[i]);
-        const chunkPath = path.join(chunkedDir, `inverted_${i}.json.gz`);
-        const chunkJson = JSON.stringify({ inverted: chunk });
-        const compressed = zlib.gzipSync(chunkJson);
-        await fs.promises.writeFile(chunkPath, compressed);
-
-        if (i % 5 === 0 || i === invertedChunks.length - 1) {
-          this.logger.info(
-            `  🔗 Inverted index chunk ${i + 1}/${invertedChunks.length} saved`,
-          );
-        }
+        const chunkPath = path.join(chunkedDir, `inverted_${i}${chunkExt}`);
+        const buffer = v8.serialize(invertedChunks[i]);
+        const dataToWrite = useCompression
+          ? zlib.gzipSync(buffer, gzipOptions)
+          : buffer;
+        await fs.promises.writeFile(chunkPath, dataToWrite);
       }
       metadata.chunkInfo.invertedIndexChunks = invertedChunks.length;
 
-      // STAGE 1: Chunk 3: Save stem dictionary
-      const stemChunks = this.chunkMapEntries(
-        Array.from(this.stemDictionary.entries()),
-        5000, // Stems are smaller, can use larger chunk size
-      );
+      // ✅ Chunk 3: Save stem dictionary
+      const stemEntries = Array.from(this.stemDictionary.entries());
+      const stemChunks = this.chunkMapEntries(stemEntries, 5000);
       this.logger.info(
         `📚 Saving stem dictionary in ${stemChunks.length} chunks`,
       );
 
       for (let i = 0; i < stemChunks.length; i++) {
-        const chunk = Object.fromEntries(
-          stemChunks[i].map(([k, v]) => [k, Array.from(v)]),
-        );
-        const chunkPath = path.join(chunkedDir, `stems_${i}.json.gz`);
-        const chunkJson = JSON.stringify({ stems: chunk });
-        const compressed = zlib.gzipSync(chunkJson);
-        await fs.promises.writeFile(chunkPath, compressed);
-
-        if (i % 5 === 0 || i === stemChunks.length - 1) {
-          this.logger.info(
-            `  📚 Stem dictionary chunk ${i + 1}/${stemChunks.length} saved`,
-          );
-        }
+        const chunkPath = path.join(chunkedDir, `stems_${i}${chunkExt}`);
+        const buffer = v8.serialize(stemChunks[i]);
+        const dataToWrite = useCompression
+          ? zlib.gzipSync(buffer, gzipOptions)
+          : buffer;
+        await fs.promises.writeFile(chunkPath, dataToWrite);
       }
       metadata.chunkInfo.stemChunks = stemChunks.length;
 
@@ -1062,17 +1059,18 @@ class FileIndexer {
         JSON.stringify(metadata, null, 2),
       );
 
-      // Create a marker file to indicate chunked format
+      // Create a marker file to indicate V8 chunked format
       const markerContent = JSON.stringify({
-        format: 'chunked',
-        version: '1.0',
+        format: 'v8-chunked', // New format identifier
+        version: '2.1',
+        compression: useCompression ? 'gzip' : 'none', // ✅ Store compression type
         chunkedDir: path.relative(path.dirname(globalIndexPath), chunkedDir),
         createdAt: new Date().toISOString(),
       });
       await fs.promises.writeFile(globalIndexPath, markerContent);
 
       this.logger.info(
-        `✅ Chunked index saved successfully with ${
+        `✅ V8 Chunked index saved successfully (${useCompression ? 'Compressed' : 'Uncompressed'}) with ${
           metadata.chunkInfo.documentChunks +
           metadata.chunkInfo.invertedIndexChunks +
           (metadata.chunkInfo.stemChunks || 0)
@@ -1105,60 +1103,12 @@ class FileIndexer {
   }
 
   /**
-   * BUG FIX: This is a duplicated, older version of the method.
-   * The correct one is above. This block should be removed.
-   */
-  /*
-  private async loadGlobalInvertedIndex(): Promise<boolean> {
-    try {
-      const globalIndexPath =
-        this.config.globalIndexPath ||
-        path.join(
-          this.config.rootDirectory,
-          '.cache',
-          'global-inverted-index.json.gz',
-        );
-
-      if (!fs.existsSync(globalIndexPath)) return false;
-
-      // Check if it's a chunked format
-      const content = await fs.promises.readFile(globalIndexPath, 'utf8');
-
-      try {
-        const marker = JSON.parse(content);
-        if (marker.format === 'chunked') {
-          this.logger.info('📦 Loading chunked index format...');
-          return await this.loadGlobalInvertedIndexChunked(
-            globalIndexPath,
-            marker,
-          );
-        }
-      } catch (parseError) {
-        // Not JSON, probably compressed standard format - continue with standard loading
-      }
-
-      this.logger.info('📋 Loading standard index format...');
-      const result = await this.loadGlobalInvertedIndexStandard(globalIndexPath);
-      this.logger.info(
-        `Global index loading completed in ${Date.now() - startTime}ms`,
-      );
-      return result;
-    } catch (error) {
-      this.logger.warn(
-        'Failed to load global inverted index:',
-        error instanceof Error ? error.message : String(error),
-      );
-      return false;
-    }
-  }
-  */
-
-  /**
    * ✅ NEW: Load standard format index
    */
   private async loadGlobalInvertedIndexStandard(
     globalIndexPath: string,
   ): Promise<boolean> {
+    // For now, assuming we rely on the chunked loader for the main optimization.
     const gzipped = await fs.promises.readFile(globalIndexPath);
     const data = zlib.gunzipSync(gzipped).toString('utf8');
     const obj = JSON.parse(data);
@@ -1210,7 +1160,7 @@ class FileIndexer {
   }
 
   /**
-   * ✅ NEW: Load chunked format index
+   * ✅ OPTIMIZED: Load chunked format index with Parallelism and V8 Deserialization
    */
   private async loadGlobalInvertedIndexChunked(
     globalIndexPath: string,
@@ -1236,31 +1186,127 @@ class FileIndexer {
     const metadata = JSON.parse(
       await fs.promises.readFile(metadataPath, 'utf8'),
     );
+
+    // ✅ Detect compression setting
+    const compression = marker.compression || 'gzip'; // Default to gzip for backward compatibility
+    const chunkExt = compression === 'gzip' ? '.v8.gz' : '.v8';
+
     this.logger.info(
-      `📦 Loading chunked index: ${metadata.totalDocuments} docs, ${metadata.totalTerms} terms`,
+      `📦 Loading V8 chunked index (${compression}): ${metadata.totalDocuments} docs, ${metadata.totalTerms} terms`,
     );
 
     try {
       // Clear existing data
       this.documentCache.clear();
       this.invertedIndex.clear();
-      this.stemDictionary.clear(); // STAGE 1
+      this.stemDictionary.clear();
 
-      // Load document chunks
-      this.logger.debug(
+      // ✅ Helper for parallel loading
+      const loadChunksParallel = async <T>(
+        count: number,
+        prefix: string,
+        processor: (data: T) => void,
+        label: string,
+      ) => {
+        const indices = Array.from({ length: count }, (_, i) => i);
+        const start = Date.now();
+
+        // Process in batches to control concurrency (avoid OOM or too many open files)
+        // ✅ OPTIMIZATION: Align concurrency with CPU count
+        const cpuCount = os.cpus().length;
+        const CONCURRENCY = Math.max(4, cpuCount);
+
+        // Metrics tracking
+        let totalRead = 0;
+        let totalUnzip = 0;
+        let totalDeserialize = 0;
+        let totalProcess = 0;
+        let totalSize = 0; // ✅ Added size tracking
+
+        for (let i = 0; i < indices.length; i += CONCURRENCY) {
+          const batch = indices.slice(i, i + CONCURRENCY);
+          const promises = batch.map(async (index) => {
+            const t0 = Date.now();
+            const chunkPath = path.join(
+              chunkedDir,
+              `${prefix}_${index}${chunkExt}`,
+            );
+            const fileData = await fs.promises.readFile(chunkPath);
+            const size = fileData.length; // ✅ Track size
+
+            const t1 = Date.now();
+
+            // ✅ Handle compression conditionally
+            let buffer: Buffer;
+            if (compression === 'gzip') {
+              buffer = await this.gunzipAsync(fileData);
+            } else {
+              buffer = fileData;
+            }
+
+            const t2 = Date.now();
+            // V8 deserialize is fast and synchronous
+            const data = v8.deserialize(buffer);
+
+            const t3 = Date.now();
+
+            return {
+              data,
+              size, // ✅ Return size
+              metrics: {
+                read: t1 - t0,
+                unzip: t2 - t1,
+                deserialize: t3 - t2,
+              },
+            };
+          });
+
+          const results = await Promise.all(promises);
+
+          // ✅ OPTIMIZATION: Process loaded data immediately to free up memory
+          // instead of accumulating all chunks in an array
+          const tProcessStart = Date.now();
+          for (const result of results) {
+            processor(result.data);
+
+            totalRead += result.metrics.read;
+            totalUnzip += result.metrics.unzip;
+            totalDeserialize += result.metrics.deserialize;
+            totalSize += result.size; // ✅ Accumulate size
+          }
+          totalProcess += Date.now() - tProcessStart;
+        }
+
+        const duration = Date.now() - start;
+        const avgUnzip = Math.round(totalUnzip / count);
+        const totalSizeMB = (totalSize / 1024 / 1024).toFixed(1); // ✅ Format size
+
+        this.logger.info(
+          `  ⏱️ ${label} loaded in ${duration}ms (${count} chunks, ${totalSizeMB}MB). ` + // ✅ Log size
+            `Avg per chunk: Read=${Math.round(totalRead / count)}ms, ` +
+            `Unzip=${avgUnzip}ms, ` +
+            `Deserialize=${Math.round(totalDeserialize / count)}ms, ` +
+            `Process=${Math.round(totalProcess / count)}ms`,
+        );
+
+        // ✅ NEW: Performance hint for thread pool
+        // Only show hint if we suspect the auto-configuration didn't work or wasn't enough
+        if (avgUnzip > 200 && compression === 'gzip') {
+          this.logger.info(
+            `  💡 Hint: Unzip is still slow (${avgUnzip}ms). Ensure UV_THREADPOOL_SIZE=${cpuCount} is set before Node starts.`,
+          );
+        }
+      };
+
+      // 1. Load Documents
+      this.logger.info(
         `📑 Loading ${metadata.chunkInfo.documentChunks} document chunks...`,
       );
-      for (let i = 0; i < metadata.chunkInfo.documentChunks; i++) {
-        const chunkPath = path.join(chunkedDir, `documents_${i}.json.gz`);
-        const compressed = await fs.promises.readFile(chunkPath);
-        const chunkJson = zlib.gunzipSync(compressed).toString('utf8');
-        const chunk = JSON.parse(chunkJson);
-
-        // Restore document cache entries
-        Object.entries(chunk.documents).forEach(
-          ([filePath, doc]: [string, any]) => {
-            doc.termFrequency = new Map(Object.entries(doc.termFrequency));
-
+      await loadChunksParallel(
+        metadata.chunkInfo.documentChunks,
+        'documents',
+        (entries: [string, any][]) => {
+          for (const [filePath, doc] of entries) {
             // Migration: Ensure new fields exist
             if (
               !doc.metadata.originalFilePath &&
@@ -1274,78 +1320,54 @@ class FileIndexer {
                 doc.metadata.originalFilePath,
               );
             }
-
+            // Note: termFrequency is already a Map thanks to V8!
             this.documentCache.set(filePath, doc);
-          },
-        );
+          }
+        },
+        'Documents',
+      );
 
-        if (i % 10 === 0 || i === metadata.chunkInfo.documentChunks - 1) {
-          this.logger.debug(
-            `  📄 Loaded document chunk ${i + 1}/${metadata.chunkInfo.documentChunks}`,
-          );
-        }
-      }
-
-      // Load inverted index chunks
-      this.logger.debug(
+      // 2. Load Inverted Index
+      this.logger.info(
         `🔗 Loading ${metadata.chunkInfo.invertedIndexChunks} inverted index chunks...`,
       );
-      for (let i = 0; i < metadata.chunkInfo.invertedIndexChunks; i++) {
-        const chunkPath = path.join(chunkedDir, `inverted_${i}.json.gz`);
-        const compressed = await fs.promises.readFile(chunkPath);
-        const chunkJson = zlib.gunzipSync(compressed).toString('utf8');
-        const chunk = JSON.parse(chunkJson);
+      await loadChunksParallel(
+        metadata.chunkInfo.invertedIndexChunks,
+        'inverted',
+        (entries: [string, any][]) => {
+          for (const [term, data] of entries) {
+            this.invertedIndex.set(term, data);
+          }
+        },
+        'Inverted Index',
+      );
 
-        // Restore inverted index entries
-        Object.entries(chunk.inverted).forEach(
-          ([term, entries]: [string, any]) => {
-            this.invertedIndex.set(term, entries);
-          },
-        );
-
-        if (i % 5 === 0 || i === metadata.chunkInfo.invertedIndexChunks - 1) {
-          this.logger.debug(
-            `  🔗 Loaded inverted index chunk ${i + 1}/${metadata.chunkInfo.invertedIndexChunks}`,
-          );
-        }
-      }
-
-      // STAGE 1: Load stem dictionary chunks
+      // 3. Load Stems
       if (metadata.chunkInfo.stemChunks > 0) {
-        this.logger.debug(
+        this.logger.info(
           `📚 Loading ${metadata.chunkInfo.stemChunks} stem dictionary chunks...`,
         );
-        for (let i = 0; i < metadata.chunkInfo.stemChunks; i++) {
-          const chunkPath = path.join(chunkedDir, `stems_${i}.json.gz`);
-          const compressed = await fs.promises.readFile(chunkPath);
-          const chunkJson = zlib.gunzipSync(compressed).toString('utf8');
-          const chunk = JSON.parse(chunkJson);
-
-          // Restore stem dictionary entries
-          Object.entries(chunk.stems).forEach(
-            ([stem, words]: [string, any]) => {
-              this.stemDictionary.set(stem, new Set(words));
-            },
-          );
-
-          if (i % 5 === 0 || i === metadata.chunkInfo.stemChunks - 1) {
-            this.logger.debug(
-              `  📚 Loaded stem dictionary chunk ${i + 1}/${metadata.chunkInfo.stemChunks}`,
-            );
-          }
-        }
+        await loadChunksParallel(
+          metadata.chunkInfo.stemChunks,
+          'stems',
+          (entries: [string, any][]) => {
+            for (const [stem, words] of entries) {
+              this.stemDictionary.set(stem, words);
+            }
+          },
+          'Stems',
+        );
       }
 
       this.logger.info(
-        `✅ Chunked index loaded successfully: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms, ${this.stemDictionary.size} stems`,
+        `✅ V8 Chunked index loaded successfully: ${this.documentCache.size} docs, ${this.invertedIndex.size} terms`,
       );
       return true;
     } catch (error) {
       this.logger.error('Failed to load chunked index:', error);
-      // Clear partially loaded data
       this.documentCache.clear();
       this.invertedIndex.clear();
-      this.stemDictionary.clear(); // STAGE 1
+      this.stemDictionary.clear();
       return false;
     }
   }
@@ -1367,10 +1389,10 @@ class FileIndexer {
         : 0;
     const estimatedCorpusSize = (files.length * avgFileSize) / 1024 / 1024; // MB
 
-    this.logger.debug(
+    this.logger.info(
       `🖥️  System: ${totalMemory.toFixed(1)}GB RAM, ${cpuCount} CPUs`,
     );
-    this.logger.debug(
+    this.logger.info(
       `📊 Corpus: ${files.length} files, ~${estimatedCorpusSize.toFixed(0)}MB`,
     );
 
@@ -1385,22 +1407,22 @@ class FileIndexer {
     const method = useParallel ? 'parallel' : 'sequential';
 
     if (useParallel) {
-      this.logger.debug(
+      this.logger.info(
         `🚀 Auto-selected parallel indexing (good hardware + medium corpus)`,
       );
     } else {
-      this.logger.debug(
+      this.logger.info(
         `🐢 Auto-selected sequential indexing (conservative choice)`,
       );
 
       // Explain why parallel wasn't chosen
       if (totalMemory < 8)
-        this.logger.debug(`   • Low memory: ${totalMemory.toFixed(1)}GB < 8GB`);
-      if (cpuCount < 4) this.logger.debug(`   • Few CPUs: ${cpuCount} < 4`);
+        this.logger.info(`   • Low memory: ${totalMemory.toFixed(1)}GB < 8GB`);
+      if (cpuCount < 4) this.logger.info(`   • Few CPUs: ${cpuCount} < 4`);
       if (files.length < 100)
-        this.logger.debug(`   • Small corpus: ${files.length} < 100 files`);
+        this.logger.info(`   • Small corpus: ${files.length} < 100 files`);
       if (estimatedCorpusSize > 2000)
-        this.logger.debug(
+        this.logger.info(
           `   • Large corpus: ${estimatedCorpusSize.toFixed(0)}MB > 2GB`,
         );
     }
@@ -1418,7 +1440,7 @@ class FileIndexer {
 
     // Choose indexing method based on system analysis
     const indexingMethod = await this.selectIndexingMethod(allDiscoveredFiles);
-    this.logger.debug(`📂 Using indexing method: ${indexingMethod}`);
+    this.logger.info(`📂 Using indexing method: ${indexingMethod}`);
 
     // Make threshold configurable
     const buildFullIndexConfig = {
@@ -1434,8 +1456,8 @@ class FileIndexer {
     let filesToIndex = allDiscoveredFiles;
 
     if (loaded) {
-      this.logger.debug('📋 Loaded existing global index from cache.');
-      this.logger.debug('🔍 Checking which files actually need reindexing...');
+      this.logger.info('📋 Loaded existing global index from cache.');
+      this.logger.info('🔍 Checking which files actually need reindexing...');
 
       const filesToReindex = allDiscoveredFiles.filter((file) =>
         this.needsReindexing(file),
@@ -1901,7 +1923,7 @@ class FileIndexer {
    * Pre-warm search caches for better performance
    */
   async preWarmSearchCaches(): Promise<void> {
-    this.logger.debug('🔥 Pre-warming search caches...');
+    this.logger.info('🔥 Pre-warming search caches...');
     const startTime = Date.now();
 
     try {
@@ -1931,7 +1953,7 @@ class FileIndexer {
       };
 
       const duration = Date.now() - startTime;
-      this.logger.debug(`🔥 Search caches pre-warmed in ${duration}ms`);
+      this.logger.info(`🔥 Search caches pre-warmed in ${duration}ms`);
     } catch (error) {
       this.logger.warn('⚠️ Failed to pre-warm search caches:', error);
       // Don't throw - this is an optimization, not critical
@@ -1995,7 +2017,7 @@ class FileIndexer {
       }
     } catch (error) {
       // LRU cache access failed, just return the main cache
-      this.logger.debug('Could not access LRU cache:', error);
+      this.logger.info('Could not access LRU cache:', error);
     }
 
     return result;
@@ -2037,12 +2059,20 @@ class FileIndexer {
     stemDictionary: Map<string, string[]>; // STAGE 1
     searchCache?: any;
   } {
-    return {
+    const startTime = Date.now();
+    const result = {
       docCache: this.getDocumentCache(),
       invertedIndex: this.getInvertedIndex(),
       stemDictionary: this.getStemDictionary(), // STAGE 1
       searchCache: (this as any).searchCache,
     };
+
+    const duration = Date.now() - startTime;
+    if (duration > 5) {
+      this.logger.info(`⚡ Search data snapshot created in ${duration}ms`);
+    }
+
+    return result;
   }
 }
 
