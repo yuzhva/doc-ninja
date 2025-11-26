@@ -1,7 +1,7 @@
 import * as v8 from 'v8';
 
 import { BM25Scorer } from './bm25-scorer.mjs';
-import { FileIndexer } from './file-indexer.mjs';
+import { FileIndexer } from './file-indexer/index.mjs';
 import { levenshtein } from './fuzzy.mjs';
 import { PhraseMatcher } from './mega-search.phrase-matcher.mjs';
 import { SnippetGenerator } from './mega-search.snippet-generator.mjs';

@@ -1,4 +1,4 @@
-import { PorterStemmer } from 'natural';
+import natural from 'natural';
 
 const rawEnglishStopWords = [
   // Articles
@@ -297,7 +297,7 @@ const rawEnglishStopWords = [
 ];
 
 const englishStopWords = new Set(
-  rawEnglishStopWords.map((word) => PorterStemmer.stem(word)),
+  rawEnglishStopWords.map((word) => natural.PorterStemmer.stem(word)),
 );
 
 function normalizeEnglish(text: string): string {
@@ -310,7 +310,7 @@ function normalizeEnglish(text: string): string {
 }
 
 function stemEnglish(word: string): string {
-  return PorterStemmer.stem(word);
+  return natural.PorterStemmer.stem(word);
 }
 
 export { englishStopWords, normalizeEnglish, stemEnglish };

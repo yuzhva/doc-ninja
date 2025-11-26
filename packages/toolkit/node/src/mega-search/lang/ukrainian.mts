@@ -1,4 +1,4 @@
-import { PorterStemmerUk } from 'natural';
+import natural from 'natural';
 
 const rawUkrainianStopWords = [
   // Pronouns
@@ -385,7 +385,7 @@ const rawUkrainianStopWords = [
 // Optimize: Stem stop words so we match all morphological variations automatically
 // e.g. checking 'була' -> stems to 'бу' -> matches stemmed stop word 'бу'
 const ukrainianStopWords = new Set(
-  rawUkrainianStopWords.map((word) => PorterStemmerUk.stem(word)),
+  rawUkrainianStopWords.map((word) => natural.PorterStemmerUk.stem(word)),
 );
 
 function normalizeUkrainian(text: string): string {
@@ -404,7 +404,7 @@ function normalizeUkrainian(text: string): string {
  * so we rely on a specialized stemmer.
  */
 function lemmatizeUkrainian(word: string): string {
-  return PorterStemmerUk.stem(word);
+  return natural.PorterStemmerUk.stem(word);
 }
 
 export { lemmatizeUkrainian, normalizeUkrainian, ukrainianStopWords };

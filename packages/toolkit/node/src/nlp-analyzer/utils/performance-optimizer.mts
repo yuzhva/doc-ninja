@@ -1,3 +1,5 @@
+import * as v8 from 'v8';
+
 class PerformanceOptimizer {
   private static instance: PerformanceOptimizer;
 
@@ -131,7 +133,7 @@ class PerformanceOptimizer {
         );
 
         if (memory.heapUsed > lastGC.heapUsed * 1.5) {
-          console.log('💡 Consider running garbage collection');
+          console.log('💡 Memory usage growing rapidly - checking pressure...');
         }
 
         lastGC = memory;
@@ -151,13 +153,14 @@ class PerformanceOptimizer {
     level: 'low' | 'medium' | 'high';
     recommendation: string;
   } {
-    const usage = process.memoryUsage();
-    const usedRatio = usage.heapUsed / usage.heapTotal;
+    const heapUsed = process.memoryUsage().heapUsed;
+    const heapLimit = v8.getHeapStatistics().heap_size_limit;
+    const usedRatio = heapUsed / heapLimit;
 
     if (usedRatio > this.memoryThresholds.critical) {
       return {
         level: 'high',
-        recommendation: 'Reduce batch size and consider garbage collection',
+        recommendation: 'Reduce batch size and pause for GC',
       };
     } else if (usedRatio > this.memoryThresholds.warning) {
       return {
@@ -173,14 +176,24 @@ class PerformanceOptimizer {
   }
 
   /**
-   * Force garbage collection if available
+   * Monitors memory usage and pauses execution if heap usage is high.
+   * This allows V8's garbage collector to run naturally without blocking the main thread.
    */
-  forceGarbageCollection(): boolean {
-    if (global.gc) {
-      global.gc();
-      return true;
+  async manageMemoryPressure(): Promise<void> {
+    const heapUsed = process.memoryUsage().heapUsed;
+    const heapLimit = v8.getHeapStatistics().heap_size_limit;
+    const usageRatio = heapUsed / heapLimit;
+
+    if (usageRatio > this.memoryThresholds.critical) {
+      console.warn(
+        `⚠️ Critical memory usage (${(usageRatio * 100).toFixed(1)}%). Pausing for GC...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    } else if (usageRatio > this.memoryThresholds.warning) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    return false;
   }
 }
 

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as v8 from 'v8';
 
 import {
   AdaptiveLearningResult,
@@ -72,6 +73,26 @@ class AdaptiveLearningManager extends EventEmitter {
 
     if (this.config.enabled) {
       this.initialize();
+    }
+  }
+
+  /**
+   * Monitors memory usage and pauses execution if heap usage is high.
+   */
+  private async manageMemoryPressure(): Promise<void> {
+    const heapUsed = process.memoryUsage().heapUsed;
+    const heapLimit = v8.getHeapStatistics().heap_size_limit;
+    const usageRatio = heapUsed / heapLimit;
+
+    if (usageRatio > 0.85) {
+      console.warn(
+        `⚠️ High memory usage (${(usageRatio * 100).toFixed(1)}%). Pausing for GC...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } else if (usageRatio > 0.7) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
 
@@ -362,7 +383,7 @@ class AdaptiveLearningManager extends EventEmitter {
     }
 
     // Cleanup old feedback if needed
-    this.cleanupFeedbackHistory();
+    await this.cleanupFeedbackHistory();
 
     // Auto-save if enabled
     if (this.config.autoSave) {
@@ -546,7 +567,7 @@ class AdaptiveLearningManager extends EventEmitter {
     return adjustments;
   }
 
-  private cleanupFeedbackHistory(): void {
+  private async cleanupFeedbackHistory(): Promise<void> {
     if (this.feedbackHistory.length > this.config.maxFeedbackHistory) {
       const excess =
         this.feedbackHistory.length - this.config.maxFeedbackHistory;
@@ -554,11 +575,9 @@ class AdaptiveLearningManager extends EventEmitter {
       // ✅ Optimized: Remove oldest entries more efficiently
       this.feedbackHistory.splice(0, excess);
 
-      // ✅ Force garbage collection hint for large cleanups
+      // ✅ Replaced manual GC with memory pressure management
       if (excess > 1000) {
-        if (global.gc) {
-          global.gc();
-        }
+        await this.manageMemoryPressure();
       }
 
       console.log(`🧹 Cleaned up ${excess} old feedback entries`);
@@ -670,7 +689,7 @@ class AdaptiveLearningManager extends EventEmitter {
       });
     }
 
-    this.cleanupFeedbackHistory();
+    await this.cleanupFeedbackHistory();
 
     if (this.config.autoSave) {
       await this.saveLearningData();
