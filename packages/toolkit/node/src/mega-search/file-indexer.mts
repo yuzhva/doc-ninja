@@ -4,17 +4,17 @@ import * as path from 'path';
 import { promisify } from 'util';
 import * as zlib from 'zlib';
 
-import { DocumentExtractor } from './document-parsers';
-import { LRUCache } from './lru-cache';
-import { scanDirectory } from './shared/file-utils';
-import { createLogger } from './shared/logger';
-import { UkrainianTextProcessor } from './text-processor';
+import { DocumentExtractor } from './document-parsers.mjs';
+import { LRUCache } from './lru-cache.mjs';
+import { scanDirectory } from './shared/file-utils.mjs';
+import { createLogger } from './shared/logger.mjs';
+import { UkrainianTextProcessor } from './text-processor.mjs';
 import {
   DocumentIndex,
   DocumentMetadata,
   InvertedIndexEntry,
   SearchConfig,
-} from './types';
+} from './types.mjs';
 
 class FileIndexer {
   private logger = createLogger('FileIndexer');

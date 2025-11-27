@@ -1,12 +1,12 @@
 import { Pipeline, pipeline } from '@huggingface/transformers';
 
-import { ClassificationProcessor } from '../processors/classification-processor.ts';
-import { CustomProcessorRegistry } from '../processors/custom-processor-registry.ts';
-import { EntityProcessor } from '../processors/entity-processor.ts';
-import { KeywordsProcessor } from '../processors/keywords-processor.ts';
-import { SentimentProcessor } from '../processors/sentiment-processor.ts';
-import { SummaryProcessor } from '../processors/summary-processor.ts';
-import { AnalysisTask, ModelConfig } from '../types.ts';
+import { ClassificationProcessor } from '../processors/classification-processor.mjs';
+import { CustomProcessorRegistry } from '../processors/custom-processor-registry.mjs';
+import { EntityProcessor } from '../processors/entity-processor.mjs';
+import { KeywordsProcessor } from '../processors/keywords-processor.mjs';
+import { SentimentProcessor } from '../processors/sentiment-processor.mjs';
+import { SummaryProcessor } from '../processors/summary-processor.mjs';
+import { AnalysisTask, ModelConfig } from '../types.mjs';
 
 interface TaskProcessor {
   process(chunks: any[], config: any): Promise<any>;

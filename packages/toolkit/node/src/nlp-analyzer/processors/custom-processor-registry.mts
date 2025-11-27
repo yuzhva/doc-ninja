@@ -1,7 +1,7 @@
 import { Pipeline } from '@huggingface/transformers';
 
-import { TaskProcessor } from '../managers/model-manager.ts';
-import { AnalysisTask } from '../types.ts';
+import { TaskProcessor } from '../managers/model-manager.mjs';
+import { AnalysisTask } from '../types.mjs';
 
 interface ProcessorDefinition {
   name: string;

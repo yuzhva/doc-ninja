@@ -1,7 +1,7 @@
 import { Pipeline } from '@huggingface/transformers';
 import { EventEmitter } from 'events';
 
-import { AnalysisConfig, DocumentChunk } from '../types.ts';
+import { AnalysisConfig, DocumentChunk } from '../types.mjs';
 
 interface TaskProcessor {
   process(chunks: DocumentChunk[], config: AnalysisConfig): Promise<any>;

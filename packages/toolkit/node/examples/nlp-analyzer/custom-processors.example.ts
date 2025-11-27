@@ -3,7 +3,7 @@ import {
   DocumentChunk,
   createNLPAnalyzer,
 } from '../../src/index';
-import { CustomProcessorRegistry } from '../../src/nlp-analyzer/processors/index';
+import { CustomProcessorRegistry } from '../../src/nlp-analyzer/processors/index.mjs';
 
 // Define a custom processor for technical document analysis
 class TechnicalDocumentProcessor {

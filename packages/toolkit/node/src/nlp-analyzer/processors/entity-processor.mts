@@ -1,7 +1,7 @@
 import { Pipeline } from '@huggingface/transformers';
 
-import { TaskProcessor } from '../managers/model-manager.ts';
-import { AnalysisConfig, DocumentChunk, EntityResult } from '../types.ts';
+import { TaskProcessor } from '../managers/model-manager.mjs';
+import { AnalysisConfig, DocumentChunk, EntityResult } from '../types.mjs';
 
 interface EntityMappingConfig {
   labelMap?: Record<string, string>;

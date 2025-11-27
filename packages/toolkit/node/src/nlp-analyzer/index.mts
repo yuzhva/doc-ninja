@@ -1,9 +1,9 @@
-export { createNLPAnalyzer } from './factory';
+export { createNLPAnalyzer } from './factory.mjs';
 export {
   CustomProcessorRegistry,
   LegalDocumentProcessor,
   MedicalDocumentProcessor,
-} from './processors/index';
+} from './processors/index.mjs';
 export type {
   AnalysisConfig,
   AnalysisResult,
@@ -11,4 +11,4 @@ export type {
   LearningOpportunity,
   PostProcessor,
   TextMetadata,
-} from './types';
+} from './types.mjs';

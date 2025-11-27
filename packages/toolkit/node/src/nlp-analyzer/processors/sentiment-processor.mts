@@ -1,7 +1,7 @@
 import { Pipeline } from '@huggingface/transformers';
 
-import { TaskProcessor } from '../managers/model-manager.ts';
-import { AnalysisConfig, DocumentChunk, SentimentResult } from '../types.ts';
+import { TaskProcessor } from '../managers/model-manager.mjs';
+import { AnalysisConfig, DocumentChunk, SentimentResult } from '../types.mjs';
 
 class SentimentProcessor implements TaskProcessor {
   private model: Pipeline;

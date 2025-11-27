@@ -1,9 +1,9 @@
-import { BM25Scorer } from './bm25-scorer';
-import { DocumentExtractor } from './document-parsers';
-import { FileIndexer } from './file-indexer';
-import { levenshtein } from './fuzzy';
-import { createLogger } from './shared/logger';
-import { UkrainianTextProcessor } from './text-processor';
+import { BM25Scorer } from './bm25-scorer.mjs';
+import { DocumentExtractor } from './document-parsers.mjs';
+import { FileIndexer } from './file-indexer.mjs';
+import { levenshtein } from './fuzzy.mjs';
+import { createLogger } from './shared/logger.mjs';
+import { UkrainianTextProcessor } from './text-processor.mjs';
 import {
   DocumentIndex,
   GlobalIndex,
@@ -12,7 +12,7 @@ import {
   ProcessedSearchToken,
   SearchConfig,
   SnippetInfo,
-} from './types';
+} from './types.mjs';
 
 const logger = createLogger('MegaSearch');
 

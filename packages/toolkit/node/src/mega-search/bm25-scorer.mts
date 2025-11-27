@@ -1,4 +1,4 @@
-import type { DocumentIndex } from './types';
+import type { DocumentIndex } from './types.mjs';
 
 interface BM25Config {
   k1: number; // Controls term frequency saturation (typically 1.0-2.0)

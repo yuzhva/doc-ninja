@@ -7,7 +7,7 @@ import {
   AnalysisTask,
   LearningContext,
   LearningOpportunity,
-} from '../types';
+} from '../types.mjs';
 
 interface LearningConfiguration {
   enabled: boolean;

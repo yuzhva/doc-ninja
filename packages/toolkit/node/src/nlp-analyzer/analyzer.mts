@@ -2,14 +2,14 @@ import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import * as path from 'path';
 
-import { AdaptiveLearningManager } from './managers/adaptive-learning-manager.ts';
-import { CacheManager } from './managers/cache-manager.ts';
-import { ModelManager } from './managers/model-manager.ts';
-import { ResourceMonitor } from './managers/resource-monitor.ts';
-import { RetryManager } from './managers/retry-manager.ts';
-import { WorkflowManager } from './managers/workflow-manager.ts';
-import { PostProcessorPipeline } from './post-processor-pipeline.ts';
-import { TextProcessor } from './processors/text-processor.ts';
+import { AdaptiveLearningManager } from './managers/adaptive-learning-manager.mjs';
+import { CacheManager } from './managers/cache-manager.mjs';
+import { ModelManager } from './managers/model-manager.mjs';
+import { ResourceMonitor } from './managers/resource-monitor.mjs';
+import { RetryManager } from './managers/retry-manager.mjs';
+import { WorkflowManager } from './managers/workflow-manager.mjs';
+import { PostProcessorPipeline } from './post-processor-pipeline.mjs';
+import { TextProcessor } from './processors/text-processor.mjs';
 import {
   AdaptiveLearningResult,
   AdaptiveTextAnalyzer,
@@ -26,8 +26,8 @@ import {
   PostProcessor,
   ProcessingProgress,
   WorkflowCallbacks,
-} from './types.ts';
-import { WorkerPool } from './worker-pool.ts';
+} from './types.mjs';
+import { WorkerPool } from './worker-pool.mjs';
 
 class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
   private textProcessor: TextProcessor;

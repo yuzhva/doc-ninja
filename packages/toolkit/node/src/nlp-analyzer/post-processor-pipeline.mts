@@ -6,7 +6,7 @@ import {
   PostProcessingContext,
   PostProcessor,
   TextMetadata,
-} from './types.ts';
+} from './types.mjs';
 
 interface PostProcessorExecutionResult {
   success: boolean;

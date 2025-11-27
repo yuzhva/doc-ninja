@@ -1,7 +1,7 @@
 import { Pipeline } from '@huggingface/transformers';
 
-import { TaskProcessor } from '../managers/model-manager.ts';
-import { AnalysisConfig, DocumentChunk } from '../types.ts';
+import { TaskProcessor } from '../managers/model-manager.mjs';
+import { AnalysisConfig, DocumentChunk } from '../types.mjs';
 
 interface SummaryResult {
   summary: string;

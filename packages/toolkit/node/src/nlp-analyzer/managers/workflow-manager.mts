@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 
-import { AnalysisConfig, AnalysisResult, TextMetadata } from '../types.ts';
+import { AnalysisConfig, AnalysisResult, TextMetadata } from '../types.mjs';
 
 type WorkflowCallback = (
   result: AnalysisResult,

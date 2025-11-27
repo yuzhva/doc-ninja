@@ -1,13 +1,13 @@
 import { Pipeline } from '@huggingface/transformers';
 
-import { AnalysisTask, ModelConfig } from '../types.ts';
-import { TaskProcessor } from './base-processor.ts';
-import { ClassificationProcessor } from './classification-processor.ts';
-import { CustomProcessorRegistry } from './custom-processor-registry.ts';
-import { EntityProcessor } from './entity-processor.ts';
-import { KeywordsProcessor } from './keywords-processor.ts';
-import { SentimentProcessor } from './sentiment-processor.ts';
-import { SummaryProcessor } from './summary-processor.ts';
+import { AnalysisTask, ModelConfig } from '../types.mjs';
+import { TaskProcessor } from './base-processor.mjs';
+import { ClassificationProcessor } from './classification-processor.mjs';
+import { CustomProcessorRegistry } from './custom-processor-registry.mjs';
+import { EntityProcessor } from './entity-processor.mjs';
+import { KeywordsProcessor } from './keywords-processor.mjs';
+import { SentimentProcessor } from './sentiment-processor.mjs';
+import { SummaryProcessor } from './summary-processor.mjs';
 
 class ProcessorFactory {
   private customRegistry = CustomProcessorRegistry.getInstance();

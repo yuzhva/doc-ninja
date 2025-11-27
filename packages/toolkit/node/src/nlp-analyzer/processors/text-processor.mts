@@ -1,4 +1,4 @@
-import { DocumentChunk } from '../types';
+import { DocumentChunk } from '../types.mjs';
 
 class TextProcessor {
   private sentenceBoundaries = /[.!?]+\s+/g;

@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import { Worker } from 'worker_threads';
 
-import { AnalysisConfig, DocumentChunk } from './types.ts';
+import { AnalysisConfig, DocumentChunk } from './types.mjs';
 
 interface WorkerTask {
   id: string;

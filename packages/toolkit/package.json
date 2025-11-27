@@ -7,11 +7,11 @@
     "src"
   ],
   "exports": {
-    "./node": "./node/src/index.ts",
-    "./browser": "./browser/index.ts"
+    "./node": "./dist/esm/node/src/index.mjs",
+    "./browser": "./dist/esm/browser/index.mjs"
   },
   "scripts": {
-    "build": "tsc ./node/src/index.ts",
+    "build": "tsc",
     "nlp:models--install": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts",
     "nlp:models--install-default": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts --default --verify",
     "nlp:models--install-list": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts --list",

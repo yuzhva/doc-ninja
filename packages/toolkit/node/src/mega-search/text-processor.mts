@@ -2,13 +2,13 @@ import {
   englishStopWords,
   normalizeEnglish,
   stemEnglish,
-} from './lang/english';
+} from './lang/english.mjs';
 import {
   lemmatizeUkrainian,
   normalizeUkrainian,
   ukrainianStopWords,
-} from './lang/ukrainian';
-import { SearchToken } from './types';
+} from './lang/ukrainian.mjs';
+import { SearchToken } from './types.mjs';
 
 class UkrainianTextProcessor {
   private readonly ukrainianAlphabet = /[а-яїієґ]/i;

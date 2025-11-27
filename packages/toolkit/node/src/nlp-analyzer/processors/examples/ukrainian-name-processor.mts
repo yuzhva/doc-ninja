@@ -3,7 +3,7 @@ import {
   AnalysisResult,
   PostProcessor,
   TextMetadata,
-} from '../../types';
+} from '../../types.mjs';
 
 interface UkrainianNameMatch {
   originalName: string;

@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-import { AnalysisResult } from '../types';
+import { AnalysisResult } from '../types.mjs';
 
 interface CacheConfig {
   enabled: boolean;

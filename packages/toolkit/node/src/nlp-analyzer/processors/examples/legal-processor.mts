@@ -1,7 +1,7 @@
 import { Pipeline } from '@huggingface/transformers';
 
-import { AnalysisConfig, DocumentChunk } from '../../types';
-import { BaseProcessor } from '../base-processor';
+import { AnalysisConfig, DocumentChunk } from '../../types.mjs';
+import { BaseProcessor } from '../base-processor.mjs';
 
 interface LegalAnalysisResult {
   citations: Array<{

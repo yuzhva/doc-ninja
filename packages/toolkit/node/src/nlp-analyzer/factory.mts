@@ -2,14 +2,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-import { NLPAnalyzer } from './analyzer.ts';
+import { NLPAnalyzer } from './analyzer.mjs';
 import {
   AdaptiveTextAnalyzer,
   ModelConfig,
   PostProcessor,
   WorkflowCallbacks,
-} from './types.ts';
-import { PerformanceOptimizer } from './utils/performance-optimizer.ts';
+} from './types.mjs';
+import { PerformanceOptimizer } from './utils/performance-optimizer.mjs';
 
 interface AnalyzerOptions {
   maxWorkers?: number;
