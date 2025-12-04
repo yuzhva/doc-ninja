@@ -214,6 +214,7 @@ export class FileSystemAPIProcessor {
     const isBinaryFile = [
       'xlsx',
       'xlsm',
+      'xlsb',
       'xls',
       'docx',
       'pdf',
@@ -275,6 +276,7 @@ export class FileSystemAPIProcessor {
     const mimeTypes: Record<string, string> = {
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+      xlsb: 'application/vnd.ms-excel.sheet.macroEnabled.12',
       xls: 'application/vnd.ms-excel',
       docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       pdf: 'application/pdf',

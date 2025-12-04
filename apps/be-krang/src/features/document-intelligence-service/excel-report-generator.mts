@@ -78,7 +78,13 @@ class ExcelReportGenerator {
     ];
 
     // Add data rows
+    let prevInputName = reportRows[0]?.inputName;
     for (const match of reportRows) {
+      if (prevInputName !== match.inputName) {
+        data.push([]);
+        prevInputName = match.inputName;
+      }
+
       data.push([
         match.inputName,
         match.foundInDocument,
@@ -113,13 +119,13 @@ class ExcelReportGenerator {
     // Set column widths for better readability
     worksheet['!cols'] = [
       { wch: 25 }, // Input Name
-      { wch: 50 }, // Found In Document
+      { wch: 25 }, // Found In Document
       { wch: 15 }, // Document Date
       { wch: 25 }, // Found Declension
-      { wch: 40 }, // Section Title
-      { wch: 60 }, // Content
-      { wch: 30 }, // Action Date Content
-      { wch: 50 }, // Reason
+      { wch: 40, hidden: true }, // Section Title
+      { wch: 60, hidden: true }, // Content
+      { wch: 30, hidden: true }, // Action Date Content
+      { wch: 50, hidden: true }, // Reason
       { wch: 80 }, // Summary
       { wch: 15 }, // Action Date
       { wch: 25 }, // Status

@@ -1423,7 +1423,7 @@ class FileIndexer {
     // Make threshold configurable
     const buildFullIndexConfig = {
       rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001, // Default 0.1%
-      minFiles: this.config.minFilesForRebuild ?? 5, // Default to 5 files
+      minFiles: this.config.minFilesForRebuild ?? 1, // Default to 1 file
     };
 
     // Load existing index and determine which files *actually* need processing

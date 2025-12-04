@@ -34,7 +34,7 @@ const FormChunkSpreadsheetTabItem = ({
         id: Date.now() + 1,
         sheetIndex: 9,
         headerRows: 2,
-        filterColumnPosition: 5,
+        filterColumnPosition: 6,
       },
     ],
   });
@@ -175,7 +175,7 @@ const FormChunkSpreadsheetTabItem = ({
               id="spreadsheetFile"
               name="spreadsheetFile"
               label="Оберіть файл котрий буде нарізано"
-              accept=".xlsx,.xlsm,.xls"
+              accept=".xlsx,.xlsm,.xlsb,.xls"
               onClick={handleFileSelect}
               selectedItem={selectedFileHandle}
               isFileSystemAccessSupported={isFileSystemAccessSupported}

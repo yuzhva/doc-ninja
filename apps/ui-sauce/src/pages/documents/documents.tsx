@@ -85,7 +85,7 @@ const DocumentsPage = () => {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
             '.xlsx',
           ],
-          'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
+          'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm', '.xlsb'],
           'application/vnd.ms-excel': ['.xls'],
         },
       },
