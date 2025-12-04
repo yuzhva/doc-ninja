@@ -7,6 +7,7 @@ import {
 } from '../../utils/file-system-processor';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
+import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
 import { FormConvertTextToIndexTabItem } from './FormConvertTextToIndexTabItem';
 import { FormProcessDocumentTabItem } from './FormProcessDocumentTabItem';
 import { LoadingSpinner } from './documents-components';
@@ -252,6 +253,21 @@ const DocumentsPage = () => {
       )}
 
       <Tabs aria-label="Tabs with icons">
+        <Tabs.Item title="Конвертувати .xlsx в cтатику">
+          <FormConvertSpreadsheetToStatic
+            handleFileSelect={handleFileSelect}
+            handleSourceDirectorySelect={handleSourceDirectorySelect}
+            handleOutputDirectorySelect={handleOutputDirectorySelect}
+            initFileSystemApiCallExecutor={initFileSystemApiCallExecutor}
+            initSubmitHandler={initSubmitHandler}
+            sourceDirectoryHandle={sourceDirectoryHandle}
+            outputDirectoryHandle={outputDirectoryHandle}
+            selectedFileHandle={selectedFileHandle}
+            progress={progress}
+            isFileSystemAccessSupported={isFileSystemAccessSupported}
+            isProcessing={isProcessing}
+          />
+        </Tabs.Item>
         <Tabs.Item title="Нарізка таблиці">
           <FormChunkSpreadsheetTabItem
             handleFileSelect={handleFileSelect}

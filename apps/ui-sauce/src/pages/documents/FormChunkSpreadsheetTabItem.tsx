@@ -96,14 +96,13 @@ const FormChunkSpreadsheetTabItem = ({
         successMessage: 'Spreadsheet slicing completed successfully!',
         subfolderPath: 'chunks',
       })(async (batch, batchIndex, totalBatches, structure) => {
-        const fileData = batch[0];
-
         // Create file from the original file handle
         const file = await selectedFileHandle.getFile();
 
         // Create FormData with the actual file and parameters
         const formData = new FormData();
-        formData.append('file', file, fileData.name);
+        // Use file.name directly to preserve encoding
+        formData.append('file', file, file.name);
 
         // Add form parameters to FormData
         formData.append(
@@ -134,7 +133,7 @@ const FormChunkSpreadsheetTabItem = ({
 
         console.log(
           '📤 Uploading file via multipart:',
-          fileData.name,
+          file.name,
           'Size:',
           file.size,
         );

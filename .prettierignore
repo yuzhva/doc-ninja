@@ -19,6 +19,9 @@ Dockerfile
 *.yaml
 *.env*
 
+# other programming languages
+*.py
+
 # documents
 *.doc
 *.docx

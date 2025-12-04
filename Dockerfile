@@ -13,8 +13,18 @@ ARG PNPM_VERSION=10.20.0
 # Use node image for base image for all stages.
 FROM node:${NODE_VERSION}-slim AS base
 
-# Install system dependencies (e.g. `antiword` required for text extraction of .doc by `textract`)
-RUN apt-get update && apt-get install -y antiword --no-install-recommends && rm -rf /var/lib/apt/lists/*
+# 1. Install python3-openpyxl for working with .xlsx files.
+RUN apt-get update && apt-get install -y \
+    python3-openpyxl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Install LibreOffice, Python3, and the UNO bridge required for scripting .xlsb files.
+# RUN apt-get update && apt-get install -y \
+#     libreoffice \
+#     libreoffice-script-provider-python \
+#     python3-uno \
+#     python3-pip \
+#     && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm.
 RUN --mount=type=cache,target=/root/.npm \

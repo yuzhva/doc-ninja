@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch ./src/main.mts",
-    "build": "tsc",
+    "build:be": "tsc",
     "serve": "node ./dist/main.mjs",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
     "doc:to-text": "tsx ./src/features/doc-to-text.mts",

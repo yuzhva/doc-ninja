@@ -1,5 +1,10 @@
+import { spawn } from 'child_process';
 import type { Request, Response } from 'express';
+import fs from 'fs/promises';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
+import os from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { buildIndex } from '../../features/doc-build-index.mts';
 import { sliceDocumentForChunks } from '../../features/doc-to-chunks/doc-to-chunks.mts';
@@ -21,6 +26,136 @@ interface BatchRequest {
     modifiedAt: string;
   }>;
 }
+
+const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
+  const tempFiles: string[] = [];
+
+  try {
+    // Only support multipart/form-data uploads
+    if (!req.file) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'NO_FILE',
+          message: 'File upload required. Use multipart/form-data.',
+        },
+      });
+    }
+
+    const buffer = req.file.buffer;
+    const fileName = Buffer.from(req.file.originalname, 'latin1').toString(
+      'utf8',
+    );
+
+    console.log(
+      `✅ Processing uploaded file for static conversion: ${fileName} (${buffer.length} bytes)`,
+    );
+
+    const processedFiles = [];
+    const failedFiles = [];
+
+    try {
+      // Setup paths
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const tempDir = os.tmpdir();
+      const timestamp = Date.now();
+
+      // Use simple ASCII-safe temp filenames to avoid encoding issues
+      const inputFilePath = path.join(tempDir, `input_${timestamp}.xlsx`);
+      const outputFilePath = path.join(tempDir, `output_${timestamp}.xlsm`);
+      tempFiles.push(inputFilePath, outputFilePath);
+
+      // Write buffer to temp file
+      await fs.writeFile(inputFilePath, buffer);
+
+      // Spawn Python script
+      const scriptPath = path.join(
+        __dirname,
+        '../../scripts/convert_xlsx_to_static.py',
+      );
+      console.log('Spawning Python conversion script (openpyxl)...');
+
+      await new Promise<void>((resolve, reject) => {
+        const pythonProcess = spawn(
+          'python3',
+          [scriptPath, inputFilePath, outputFilePath],
+          { env: process.env },
+        );
+
+        pythonProcess.stdout.on('data', (data) =>
+          console.log(`Python: ${data}`),
+        );
+        pythonProcess.stderr.on('data', (data) =>
+          console.error(`Python Error: ${data}`),
+        );
+        pythonProcess.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`Python script exited with code ${code}`));
+        });
+      });
+
+      // Read the converted file
+      const convertedBuffer = await fs.readFile(outputFilePath);
+
+      // Add " - static" before the extension - preserve original filename encoding
+      const originalFileExt = path.extname(fileName);
+      const nameWithoutExt = fileName.slice(0, -originalFileExt.length);
+      const staticFileExt = '.xlsm';
+      const staticFileName = `${nameWithoutExt} - static${staticFileExt}`;
+
+      processedFiles.push({
+        name: staticFileName,
+        content: convertedBuffer.toString('base64'),
+        relativePath: staticFileName,
+        originalPath: fileName,
+      });
+
+      console.log(
+        `✅ Successfully converted ${fileName} to static format as ${staticFileName}`,
+      );
+    } catch (error) {
+      console.error(`❌ Failed to convert ${fileName}:`, error);
+      failedFiles.push({
+        fileName,
+        path: fileName,
+        error: error.message,
+      });
+    }
+
+    res.status(StatusCodes.OK).json({
+      batchIndex: 1,
+      totalBatches: 1,
+      processedFiles,
+      failedFiles,
+      summary: {
+        processed: processedFiles.length,
+        failed: failedFiles.length,
+      },
+    });
+  } catch (error) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(StatusCodes.REQUEST_ENTITY_TOO_LARGE).json({
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: 'File size exceeds 100MB limit',
+        },
+      });
+    }
+
+    console.error('Spreadsheet to static conversion error:', error);
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: ReasonPhrases.INTERNAL_SERVER_ERROR,
+      },
+    });
+  } finally {
+    // Cleanup temp files
+    for (const tempFile of tempFiles) {
+      await fs.unlink(tempFile).catch(() => {});
+    }
+  }
+};
 
 const postDocumentToText = async (req: Request, res: Response) => {
   try {
@@ -162,7 +297,9 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
     }
 
     const buffer = req.file.buffer;
-    const fileName = req.file.originalname;
+    const fileName = Buffer.from(req.file.originalname, 'latin1').toString(
+      'utf8',
+    );
 
     console.log(
       `✅ Processing uploaded file: ${fileName} (${buffer.length} bytes)`,
@@ -235,4 +372,9 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
   }
 };
 
-export { postDocumentToText, postTextToIndex, postDocumentToSlice };
+export {
+  postDocumentToText,
+  postTextToIndex,
+  postDocumentToSlice,
+  postConvertSpreadsheetToStatic,
+};
