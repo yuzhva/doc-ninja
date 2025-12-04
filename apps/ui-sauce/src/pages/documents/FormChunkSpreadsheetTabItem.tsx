@@ -23,6 +23,8 @@ const FormChunkSpreadsheetTabItem = ({
     headerRows: 5,
     splitColumnPosition: 11,
     maxColumnsToInclude: 17,
+    filenameSuffix: '',
+    outputSubfolder: 'chunks',
     additionalSheets: [
       {
         id: Date.now(),
@@ -94,7 +96,7 @@ const FormChunkSpreadsheetTabItem = ({
         processorFunction: FileSystemAPIProcessor.processSingleFile,
         validationMessage: 'Please select a spreadsheet file first.',
         successMessage: 'Spreadsheet slicing completed successfully!',
-        subfolderPath: 'chunks',
+        subfolderPath: formState.outputSubfolder || 'chunks',
       })(async (batch, batchIndex, totalBatches, structure) => {
         // Create file from the original file handle
         const file = await selectedFileHandle.getFile();
@@ -118,6 +120,7 @@ const FormChunkSpreadsheetTabItem = ({
           'maxColumnsToInclude',
           formState.maxColumnsToInclude.toString(),
         );
+        formData.append('filenameSuffix', formState.filenameSuffix);
 
         // Prepare additional sheets data (remove id field for API)
         const apiAdditionalSheets = formState.additionalSheets.map((sheet) => ({
@@ -142,6 +145,7 @@ const FormChunkSpreadsheetTabItem = ({
           headerRows: formState.headerRows,
           splitColumnPosition: formState.splitColumnPosition,
           maxColumnsToInclude: formState.maxColumnsToInclude,
+          filenameSuffix: formState.filenameSuffix,
           additionalSheets: apiAdditionalSheets,
         });
 
@@ -189,6 +193,39 @@ const FormChunkSpreadsheetTabItem = ({
               isFileSystemAccessSupported={isFileSystemAccessSupported}
               icon="folder"
             />
+
+            <div className="col-span-2 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
+                  Суфікс назви файлу (за замовчуванням: дата)
+                </label>
+                <input
+                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                  type="text"
+                  name="filenameSuffix"
+                  value={formState.filenameSuffix}
+                  onChange={(e) =>
+                    updatePrimarySheet('filenameSuffix', e.target.value)
+                  }
+                  placeholder="напр. v1"
+                />
+              </div>
+              <div>
+                <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
+                  Назва підпапки
+                </label>
+                <input
+                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                  type="text"
+                  name="outputSubfolder"
+                  value={formState.outputSubfolder}
+                  onChange={(e) =>
+                    updatePrimarySheet('outputSubfolder', e.target.value)
+                  }
+                  required
+                />
+              </div>
+            </div>
 
             {/* Dynamic rows with 5 columns */}
             <div className="mt-6 col-span-2">
@@ -411,8 +448,8 @@ const FormChunkSpreadsheetTabItem = ({
             </ProcessingButton>
           </div>
           <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            💡 Нарізані частини будуть збережені в папці "chunks" всередині
-            вибраної папки
+            💡 Нарізані частини будуть збережені в папці "
+            {formState.outputSubfolder || 'chunks'}" всередині вибраної папки
           </div>
         </form>
       </div>

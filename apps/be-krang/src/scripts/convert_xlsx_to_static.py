@@ -1,6 +1,53 @@
 import sys
 import openpyxl
 import os
+from openpyxl.worksheet.views import Selection
+
+def cleanup_workbook(wb):
+    print("Cleaning up workbook links and structure...")
+
+    # 1. Remove Calculation Chain
+    if hasattr(wb, '_calc_chain'):
+        wb._calc_chain = None
+
+    # 2. Remove External Links
+    if hasattr(wb, 'external_links'):
+        wb.external_links = []
+
+    # 3. Cleanup Defined Names (Named Ranges)
+    if hasattr(wb, 'defined_names') and hasattr(wb.defined_names, 'definedName'):
+        valid_names = []
+        for dn in wb.defined_names.definedName:
+            should_keep = False
+
+            if not dn.value:
+                should_keep = False
+            elif '#REF!' in dn.value:
+                should_keep = False
+            elif '[' in dn.value and ']' in dn.value:
+                should_keep = False
+
+            if should_keep:
+                valid_names.append(dn)
+        wb.defined_names.definedName = valid_names
+
+    # 4. Remove Tables
+    # print("Removing tables to prevent corruption...")
+    # for ws in wb.worksheets:
+    #     if hasattr(ws, 'tables'):
+    #         table_names = list(ws.tables.keys())
+    #         if table_names:
+    #             print(f"  Removing {len(table_names)} tables from sheet '{ws.title}'")
+    #             for name in table_names:
+    #                 del ws.tables[name]
+
+    # 5. Reset View
+    if wb.sheetnames:
+        wb.active = 0
+
+    for ws in wb:
+        ws.sheet_view.topLeftCell = 'A1'
+        ws.sheet_view.selection = [Selection(activeCell='A1', sqref='A1')]
 
 def convert_to_static(input_path, output_path):
     print(f"Loading workbook from {input_path}...")
@@ -34,6 +81,9 @@ def convert_to_static(input_path, output_path):
                     cell.value = cached_value
 
                     # We do NOT reset the style. The original style from 'wb' is preserved.
+
+    # --- CLEANUP TO REMOVE WORKBOOK LINKS ---
+    # cleanup_workbook(wb)
 
     print(f"Saving static workbook to {output_path}...")
     wb.save(output_path)

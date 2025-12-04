@@ -7,7 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { buildIndex } from '../../features/doc-build-index.mts';
-import { sliceDocumentForChunks } from '../../features/doc-to-chunks/doc-to-chunks.mts';
+import { sliceDocumentForChunksViaExcelJs } from '../../features/doc-to-chunks/doc-to-chunks.exceljs.mts';
+import { sliceDocumentForChunksViaPythonScript } from '../../features/doc-to-chunks/doc-to-chunks.mts';
 import { convertDocViaHtmlToTxtAdvanced } from '../../supplement/convert-doc-to-txt.mts';
 import {
   appendExtension,
@@ -309,12 +310,17 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
     const failedFiles = [];
 
     try {
+      const sliceDocumentForChunks =
+        sliceDocumentForChunksViaExcelJs ||
+        sliceDocumentForChunksViaPythonScript;
       const chunkFiles = await sliceDocumentForChunks({
         buffer,
+        originalFileName: fileName,
         sheetToChunkPosition: parseInt(req.body.sheetToChunkPosition),
         headerRows: parseInt(req.body.headerRows),
         splitColumnPosition: parseInt(req.body.splitColumnPosition),
         maxColumnsToInclude: parseInt(req.body.maxColumnsToInclude),
+        filenameSuffix: req.body.filenameSuffix,
         chunkNamePattern: '^([0-9]+\\s+[а-яА-ЯіІїЇєЄ]+|[а-яА-ЯіІїЇєЄ]+)',
         includeHiddenSheets: false,
         additionalSheets: [...JSON.parse(req.body.additionalSheets || '[]')],
