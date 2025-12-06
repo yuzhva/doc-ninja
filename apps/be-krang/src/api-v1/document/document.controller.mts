@@ -4,12 +4,11 @@ import fs from 'fs/promises';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 import os from 'os';
 import path from 'path';
+import { DocumentExtractor } from 'toolkit--local/node';
 import { fileURLToPath } from 'url';
 
-import { buildIndex } from '../../features/doc-build-index.mts';
 import { sliceDocumentForChunksViaExcelJs } from '../../features/doc-to-chunks/doc-to-chunks.exceljs.mts';
 import { sliceDocumentForChunksViaPythonScript } from '../../features/doc-to-chunks/doc-to-chunks.mts';
-import { convertDocViaHtmlToTxtAdvanced } from '../../supplement/convert-doc-to-txt.mts';
 import {
   appendExtension,
   replaceExtension,
@@ -160,25 +159,52 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
 
 const postDocumentToText = async (req: Request, res: Response) => {
   try {
-    const { batchIndex, totalBatches, files }: BatchRequest = req.body;
+    if (!req.files || !Array.isArray(req.files)) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'NO_FILES',
+          message: 'Files upload required. Use multipart/form-data.',
+        },
+      });
+    }
+
+    const batchIndex = Number(req.body.batchIndex);
+    const totalBatches = Number(req.body.totalBatches);
+    const structure = req.body.structure
+      ? JSON.parse(req.body.structure)
+      : null;
+
+    // Create a map of filename -> path from the structure
+    const filePaths = new Map<string, string>();
+    const collectPaths = (node: any) => {
+      if (node.type === 'file') filePaths.set(node.name, node.path);
+      node.children?.forEach(collectPaths);
+    };
+    if (structure) collectPaths(structure);
+
+    // Map files using the lookup map
+    const filesToProcess = (req.files as Express.Multer.File[]).map((f) => ({
+      name: f.originalname,
+      path: filePaths.get(f.originalname) || f.originalname,
+      buffer: f.buffer,
+    }));
 
     console.log(
-      `Processing batch ${batchIndex}/${totalBatches} with ${files.length} files`,
+      `Processing batch ${batchIndex}/${totalBatches} with ${filesToProcess.length} files`,
     );
 
     const processedFiles = [];
     const failedFiles = [];
 
-    for (const fileData of files) {
+    for (const fileData of filesToProcess) {
       try {
-        // Convert base64 content back to a buffer
-        const buffer = Buffer.from(fileData.content, 'base64');
-
         // Use the advanced converter to get text from buffer
-        const { text } = await convertDocViaHtmlToTxtAdvanced(
-          buffer,
-          fileData.name,
-        );
+        const docExtractor = new DocumentExtractor();
+
+        const text = await docExtractor.extractText({
+          fileBuffer: fileData.buffer,
+          fileName: fileData.name,
+        });
 
         processedFiles.push({
           name: appendExtension(fileData.name, '.txt'),
@@ -379,8 +405,8 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
 };
 
 export {
+  postConvertSpreadsheetToStatic,
+  postDocumentToSlice,
   postDocumentToText,
   postTextToIndex,
-  postDocumentToSlice,
-  postConvertSpreadsheetToStatic,
 };

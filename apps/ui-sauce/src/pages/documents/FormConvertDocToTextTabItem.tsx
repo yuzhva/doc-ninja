@@ -27,22 +27,21 @@ const FormConvertDocToTextTabItem = ({
         validationMessage:
           'Please select both source and output folders first.',
         successMessage: 'Successfully converted documents to text!',
-        subfolderPath: '.nlp-ninja/txt',
+        subfolderPath: formDataJSON.subfolderPath || 'doc-to-text',
       })(async (batch, batchIndex, totalBatches, structure) => {
+        const formData = new FormData();
+        formData.append('batchIndex', String(batchIndex));
+        formData.append('totalBatches', String(totalBatches));
+        formData.append('structure', JSON.stringify(structure));
+
+        batch.forEach((f) => {
+          const blob = new Blob([f.content]);
+          formData.append('files', blob, f.item.name);
+        });
+
         return fetchRequest('/api-local/convert/doc-to-text', {
           method: 'POST',
-          body: JSON.stringify({
-            batchIndex,
-            totalBatches,
-            structure,
-            files: batch.map((f) => ({
-              path: f.item.path,
-              name: f.item.name,
-              content: f.content,
-              size: f.item.size,
-              modifiedAt: f.item.modifiedAt,
-            })),
-          }),
+          body: formData,
         });
       });
     },
@@ -54,42 +53,74 @@ const FormConvertDocToTextTabItem = ({
   );
 
   return (
-    <form
-      className="max-w-sm mx-auto"
-      onSubmit={initSubmitHandler(postConvertDocToText)}
+    <div
+      className="max-w-lg mx-auto flex rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800 flex-col"
+      data-testid="flowbite-card"
     >
-      <FormInputFileSelect
-        id="sourceFolder"
-        name="sourceFolder"
-        label="Початкова папка з документами"
-        onClick={handleSourceDirectorySelect}
-        selectedItem={sourceDirectoryHandle}
-        isFileSystemAccessSupported={isFileSystemAccessSupported}
-        icon="folder"
-      />
-      <FormInputFileSelect
-        id="outputFolder"
-        name="outputFolder"
-        label="Кінцева папка для збереження текстових файлів"
-        onClick={handleOutputDirectorySelect}
-        selectedItem={outputDirectoryHandle}
-        isFileSystemAccessSupported={isFileSystemAccessSupported}
-        icon="folder"
-      />
-      <ProcessingButton
-        type="submit"
-        isLoading={isProcessing}
-        disabled={!sourceDirectoryHandle || !outputDirectoryHandle}
-      >
-        {isProcessing
-          ? `Конвертую... (${progress.current}/${progress.total})`
-          : 'Конвертувати Документи в Текст'}
-      </ProcessingButton>
-      <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-        💡 Конвертовані файли будуть збережені в папці ".nlp-ninja/txt"
-        всередині вибраної папки.
+      <div className="flex h-full flex-col justify-center gap-4 p-6">
+        <h3 className="mb-4 text-xl font-bold dark:text-white">
+          Конвертація Документів в Текст
+        </h3>
+        <form onSubmit={initSubmitHandler(postConvertDocToText)}>
+          <div className="grid gap-4 mb-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <FormInputFileSelect
+                id="sourceFolder"
+                name="sourceFolder"
+                label="Початкова папка з документами"
+                onClick={handleSourceDirectorySelect}
+                selectedItem={sourceDirectoryHandle}
+                isFileSystemAccessSupported={isFileSystemAccessSupported}
+                icon="folder"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <FormInputFileSelect
+                id="outputFolder"
+                name="outputFolder"
+                label="Кінцева папка для збереження текстових файлів"
+                onClick={handleOutputDirectorySelect}
+                selectedItem={outputDirectoryHandle}
+                isFileSystemAccessSupported={isFileSystemAccessSupported}
+                icon="folder"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label
+                htmlFor="subfolderPath"
+                className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+              >
+                Назва підпапки
+              </label>
+              <input
+                id="subfolderPath"
+                name="subfolderPath"
+                className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                placeholder="doc-to-text"
+                defaultValue="doc-to-text"
+                type="text"
+              />
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <ProcessingButton
+              type="submit"
+              isLoading={isProcessing}
+              disabled={!sourceDirectoryHandle || !outputDirectoryHandle}
+            >
+              {isProcessing
+                ? `Конвертую... (${progress.current}/${progress.total})`
+                : 'Конвертувати Документи в Текст'}
+            </ProcessingButton>
+            <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              💡 Конвертовані файли будуть збережені в папці "doc-to-text"
+              всередині вибраної папки.
+            </div>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   );
 };
 

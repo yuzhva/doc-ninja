@@ -1,4 +1,8 @@
-export { createMegaSearch, MegaSearch } from './mega-search/index.mjs';
+export {
+  createMegaSearch,
+  DocumentExtractor,
+  MegaSearch,
+} from './mega-search/index.mjs';
 export type { PaginatedSearchResult } from './mega-search/index.mjs';
 export { createNLPAnalyzer } from './nlp-analyzer/index.mjs';
 export type {

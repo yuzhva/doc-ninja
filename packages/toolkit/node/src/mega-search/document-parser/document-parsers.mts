@@ -3,33 +3,41 @@ import * as path from 'path';
 import { promisify } from 'util';
 import * as zlib from 'zlib';
 
+import type { DocumentInput } from './document-parsers.utils.mjs';
+import { getBufferFromInput, getExtension } from './document-parsers.utils.mjs';
+
 interface DocumentParser {
-  canHandle(filePath: string): boolean;
-  extractText(filePath: string): Promise<string>;
+  canHandle(input: DocumentInput): boolean;
+  extractText(input: DocumentInput): Promise<string>;
 }
 
 class TextParser implements DocumentParser {
-  canHandle(filePath: string): boolean {
-    return path.extname(filePath).toLowerCase() === '.txt';
+  canHandle(input: DocumentInput): boolean {
+    return getExtension(input) === '.txt';
   }
 
-  async extractText(filePath: string): Promise<string> {
-    return await promisify(fs.readFile)(filePath, 'utf8');
+  async extractText(input: DocumentInput): Promise<string> {
+    const buffer = await getBufferFromInput(input);
+    return buffer.toString('utf8');
   }
 }
 
 class DocxParser implements DocumentParser {
-  canHandle(filePath: string): boolean {
-    return path.extname(filePath).toLowerCase() === '.docx';
+  canHandle(input: DocumentInput): boolean {
+    return getExtension(input) === '.docx';
   }
 
-  async extractText(filePath: string): Promise<string> {
+  async extractText(input: DocumentInput): Promise<string> {
+    const sourceName =
+      input.fileName ||
+      (input.filePath ? path.basename(input.filePath) : 'buffer');
+
     try {
-      const buffer = await promisify(fs.readFile)(filePath);
+      const buffer = await getBufferFromInput(input);
       return await this.parseDocxBuffer(buffer);
     } catch (error) {
       console.error(
-        `DOCX extraction failed for ${path.basename(filePath)}:`,
+        `DOCX extraction failed for ${sourceName}:`,
         error instanceof Error ? error.message : String(error),
       );
       throw new Error(
@@ -70,8 +78,8 @@ class DocxParser implements DocumentParser {
     try {
       // Simple ZIP parser - find central directory
       const endOfCentralDir = this.findEndOfCentralDirectory(buffer);
-      if (!endOfCentralDir) {
-        throw new Error('Invalid ZIP file structure');
+      if (endOfCentralDir === null) {
+        throw new Error('Invalid ZIP file structure (EOCD not found)');
       }
 
       const centralDirOffset = buffer.readUInt32LE(endOfCentralDir + 16);
@@ -108,8 +116,20 @@ class DocxParser implements DocumentParser {
   }
 
   private findEndOfCentralDirectory(buffer: Buffer): number | null {
+    // OPTIMIZATION: We limit scan to the last ~66KB. This avoids scanning the whole file
+    // and reduces false positives from compressed data matching the signature.
     // Search for End of Central Directory signature (0x06054b50) from the end
-    for (let i = buffer.length - 22; i >= 0; i--) {
+    // The EOCD record is at least 22 bytes.
+    // Comment length is the last 2 bytes. Max comment length is 65535.
+    // So we scan the last 65535 + 22 bytes.
+    const minEOCDLength = 22;
+    const maxCommentLength = 65535;
+    const scanStart = Math.max(
+      0,
+      buffer.length - minEOCDLength - maxCommentLength,
+    );
+
+    for (let i = buffer.length - minEOCDLength; i >= scanStart; i--) {
       if (buffer.readUInt32LE(i) === 0x06054b50) {
         return i;
       }
@@ -118,9 +138,15 @@ class DocxParser implements DocumentParser {
   }
 
   private parseCentralDirectoryEntry(buffer: Buffer, offset: number): any {
+    if (offset + 46 > buffer.length) return null; // Out of bounds
+
     if (buffer.readUInt32LE(offset) !== 0x02014b50) {
       return null; // Invalid central directory signature
     }
+
+    // Read compressed size from Central Directory (offset 20)
+    // This is more reliable than Local Header which might be 0 if Data Descriptor is used
+    const compressedSize = buffer.readUInt32LE(offset + 20);
 
     const filenameLength = buffer.readUInt16LE(offset + 28);
     const extraFieldLength = buffer.readUInt16LE(offset + 30);
@@ -134,7 +160,12 @@ class DocxParser implements DocumentParser {
     );
 
     // Read local file header to get actual file data
-    const fileData = this.extractFileData(buffer, localHeaderOffset);
+    // Pass compressedSize from CD
+    const fileData = this.extractFileData(
+      buffer,
+      localHeaderOffset,
+      compressedSize,
+    );
 
     return {
       filename,
@@ -144,18 +175,34 @@ class DocxParser implements DocumentParser {
     };
   }
 
-  private extractFileData(buffer: Buffer, localHeaderOffset: number): Buffer {
+  private extractFileData(
+    buffer: Buffer,
+    localHeaderOffset: number,
+    compressedSize: number,
+  ): Buffer {
+    if (localHeaderOffset + 30 > buffer.length) {
+      throw new Error('Local header offset out of bounds');
+    }
+
     if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
       throw new Error('Invalid local file header');
     }
 
     const compressionMethod = buffer.readUInt16LE(localHeaderOffset + 8);
-    const compressedSize = buffer.readUInt32LE(localHeaderOffset + 18);
+    // We ignore compressedSize from local header (offset 18) as it might be 0
+
     const filenameLength = buffer.readUInt16LE(localHeaderOffset + 26);
     const extraFieldLength = buffer.readUInt16LE(localHeaderOffset + 28);
 
     const dataOffset =
       localHeaderOffset + 30 + filenameLength + extraFieldLength;
+
+    if (dataOffset + compressedSize > buffer.length) {
+      throw new Error(
+        `Compressed data out of bounds (Offset: ${dataOffset}, Size: ${compressedSize}, Buffer: ${buffer.length})`,
+      );
+    }
+
     const compressedData = buffer.subarray(
       dataOffset,
       dataOffset + compressedSize,
@@ -164,7 +211,13 @@ class DocxParser implements DocumentParser {
     // Decompress if needed
     if (compressionMethod === 8) {
       // DEFLATE
-      return zlib.inflateRawSync(compressedData);
+      try {
+        return zlib.inflateRawSync(compressedData);
+      } catch (e) {
+        throw new Error(
+          `Decompression failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
     } else if (compressionMethod === 0) {
       // No compression
       return compressedData;
@@ -234,26 +287,27 @@ class DocParser implements DocumentParser {
   private static readonly MAX_FORMATTING_CODE_RATIO = 0.3;
   private static readonly CHUNK_SIZE = 1024;
 
-  canHandle(filePath: string): boolean {
-    return path.extname(filePath).toLowerCase() === '.doc';
+  canHandle(input: DocumentInput): boolean {
+    return getExtension(input) === '.doc';
   }
 
-  async extractText(filePath: string): Promise<string> {
+  async extractText(input: DocumentInput): Promise<string> {
+    const sourceName =
+      input.fileName ||
+      (input.filePath ? path.basename(input.filePath) : 'buffer');
     try {
-      const buffer = await promisify(fs.readFile)(filePath);
+      const buffer = await getBufferFromInput(input);
       const text = this.parseDocBinary(buffer);
 
       if (!text || text.trim().length === 0) {
-        console.warn(
-          `No readable text found in DOC file: ${path.basename(filePath)}`,
-        );
+        console.warn(`No readable text found in DOC file: ${sourceName}`);
         return '';
       }
 
       return text;
     } catch (error) {
       console.error(
-        `DOC extraction failed for ${path.basename(filePath)}:`,
+        `DOC extraction failed for ${sourceName}:`,
         error instanceof Error ? error.message : String(error),
       );
       throw new Error(
@@ -485,28 +539,33 @@ class DocumentExtractor {
     new DocParser(),
   ];
 
-  async extractText(filePath: string): Promise<string> {
+  async extractText(input: DocumentInput): Promise<string> {
+    const sourceName =
+      input.fileName ||
+      (input.filePath ? path.basename(input.filePath) : 'buffer');
+
     try {
-      const parser = this.parsers.find((p) => p.canHandle(filePath));
+      const parser = this.parsers.find((p) => p.canHandle(input));
 
       if (!parser) {
-        throw new Error(
-          `No parser available for file extension: ${path.extname(filePath)}`,
-        );
+        const ext = getExtension(input) || 'unknown';
+        throw new Error(`No parser available for file extension: ${ext}`);
       }
 
-      // Check if file exists and is readable
-      try {
-        await promisify(fs.access)(filePath, fs.constants.R_OK);
-      } catch (accessError) {
-        throw new Error(`File is not accessible: ${filePath}`);
+      // Check if file exists and is readable ONLY if path is provided AND buffer is missing
+      if (input.filePath && !input.fileBuffer) {
+        try {
+          await promisify(fs.access)(input.filePath, fs.constants.R_OK);
+        } catch (accessError) {
+          throw new Error(`File is not accessible: ${input.filePath}`);
+        }
       }
 
-      const text = await parser.extractText(filePath);
+      const text = await parser.extractText(input);
       return text || ''; // Ensure we always return a string
     } catch (error) {
       console.error(
-        `Text extraction failed for ${path.basename(filePath)}:`,
+        `Text extraction failed for ${sourceName}:`,
         error instanceof Error ? error.message : String(error),
       );
       throw new Error(
@@ -526,4 +585,4 @@ class DocumentExtractor {
 
 export { DocParser, DocumentExtractor, DocxParser, TextParser };
 
-export type { DocumentParser };
+export type { DocumentInput, DocumentParser };

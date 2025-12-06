@@ -1,5 +1,5 @@
 import { BM25Scorer } from './bm25-scorer.mjs';
-import { DocumentExtractor } from './document-parsers.mjs';
+import { DocumentExtractor } from './document-parser/document-parsers.mjs';
 import { FileIndexer } from './file-indexer.mjs';
 import { levenshtein } from './fuzzy.mjs';
 import { createLogger } from './shared/logger.mjs';

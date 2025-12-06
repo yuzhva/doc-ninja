@@ -5,6 +5,9 @@ import * as path from 'path';
 import { promisify } from 'util';
 import WordExtractor from 'word-extractor';
 
+import type { DocumentInput } from './document-parsers.utils.mjs';
+import { getBufferFromInput, getExtension } from './document-parsers.utils.mjs';
+
 interface ExtractionResult {
   text: string;
   originalPath: string;
@@ -19,28 +22,32 @@ class DocumentExtractor {
   /**
    * Extract text from a document file
    */
-  async extractText(filePath: string): Promise<string> {
-    const ext = path.extname(filePath).toLowerCase();
+  async extractText(input: DocumentInput): Promise<string> {
+    const ext = getExtension(input);
 
     if (!this.supportedExtensions.has(ext)) {
       throw new Error(`Unsupported file type: ${ext}`);
     }
 
+    const sourceName =
+      input.fileName ||
+      (input.filePath ? path.basename(input.filePath) : 'buffer');
+
     try {
       switch (ext) {
         case '.docx':
-          return await this.extractFromDocx(filePath);
+          return await this.extractFromDocx(input);
         case '.doc':
-          return await this.extractFromDoc(filePath);
+          return await this.extractFromDoc(input);
         case '.txt':
         case '.md':
-          return await this.extractFromText(filePath);
+          return await this.extractFromText(input);
         default:
           throw new Error(`No handler for file type: ${ext}`);
       }
     } catch (error) {
       throw new Error(
-        `Failed to extract text from ${path.basename(filePath)}: ${
+        `Failed to extract text from ${sourceName}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -50,17 +57,17 @@ class DocumentExtractor {
   /**
    * Extract text from .docx files using mammoth
    */
-  private async extractFromDocx(filePath: string): Promise<string> {
+  private async extractFromDocx(input: DocumentInput): Promise<string> {
     try {
-      const buffer = await promisify(fs.readFile)(filePath);
+      const buffer = await getBufferFromInput(input);
       const result = await mammoth.extractRawText({ buffer });
 
       if (result.messages.length > 0) {
+        const sourceName =
+          input.fileName ||
+          (input.filePath ? path.basename(input.filePath) : 'buffer');
         // Log warnings but don't fail
-        console.warn(
-          `Mammoth warnings for ${path.basename(filePath)}:`,
-          result.messages,
-        );
+        console.warn(`Mammoth warnings for ${sourceName}:`, result.messages);
       }
 
       return result.value || '';
@@ -74,7 +81,7 @@ class DocumentExtractor {
   /**
    * Extract text from .doc files using word-extractor
    */
-  private async extractFromDoc(filePath: string): Promise<string> {
+  private async extractFromDoc(input: DocumentInput): Promise<string> {
     if (!WordExtractor) {
       throw new Error(
         'word-extractor library not available for .doc files. Please install: npm install word-extractor',
@@ -83,7 +90,8 @@ class DocumentExtractor {
 
     try {
       const extractor = new WordExtractor();
-      const extracted = await extractor.extract(filePath);
+      const buffer = await getBufferFromInput(input);
+      const extracted = await extractor.extract(buffer);
       return extracted.getBody() || '';
     } catch (error) {
       throw new Error(
@@ -95,9 +103,10 @@ class DocumentExtractor {
   /**
    * Extract text from plain text files
    */
-  private async extractFromText(filePath: string): Promise<string> {
+  private async extractFromText(input: DocumentInput): Promise<string> {
     try {
-      return await promisify(fs.readFile)(filePath, 'utf8');
+      const buffer = await getBufferFromInput(input);
+      return buffer.toString('utf8');
     } catch (error) {
       throw new Error(
         `Text file reading failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -112,7 +121,7 @@ class DocumentExtractor {
     filePath: string,
     outputDir?: string,
   ): Promise<ExtractionResult> {
-    const text = await this.extractText(filePath);
+    const text = await this.extractText({ filePath });
 
     // Generate output path with .txt extension
     const baseName = path.basename(filePath, path.extname(filePath));
@@ -157,7 +166,7 @@ class DocumentExtractor {
 
     const promises = filePaths.map(async (filePath) => {
       try {
-        const text = await this.extractText(filePath);
+        const text = await this.extractText({ filePath });
         results.set(filePath, text);
       } catch (error) {
         console.error(`Failed to extract ${filePath}:`, error);
@@ -192,4 +201,4 @@ class DocumentExtractor {
   }
 }
 
-export { DocumentExtractor, ExtractionResult };
+export { DocumentExtractor, DocumentInput, ExtractionResult };

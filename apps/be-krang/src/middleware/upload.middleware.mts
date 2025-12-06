@@ -11,14 +11,17 @@ const handleMultipart = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Configure multer for file uploads
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
-  }
+    fileSize: 100 * 1024 * 1024, // 100MB limit
+  },
 });
 
 // Specific middleware for single file upload
 const uploadSingle = upload.single('file');
 
-export { handleMultipart, uploadSingle };
+// Specific middleware for single file upload
+const uploadMultiple = upload.array('files');
+
+export { handleMultipart, uploadSingle, uploadMultiple };

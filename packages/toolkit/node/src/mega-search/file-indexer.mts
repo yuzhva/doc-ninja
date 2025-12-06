@@ -4,7 +4,7 @@ import * as path from 'path';
 import { promisify } from 'util';
 import * as zlib from 'zlib';
 
-import { DocumentExtractor } from './document-parsers.mjs';
+import { DocumentExtractor } from './document-parser/index.mjs';
 import { LRUCache } from './lru-cache.mjs';
 import { scanDirectory } from './shared/file-utils.mjs';
 import { createLogger } from './shared/logger.mjs';
@@ -80,7 +80,7 @@ class FileIndexer {
         }
 
         // Extract and cache
-        const text = await this.documentExtractor.extractText(filePath);
+        const text = await this.documentExtractor.extractText({ filePath });
 
         // Save to cache file
         await promisify(fs.writeFile)(txtPath, text, 'utf8');
@@ -95,7 +95,7 @@ class FileIndexer {
         );
 
         // Fallback to direct extraction
-        const text = await this.documentExtractor.extractText(filePath);
+        const text = await this.documentExtractor.extractText({ filePath });
         this.textLRU.set(filePath, text);
         return text;
       }
