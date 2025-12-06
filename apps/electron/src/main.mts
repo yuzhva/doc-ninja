@@ -38,40 +38,62 @@ const createWindow = () => {
 
 electronApp.whenReady().then(() => {
   // Handle IPC calls from the React UI
-  ipcMain.handle('api-request', async (event, { method, path, body }) => {
-    // Use supertest to make an "in-memory" request to your Express app
-    /*
-    let requestBuilder = request(expressApp)[method.toLowerCase()](path);
-    // Handle body based on content type
-    if (body) {
-      if (typeof body === 'string') {
-        // If body is a JSON string, parse it and set proper headers
-        try {
-          const parsedBody = JSON.parse(body);
-          requestBuilder = requestBuilder.send(parsedBody);
-        } catch (e) {
-          // If it's not valid JSON, send as text
-          requestBuilder = requestBuilder.send(body);
+  ipcMain.handle(
+    'api-request',
+    async (event, { method, path, body, electronAPIMeta }) => {
+      // Use supertest to make an "in-memory" request to your Express app
+      const req = request(expressApp)[method.toLowerCase()](path);
+
+      /**
+       * !IMPORTANT: body is serialized by {serializeElectronIPCBody} in Front-End application
+       *
+       * If you pass a FormData object to window.electronAPI.fetch(...), the preload script receives an empty object {} instead of the form data.
+       * This happens because FormData is not "cloneable" by the structured clone algorithm used by Electron's IPC.
+       *
+       * Why it must stay in the Frontend
+       * You must convert the FormData into a plain JavaScript object (JSON-serializable) before it crosses the bridge.
+       * That is why the serialization logic lives in fetchRequest.ts inside the React app.
+       */
+      if (electronAPIMeta?.isMultipart) {
+        // Reconstruct multipart request for supertest
+
+        // 1. Attach files
+        if (body.files) {
+          for (const file of body.files) {
+            if (file.path) {
+              // Option A: Stream from disk (Best for performance)
+              req.attach(file.key, file.path, {
+                filename: file.name,
+                contentType: file.type,
+              });
+            } else if (file.data) {
+              // Option B: Buffer fallback (If path is missing)
+              req.attach(file.key, Buffer.from(file.data), {
+                filename: file.name,
+                contentType: file.type,
+              });
+            }
+          }
         }
-      } else if (body instanceof FormData) {
-        // Handle FormData for file uploads
-        requestBuilder = requestBuilder.send(body);
+
+        // 2. Attach text fields
+        if (body.fieldByName) {
+          for (const [key, value] of Object.entries(body.fieldByName)) {
+            req.field(key, value as string);
+          }
+        }
       } else {
-        // Handle objects directly
-        requestBuilder = requestBuilder.send(body);
+        const bodyAsJSON = JSON.parse(body);
+
+        req.send(bodyAsJSON);
       }
-    }
 
-    const response = await requestBuilder;
-    */
+      const response = await req;
 
-    const response = await request(expressApp)
-      [method.toLowerCase()](path)
-      .send(body);
-
-    // Return the response body and status to the UI
-    return { status: response.status, body: response.body };
-  });
+      // Return the response body and status to the UI
+      return { status: response.status, body: response.body };
+    },
+  );
 
   createWindow();
 
