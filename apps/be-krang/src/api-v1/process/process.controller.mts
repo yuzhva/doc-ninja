@@ -33,7 +33,6 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       await InformationExtractor.extractSearchResults(searchResults);
 
     // Generate Excel report
-    const reportFilename = `document-intelligence-report-${new Date().toISOString().split('T')[0]}.xlsx`;
     const reportRows = extractedResults.map((extractedResult) => ({
       inputName: extractedResult.searchQuery,
       foundInDocument: extractedResult.foundInDocument,
@@ -51,18 +50,34 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       // TODO:
       confidence: '',
     }));
-    const reportPath = await excelReportGenerator.generateReport(
-      reportRows,
-      reportFilename,
-    );
+
+    // Generate report
+    const { reportBuffer, reportFilename } =
+      await excelReportGenerator.generateReport(
+        reportRows,
+        req.body.outputFileName,
+      );
+
+    const processedFiles = [
+      {
+        name: reportFilename,
+        content: reportBuffer.toString('base64'),
+        relativePath: reportFilename,
+        originalPath: reportFilename,
+      },
+    ];
 
     res.status(StatusCodes.OK).json({
-      success: true,
-      totalQueries: queries.length,
+      batchIndex: 1,
+      totalBatches: 1,
+      processedFiles,
+      failedFiles: [],
+      summary: {
+        processed: processedFiles.length,
+        failed: 0,
+      },
       results: searchResults,
       extractedResults,
-      reportPath,
-      reportFilename,
     });
   } catch (error) {
     console.error('Process documents error:', error);

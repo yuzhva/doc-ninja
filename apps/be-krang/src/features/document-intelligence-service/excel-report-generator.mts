@@ -1,8 +1,4 @@
-import fs from 'fs/promises';
-import path from 'path';
 import * as XLSX from 'xlsx';
-
-import { runtimePathById } from '../../supplement/index.mts';
 
 interface ExcelReportData {
   inputName: string;
@@ -26,18 +22,20 @@ class ExcelReportGenerator {
    */
   async generateReport(
     reportRows: ExcelReportData[],
-    filename: string = 'document-intelligence-report.xlsx',
-  ): Promise<string> {
+    filename?: string,
+  ): Promise<{ reportBuffer: Buffer; reportFilename: string }> {
     console.log(
       `📊 Generating Excel report from ${reportRows.length} data rows...`,
     );
 
     // Generate Excel workbook
-    const outputPath = await this.createExcelWorkbook(reportRows, filename);
+    const defaultFilename = `dis-report-${new Date().toISOString().split('T')[0]}`;
+    const reportFilename = `${filename || defaultFilename}.xlsx`;
+    const reportBuffer = await this.createExcelWorkbook(reportRows);
 
-    console.log(`📋 Excel report saved: ${outputPath}`);
+    console.log(`📋 Excel report generated (${reportBuffer.length} bytes)`);
 
-    return outputPath;
+    return { reportBuffer, reportFilename };
   }
 
   /**
@@ -45,16 +43,9 @@ class ExcelReportGenerator {
    */
   private async createExcelWorkbook(
     reportRows: ExcelReportData[],
-    filename: string,
-  ): Promise<string> {
+  ): Promise<Buffer> {
     console.log(
       `📊 Generating enhanced Excel workbook with complete match details...`,
-    );
-
-    const outputPath = path.join(
-      runtimePathById.assets,
-      'nlp-output',
-      filename,
     );
 
     // Prepare worksheet data
@@ -136,13 +127,10 @@ class ExcelReportGenerator {
 
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Intelligence Results');
 
-    // Ensure output directory exists
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    // Write to buffer
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-    // Write the file
-    XLSX.writeFile(workbook, outputPath);
-
-    return outputPath;
+    return buffer;
   }
 }
 

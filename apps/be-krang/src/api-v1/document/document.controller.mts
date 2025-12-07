@@ -339,8 +339,9 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
 
     try {
       const sliceDocumentForChunks =
-        sliceDocumentForChunksViaExcelJs ||
-        sliceDocumentForChunksViaPythonScript;
+        req.body.isFasterLessStyledChunkerUsed === 'true'
+          ? sliceDocumentForChunksViaExcelJs
+          : sliceDocumentForChunksViaPythonScript;
       const chunkFiles = await sliceDocumentForChunks({
         buffer,
         originalFileName: fileName,

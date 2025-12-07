@@ -25,6 +25,7 @@ const FormChunkSpreadsheetTabItem = ({
     maxColumnsToInclude: 17,
     filenameSuffix: '',
     outputSubfolder: 'chunks',
+    isFasterLessStyledChunkerUsed: true,
     additionalSheets: [
       {
         id: Date.now(),
@@ -121,6 +122,10 @@ const FormChunkSpreadsheetTabItem = ({
           formState.maxColumnsToInclude.toString(),
         );
         formData.append('filenameSuffix', formState.filenameSuffix);
+        formData.append(
+          'isFasterLessStyledChunkerUsed',
+          formState.isFasterLessStyledChunkerUsed.toString(),
+        );
 
         // Prepare additional sheets data (remove id field for API)
         const apiAdditionalSheets = formState.additionalSheets.map((sheet) => ({
@@ -146,6 +151,8 @@ const FormChunkSpreadsheetTabItem = ({
           splitColumnPosition: formState.splitColumnPosition,
           maxColumnsToInclude: formState.maxColumnsToInclude,
           filenameSuffix: formState.filenameSuffix,
+          isFasterLessStyledChunkerUsed:
+            formState.isFasterLessStyledChunkerUsed,
           additionalSheets: apiAdditionalSheets,
         });
 
@@ -245,7 +252,7 @@ const FormChunkSpreadsheetTabItem = ({
                 </label>
                 {/*
                 <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  Дії
+                  Режим
                 </label>
                 */}
               </div>
@@ -304,7 +311,34 @@ const FormChunkSpreadsheetTabItem = ({
                   }
                   required
                 />
-                <div className="flex gap-2">{/* Empty for alignment */}</div>
+                <div className="flex items-center h-[42px] w-full">
+                  <label
+                    className="relative inline-flex items-center cursor-pointer"
+                    title="Використовувати Python для нарізки (ExcelJS альтернатива)"
+                  >
+                    <input
+                      type="checkbox"
+                      name="isFasterLessStyledChunkerUsed"
+                      checked={formState.isFasterLessStyledChunkerUsed}
+                      onChange={(e) =>
+                        updatePrimarySheet(
+                          'isFasterLessStyledChunkerUsed',
+                          e.target.checked,
+                        )
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                  </label>
+                  <div className="flex flex-col ml-3">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white leading-tight">
+                      Швидка нарізка
+                    </div>
+                    <div className="text-xs font-normal text-gray-500 dark:text-gray-400 leading-tight">
+                      менше стилів
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Additional sheets section */}
