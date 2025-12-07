@@ -7,8 +7,10 @@ import path from 'path';
 import { DocumentExtractor } from 'toolkit--local/node';
 import { fileURLToPath } from 'url';
 
-import { sliceDocumentForChunksViaExcelJs } from '../../features/doc-to-chunks/doc-to-chunks.exceljs.mts';
-import { sliceDocumentForChunksViaPythonScript } from '../../features/doc-to-chunks/doc-to-chunks.mts';
+import {
+  sliceDocumentForChunksViaExcelJs,
+  sliceDocumentForChunksViaPythonScript,
+} from '../../features/doc-to-chunks/index.mts';
 import {
   appendExtension,
   replaceExtension,
