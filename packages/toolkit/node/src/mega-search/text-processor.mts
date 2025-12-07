@@ -51,7 +51,12 @@ class UkrainianTextProcessor {
   }
 
   private isStopWord(word: string): boolean {
-    return ukrainianStopWords.has(word) || englishStopWords.has(word);
+    const stemmed = this.stemWord(word);
+
+    if (this.ukrainianAlphabet.test(word)) {
+      return ukrainianStopWords.has(stemmed);
+    }
+    return englishStopWords.has(stemmed);
   }
 
   stemWord(word: string): string {
@@ -62,36 +67,6 @@ class UkrainianTextProcessor {
       return stemEnglish(word);
     }
     return word;
-  }
-
-  generateVariants(word: string): string[] {
-    const variants = new Set<string>();
-    variants.add(word);
-    variants.add(this.stemWord(word));
-
-    if (this.ukrainianAlphabet.test(word)) {
-      // Add Ukrainian word variations
-      if (word.endsWith('ий')) {
-        variants.add(word.slice(0, -2) + 'ого');
-        variants.add(word.slice(0, -2) + 'ому');
-      }
-    } else if (this.englishAlphabet.test(word)) {
-      // Add English word variations
-      if (word.endsWith('y')) {
-        variants.add(word.slice(0, -1) + 'ies');
-      }
-      if (
-        !word.endsWith('s') &&
-        !word.endsWith('sh') &&
-        !word.endsWith('ch') &&
-        !word.endsWith('x') &&
-        !word.endsWith('z')
-      ) {
-        variants.add(word + 's');
-      }
-    }
-
-    return Array.from(variants);
   }
 
   detectLanguage(text: string): 'ukrainian' | 'english' | 'mixed' {
