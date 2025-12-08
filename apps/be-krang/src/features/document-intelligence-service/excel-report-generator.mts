@@ -71,10 +71,12 @@ class ExcelReportGenerator {
     // Add data rows
     let prevInputName = reportRows[0]?.inputName;
     for (const match of reportRows) {
+      /*
       if (prevInputName !== match.inputName) {
         data.push([]);
         prevInputName = match.inputName;
       }
+      */
 
       data.push([
         match.inputName,

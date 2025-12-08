@@ -42,40 +42,22 @@ class InformationExtractor {
   private static commandTypeRules: CommandTypeRule[] | null = null;
 
   private static async loadRules(): Promise<void> {
+    if (this.statusRules && this.commandTypeRules) return;
+
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const rulesPath = path.join(__dirname, 'extraction-rules.json');
 
-    // Load Status Rules
-    if (!this.statusRules) {
-      try {
-        const rulesPath = path.join(__dirname, 'status-rules.json');
-        try {
-          await fs.access(rulesPath);
-          const content = await fs.readFile(rulesPath, 'utf-8');
-          this.statusRules = JSON.parse(content);
-        } catch (e) {
-          this.statusRules = [];
-        }
-      } catch (e) {
-        console.warn('Error initializing status rules:', e);
-        this.statusRules = [];
-      }
-    }
+    try {
+      await fs.access(rulesPath);
+      const content = await fs.readFile(rulesPath, 'utf-8');
+      const rules = JSON.parse(content);
 
-    // Load Command Type Rules
-    if (!this.commandTypeRules) {
-      try {
-        const rulesPath = path.join(__dirname, 'command-type-rules.json');
-        try {
-          await fs.access(rulesPath);
-          const content = await fs.readFile(rulesPath, 'utf-8');
-          this.commandTypeRules = JSON.parse(content);
-        } catch (e) {
-          this.commandTypeRules = [];
-        }
-      } catch (e) {
-        console.warn('Error initializing command type rules:', e);
-        this.commandTypeRules = [];
-      }
+      this.statusRules = rules.statusRules || [];
+      this.commandTypeRules = rules.commandTypeRules || [];
+    } catch (e) {
+      console.warn('Error initializing extraction rules:', e);
+      this.statusRules = this.statusRules || [];
+      this.commandTypeRules = this.commandTypeRules || [];
     }
   }
 
@@ -87,6 +69,11 @@ class InformationExtractor {
     const summaryWords = lowerSummary.split(/[\s,.;:!?()"]+/);
 
     for (const rule of this.statusRules) {
+      // Skip rules with empty keywords list
+      if (!rule.containsText || rule.containsText.length === 0) {
+        continue;
+      }
+
       // Check if all keywords in the rule are present in the summary
       if (
         rule.containsText.every((text) =>
@@ -116,6 +103,11 @@ class InformationExtractor {
     const summaryWords = lowerSummary.split(/[\s,.;:!?()"]+/);
 
     for (const rule of this.commandTypeRules) {
+      // Skip rules with empty keywords list
+      if (!rule.containsText || rule.containsText.length === 0) {
+        continue;
+      }
+
       if (
         rule.containsText.every((text) =>
           this.textContains(lowerSummary, summaryWords, text.toLowerCase()),

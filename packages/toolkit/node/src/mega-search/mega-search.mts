@@ -494,11 +494,23 @@ class MegaSearch {
         `Found ${totalResults} documents with ${totalMatches} total matches for query: "${query}"`,
       );
 
-      const totalPages = Math.ceil(totalResults / pageSize);
-      const startIndex = (page - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
+      let totalPages: number;
+      let startIndex: number;
+      let endIndex: number;
+      let effectivePageSize: number;
 
-      // Sort and paginate results
+      if (pageSize === 'ALL') {
+        totalPages = 1;
+        startIndex = 0;
+        endIndex = totalResults;
+        effectivePageSize = totalResults;
+      } else {
+        effectivePageSize = Number(pageSize) || 10;
+        totalPages = Math.ceil(totalResults / effectivePageSize);
+        startIndex = (page - 1) * effectivePageSize;
+        endIndex = startIndex + effectivePageSize;
+      }
+
       const sortStartTime = Date.now();
 
       // Pre-calculate dates if sorting by date to avoid repeated regex parsing inside sort (O(N) vs O(N log N))
@@ -589,9 +601,9 @@ class MegaSearch {
         totalPages,
         totalResults,
         totalMatches,
-        resultsPerPage: pageSize,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1,
+        resultsPerPage: effectivePageSize,
+        hasNextPage: pageSize === 'ALL' ? false : page < totalPages,
+        hasPreviousPage: pageSize === 'ALL' ? false : page > 1,
       };
 
       logger.debug(
@@ -844,7 +856,7 @@ class MegaSearch {
    */
   private createEmptyResult(
     page: number,
-    pageSize: number,
+    pageSize: number | 'ALL',
   ): PaginatedSearchResult {
     return {
       results: [],
@@ -853,7 +865,7 @@ class MegaSearch {
         totalPages: 0,
         totalResults: 0,
         totalMatches: 0,
-        resultsPerPage: pageSize,
+        resultsPerPage: pageSize === 'ALL' ? 0 : Number(pageSize) || 10,
         hasNextPage: false,
         hasPreviousPage: false,
       },

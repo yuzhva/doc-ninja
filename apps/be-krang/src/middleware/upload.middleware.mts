@@ -24,4 +24,4 @@ const uploadSingle = upload.single('file');
 // Specific middleware for single file upload
 const uploadMultiple = upload.array('files');
 
-export { handleMultipart, uploadSingle, uploadMultiple };
+export { handleMultipart, upload, uploadMultiple, uploadSingle };

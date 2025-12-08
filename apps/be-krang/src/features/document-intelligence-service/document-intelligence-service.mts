@@ -1,5 +1,9 @@
 import path from 'path';
-import type { MegaSearch, PaginatedSearchResult } from 'toolkit--local/node';
+import type {
+  MegaSearch,
+  PaginatedSearchResult,
+  SearchOptions,
+} from 'toolkit--local/node';
 import { createMegaSearch } from 'toolkit--local/node';
 
 import { runtimePathById } from '../../supplement/index.mts';
@@ -33,7 +37,10 @@ class DocumentIntelligenceService {
     return this.megaSearchInstance;
   }
 
-  async searchDocuments(queries: string[]): Promise<SearchResult[]> {
+  async searchDocuments(
+    queries: string[],
+    options: SearchOptions = {},
+  ): Promise<SearchResult[]> {
     const megaSearch = await this.getMegaSearchInstance();
     const results: SearchResult[] = [];
 
@@ -45,6 +52,7 @@ class DocumentIntelligenceService {
           fuzzyPhraseMaxDistance: 1,
           snippetsLimit: 'ALL',
           sortBy: 'date',
+          ...options, // Merge passed options, overriding defaults if provided
         });
 
         results.push({
