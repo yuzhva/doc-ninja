@@ -1,3 +1,4 @@
+import { levenshtein } from './fuzzy.mjs';
 import { getDocumentToken } from './mega-search.utils.mjs';
 import { UkrainianTextProcessor } from './text-processor.mjs';
 import { DocumentIndex, InvertedIndexEntry } from './types.mjs';
@@ -74,7 +75,19 @@ export class PhraseMatcher {
     // 1. Find all fuzzy matching terms for each query token
     const termCandidatesPerQueryToken = queryTokens.map((queryToken) => {
       const stem = this.textProcessor.stemWord(queryToken);
-      return stemDictionary.get(stem) || [];
+
+      const candidates: string[] = [];
+
+      // Scan stem dictionary for matches (fuzzy or prefix)
+      // This handles declensions where stemmer produces different stems (e.g. "фін" vs "фінів")
+      for (const dictStem of stemDictionary.keys()) {
+        if (this.isStemMatch(stem, dictStem, options.fuzzyThreshold)) {
+          const words = stemDictionary.get(dictStem);
+          if (words) candidates.push(...words);
+        }
+      }
+
+      return candidates;
     });
 
     // 2. Get document sets for each query token
@@ -140,6 +153,29 @@ export class PhraseMatcher {
     }
 
     return finalDocs;
+  }
+
+  private isStemMatch(
+    queryStem: string,
+    dictStem: string,
+    threshold: number,
+  ): boolean {
+    if (queryStem === dictStem) return true;
+
+    // 1. Levenshtein check
+    if (levenshtein(queryStem, dictStem) <= threshold) return true;
+
+    // 2. Prefix check for declensions (e.g. "фін" vs "фінів")
+    // Allow prefix match if length difference is small (e.g. <= 2 chars)
+    // This catches cases where stemmer chopped too much or too little
+    const lenDiff = Math.abs(queryStem.length - dictStem.length);
+    if (lenDiff <= 2) {
+      if (queryStem.startsWith(dictStem) || dictStem.startsWith(queryStem)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private findSequencesInPositions(
