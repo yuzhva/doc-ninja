@@ -1,7 +1,7 @@
 import express from 'express';
 
-import { uploadSingle } from '../../middleware/upload.middleware.mts';
-import * as ApiV1ProcessController from './process.controller.mts';
+import { uploadSingle } from '../../middleware/upload.middleware.mjs';
+import * as ApiV1ProcessController from './process.controller.mjs';
 
 const expressRouter = express.Router();
 

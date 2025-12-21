@@ -10,11 +10,11 @@ import { fileURLToPath } from 'url';
 import {
   sliceDocumentForChunksViaExcelJs,
   sliceDocumentForChunksViaPythonScript,
-} from '../../features/doc-to-chunks/index.mts';
+} from '../../features/doc-to-chunks/index.mjs';
 import {
   appendExtension,
   replaceExtension,
-} from '../../supplement/file-extension-utils.mts';
+} from '../../supplement/file-extension-utils.mjs';
 
 interface BatchRequest {
   batchIndex: number;

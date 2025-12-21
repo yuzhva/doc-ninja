@@ -1,1 +1,1 @@
-export * from './welcome.route.mts';
+export * from './welcome.route.mjs';

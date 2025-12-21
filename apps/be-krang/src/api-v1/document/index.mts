@@ -1,1 +1,1 @@
-export * from './document.route.mts';
+export * from './document.route.mjs';

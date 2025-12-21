@@ -1,8 +1,8 @@
 import express from 'express';
 
-import { DocumentRoute } from './document/index.mts';
-import { ProcessRoute } from './process/index.mts';
-import { WelcomeRoute } from './welcome/index.mts';
+import { DocumentRoute } from './document/index.mjs';
+import { ProcessRoute } from './process/index.mjs';
+import { WelcomeRoute } from './welcome/index.mjs';
 
 const expressRouter = express.Router();
 

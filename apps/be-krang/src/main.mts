@@ -3,7 +3,7 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { pathToFileURL } from 'url';
 
-import { apiV1Routes } from './api-v1/index.mts';
+import { apiV1Routes } from './api-v1/index.mjs';
 
 const app = express();
 const port = process.env.PORT || 3000;
