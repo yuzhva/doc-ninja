@@ -1,6 +1,6 @@
 {
   "extends": ["@mainset/dev-stack-fe/tsconfig--bundler"],
   "compilerOptions": {
-    "outDir": "./dist/esm"
+    "outDir": "./dist"
   }
 }

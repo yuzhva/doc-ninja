@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch ./src/main.mts",
-    "build:be": "tsc",
+    "build:be": "ms-cli source-code --exec compile",
     "serve": "node ./dist/main.mjs",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
     "doc:to-text": "tsx ./src/features/doc-to-text.mts",
@@ -14,6 +14,7 @@
     "nlp:demo--adaptive": "tsx ./src/examples/nlp--adaptive.example.mts"
   },
   "devDependencies": {
+    "@mainset/cli": "^0.3.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.5",
     "@types/node": "^24.8.1",
@@ -37,5 +38,5 @@
     "toolkit--local": "workspace:^",
     "xlsx": "^0.18.5"
   },
-  "packageManager": "pnpm@10.20.0"
+  "packageManager": "pnpm@10.26.1"
 }

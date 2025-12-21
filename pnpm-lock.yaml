@@ -69,6 +69,9 @@ importers:
         specifier: ^0.18.5
         version: 0.18.5
     devDependencies:
+      '@mainset/cli':
+        specifier: ^0.3.0
+        version: 0.3.0(@mainset/dev-stack-fe@0.2.0(cross-env@10.1.0)(eslint@9.39.1(jiti@2.6.1))(husky@9.1.7)(postcss@8.5.6)(prettier@3.6.2)(stylelint@16.25.0(typescript@5.9.3)))
       '@types/cookie-parser':
         specifier: ^1.4.10
         version: 1.4.10(@types/express@5.0.5)
@@ -198,15 +201,12 @@ importers:
         specifier: ^1.0.4
         version: 1.0.4
     devDependencies:
+      '@mainset/cli':
+        specifier: ^0.3.0
+        version: 0.3.0(@mainset/dev-stack-fe@0.2.0(cross-env@10.1.0)(eslint@9.39.1(jiti@2.6.1))(husky@9.1.7)(postcss@8.5.6)(prettier@3.6.2)(stylelint@16.25.0(typescript@5.9.3)))
       '@types/node':
         specifier: ^24.8.1
         version: 24.10.0
-      tsx:
-        specifier: ^4.20.6
-        version: 4.20.6
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
 packages:
 

@@ -26,5 +26,5 @@
     "autoprefixer": "^10.4.21",
     "cross-env": "^10.1.0"
   },
-  "packageManager": "pnpm@10.20.0"
+  "packageManager": "pnpm@10.26.1"
 }

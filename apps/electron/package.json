@@ -27,5 +27,6 @@
     "electron": "^39.0.0",
     "supertest": "^7.1.4",
     "typescript": "^5.9.3"
-  }
+  },
+  "packageManager": "pnpm@10.26.1"
 }
