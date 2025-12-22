@@ -1,4 +1,4 @@
-import { createNLPAnalyzer } from '../../src/index';
+import { createNLPAnalyzer } from '../../src/index.mjs';
 
 async function basicExample() {
   console.log('🚀 Starting Basic NLP Analyzer Example');
@@ -80,7 +80,7 @@ async function basicExample() {
       console.log('  Hit Rate:', cacheStats.hitRate.toFixed(1));
       console.log('  Size:', `${cacheStats.size}/${cacheStats.maxSize}`);
     }
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Analysis failed:', error.message);
 
     if (error.message.includes('local_files_only')) {

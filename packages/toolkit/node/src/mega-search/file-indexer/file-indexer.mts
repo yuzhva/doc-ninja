@@ -22,6 +22,13 @@ class FileIndexer {
   private invertedIndex = new InvertedIndex();
   private stemDictionary = new Map<string, Set<string>>();
   private documentLRU = new LRUCache<string, DocumentIndex>(50);
+  private searchCache?: {
+    termFrequencies: Map<string, number>;
+    documentLengths: Map<string, number>;
+    totalDocuments: number;
+    averageDocLength: number;
+    lastWarmed: number;
+  };
 
   private scanner: FileScanner;
   private processor: DocumentProcessor;
@@ -34,6 +41,14 @@ class FileIndexer {
     this.processor = new DocumentProcessor(this.config, this.logger);
     this.storage = new IndexStorage(this.config, this.logger, this.documentLRU);
     this.builder = new IndexBuilder(this.config, this.logger);
+  }
+
+  async discoverFiles(): Promise<DocumentMetadata[]> {
+    return this.scanner.discoverFiles();
+  }
+
+  async extractTextFromFile(filePath: string): Promise<string> {
+    return this.processor.extractTextFromFile(filePath);
   }
 
   /**
@@ -501,7 +516,7 @@ class FileIndexer {
           termFrequencies.set(term, (termFrequencies.get(term) || 0) + 1),
         );
       });
-      (this as any).searchCache = {
+      this.searchCache = {
         termFrequencies,
         documentLengths,
         totalDocuments: this.documentCache.size,
@@ -570,7 +585,7 @@ class FileIndexer {
       docCache: this.getDocumentCache(),
       invertedIndex: this.getInvertedIndex(),
       stemDictionary: this.getStemDictionary(),
-      searchCache: (this as any).searchCache,
+      searchCache: this.searchCache,
     };
   }
 }

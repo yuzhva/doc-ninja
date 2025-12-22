@@ -1,4 +1,13 @@
-import { createNLPAnalyzer } from '../../src/index';
+import { createNLPAnalyzer } from '../../src/index.mjs';
+
+// Define types for better type safety
+interface Entity {
+  text: string;
+  label: string;
+  confidence: number;
+  start: number;
+  end: number;
+}
 
 // Mock external systems for demonstration
 const MockSystems = {
@@ -170,10 +179,10 @@ async function runWorkflowExamples() {
     workflowCallbacks: {
       onAnalysisComplete: async (result, document, config) => {
         const entities = result.tasks.entities?.entities || [];
-        const amounts = entities.filter((e) => e.text.includes('$'));
+        const amounts = entities.filter((e: any) => e.text.includes('$'));
 
         // Flag high-value transactions
-        const highValueTransactions = amounts.filter((amount) => {
+        const highValueTransactions = amounts.filter((amount: any) => {
           const value = parseFloat(amount.text.replace(/[$,]/g, ''));
           return value > 10000;
         });
@@ -181,7 +190,7 @@ async function runWorkflowExamples() {
         if (highValueTransactions.length > 0) {
           MockSystems.NotificationService.alertManagers({
             message: `High-value transaction detected in document ${document.metadata.id}`,
-            amounts: highValueTransactions.map((t) => t.text),
+            amounts: highValueTransactions.map((t: any) => t.text),
             requiresApproval: true,
           });
         }
@@ -189,7 +198,7 @@ async function runWorkflowExamples() {
         // Log all financial analysis
         MockSystems.DatabaseSystem.logAnalysis({
           ...result,
-          financialAmounts: amounts.map((a) => a.text),
+          financialAmounts: amounts.map((a: any) => a.text),
           flagged: highValueTransactions.length > 0,
         });
       },
@@ -328,7 +337,7 @@ async function advancedWorkflowExample() {
     name: 'Multi-Entity Document Handler',
     description: 'Handle documents with multiple important entities',
     condition: (result, document) => {
-      const entities = result?.tasks?.entities?.entities || [];
+      const entities = (result?.tasks?.entities?.entities || []) as Entity[];
       const importantEntities = entities.filter((e) =>
         ['PERSON', 'ORGANIZATION', 'LOCATION'].includes(e.label),
       );
@@ -336,9 +345,9 @@ async function advancedWorkflowExample() {
     },
     action: async (result, document, config) => {
       try {
-        const entities = result?.tasks?.entities?.entities || [];
+        const entities = (result?.tasks?.entities?.entities || []) as Entity[];
         const summary = entities.reduce(
-          (acc, entity) => {
+          (acc: Record<string, number>, entity) => {
             acc[entity.label] = (acc[entity.label] || 0) + 1;
             return acc;
           },
@@ -359,7 +368,7 @@ async function advancedWorkflowExample() {
           metadata: result.metadata,
           flagged: true,
         });
-      } catch (error) {
+      } catch (error: Error | any) {
         console.error(`Error in multi-entity workflow:`, error.message);
       }
     },
@@ -387,7 +396,7 @@ async function advancedWorkflowExample() {
           sentimentLabel: result?.tasks?.sentiment?.overall?.label || 'unknown',
           timestamp: new Date().toISOString(),
         });
-      } catch (error) {
+      } catch (error: Error | any) {
         console.error(`Error in sentiment confidence workflow:`, error.message);
       }
     },
@@ -421,7 +430,7 @@ async function advancedWorkflowExample() {
     console.log(
       `😊 Sentiment: ${result.tasks.sentiment?.overall?.label || 'unknown'} (${((result.tasks.sentiment?.overall?.score || 0) * 100).toFixed(1)}%)`,
     );
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Analysis failed:', error.message);
   }
 
@@ -479,7 +488,7 @@ async function workflowExample() {
     console.log('\n📊 Results:');
     console.log('Sentiment:', result.tasks.sentiment.overall.label);
     console.log('Entities found:', result.tasks.entities.entities.length);
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('Analysis failed:', error.message);
   } finally {
     await analyzer.dispose();

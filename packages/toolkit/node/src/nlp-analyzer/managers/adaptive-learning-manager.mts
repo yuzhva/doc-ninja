@@ -10,6 +10,29 @@ import {
   LearningOpportunity,
 } from '../types.mjs';
 
+// ✅ Define a comprehensive type for task results
+interface TaskResult {
+  // Sentiment
+  overall?: { label: string; score: number };
+  chunks?: any[];
+
+  // Entities
+  entities?: Array<{
+    text: string;
+    label: string;
+    confidence: number;
+    start: number;
+    end: number;
+  }>;
+
+  // Classification
+  topCategory?: { label: string; score: number };
+  categories?: Array<{ label: string; score: number }>;
+
+  // Allow other properties for custom tasks
+  [key: string]: any;
+}
+
 interface LearningConfiguration {
   enabled: boolean;
   learningRate: number;
@@ -115,7 +138,7 @@ class AdaptiveLearningManager extends EventEmitter {
    * Generate learning opportunities from analysis results
    */
   generateLearningOpportunities(
-    tasks: Record<AnalysisTask, any>,
+    tasks: Record<AnalysisTask, TaskResult>,
     content: string,
     chunks: any[],
   ): LearningOpportunity[] {
@@ -136,7 +159,7 @@ class AdaptiveLearningManager extends EventEmitter {
 
   private generateTaskOpportunities(
     task: AnalysisTask,
-    result: any,
+    result: TaskResult,
     content: string,
     chunks: any[],
   ): LearningOpportunity[] {
@@ -171,7 +194,7 @@ class AdaptiveLearningManager extends EventEmitter {
   }
 
   private generateClassificationOpportunities(
-    result: any,
+    result: TaskResult,
     content: string,
   ): LearningOpportunity[] {
     const opportunities: LearningOpportunity[] = [];
@@ -217,7 +240,7 @@ class AdaptiveLearningManager extends EventEmitter {
   }
 
   private generateEntityOpportunities(
-    result: any,
+    result: TaskResult,
     content: string,
   ): LearningOpportunity[] {
     const opportunities: LearningOpportunity[] = [];
@@ -260,7 +283,7 @@ class AdaptiveLearningManager extends EventEmitter {
   }
 
   private generateSentimentOpportunities(
-    result: any,
+    result: TaskResult,
     content: string,
   ): LearningOpportunity[] {
     const opportunities: LearningOpportunity[] = [];
@@ -298,7 +321,7 @@ class AdaptiveLearningManager extends EventEmitter {
 
   private generateGenericOpportunity(
     task: AnalysisTask,
-    result: any,
+    result: TaskResult,
     content: string,
   ): LearningOpportunity {
     return {
@@ -658,7 +681,7 @@ class AdaptiveLearningManager extends EventEmitter {
         entriesCount: this.feedbackHistory.length,
         tasksCount: this.taskStats.size,
       });
-    } catch (error) {
+    } catch (error: Error | any) {
       throw new Error(`Failed to load learning data: ${error.message}`);
     }
   }

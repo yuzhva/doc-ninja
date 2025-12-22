@@ -1,8 +1,8 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import type { PaginatedSearchResult, SearchOptions } from '../../src/index';
-import { MegaSearch, createMegaSearch } from '../../src/index';
+import type { PaginatedSearchResult, SearchOptions } from '../../src/index.mjs';
+import { MegaSearch, createMegaSearch } from '../../src/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,7 +73,7 @@ function formatResults(
         console.log(`  📝 Found ${result.snippets.length} snippet(s):`);
         result.snippets.forEach((snippet, snippetIdx) => {
           // Clean up snippet for display (remove extra whitespace)
-          const cleanSnippet = snippet.replace(/\s+/g, ' ').trim();
+          const cleanSnippet = snippet.context.replace(/\s+/g, ' ').trim();
           console.log(`    ${snippetIdx + 1}. ${cleanSnippet}`);
         });
       } else {

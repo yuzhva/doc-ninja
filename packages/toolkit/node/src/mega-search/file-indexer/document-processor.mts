@@ -115,13 +115,8 @@ class DocumentProcessor {
           cached.metadata.lastModified = sourceStat.mtimeMs;
           cached.metadata.size = sourceStat.size;
 
-          if (
-            !cached.metadata.originalFilePath &&
-            (cached.metadata as any).filePath
-          ) {
-            cached.metadata.originalFilePath = (
-              cached.metadata as any
-            ).filePath;
+          if (!cached.metadata.originalFilePath && cached.metadata.filePath) {
+            cached.metadata.originalFilePath = cached.metadata.filePath;
           }
           if (!cached.metadata.textFilePath) {
             cached.metadata.textFilePath = this.getTextCachePath(
@@ -149,7 +144,7 @@ class DocumentProcessor {
 
   async indexDocument(metadata: DocumentMetadata): Promise<DocumentIndex> {
     const DOCUMENT_TIMEOUT = 30000;
-    let timeoutHandle: NodeJS.Timeout;
+    let timeoutHandle: NodeJS.Timeout | undefined = undefined;
 
     try {
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -162,7 +157,7 @@ class DocumentProcessor {
 
       const indexingPromise = this.indexDocumentInternal(metadata);
       const result = await Promise.race([indexingPromise, timeoutPromise]);
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       return result;
     } catch (error) {
       if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -202,13 +197,8 @@ class DocumentProcessor {
           cached.metadata.size = srcStat.size;
           cached.metadata.indexed = true;
 
-          if (
-            !cached.metadata.originalFilePath &&
-            (cached.metadata as any).filePath
-          ) {
-            cached.metadata.originalFilePath = (
-              cached.metadata as any
-            ).filePath;
+          if (!cached.metadata.originalFilePath && cached.metadata.filePath) {
+            cached.metadata.originalFilePath = cached.metadata.filePath;
           }
           if (!cached.metadata.textFilePath) {
             cached.metadata.textFilePath = this.getTextCachePath(

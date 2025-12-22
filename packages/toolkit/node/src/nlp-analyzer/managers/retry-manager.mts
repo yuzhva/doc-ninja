@@ -164,7 +164,11 @@ class RetryManager extends EventEmitter {
     context: string,
     customConfig?: Partial<RetryConfig>,
   ): Promise<RetryResult<T>> {
-    const finalConfig = { ...this.config, ...customConfig };
+    const finalConfig: RetryConfig = {
+      ...this.defaultConfig,
+      ...this.config,
+      ...customConfig,
+    };
     const circuitBreaker = this.getCircuitBreaker(
       context,
       finalConfig.circuitBreaker!,
@@ -206,11 +210,11 @@ class RetryManager extends EventEmitter {
           attempts,
           totalTime: Date.now() - startTime,
         };
-      } catch (error) {
+      } catch (error: Error | any) {
         const retryAttempt: RetryAttempt = {
           attempt,
           delay: 0,
-          error: error as Error,
+          error: error,
           timestamp: Date.now(),
         };
 
@@ -219,12 +223,12 @@ class RetryManager extends EventEmitter {
         this.emit('attempt-failed', {
           context,
           attempt,
-          error: error as Error,
+          error,
           willRetry: attempt < finalConfig.maxAttempts,
         });
 
         // Check if error is retryable
-        if (!this.isRetryableError(error as Error, finalConfig)) {
+        if (!this.isRetryableError(error, finalConfig)) {
           this.emit('non-retryable-error', { context, error });
 
           if (finalConfig.circuitBreaker?.enabled) {
@@ -233,7 +237,7 @@ class RetryManager extends EventEmitter {
 
           return {
             success: false,
-            error: error as Error,
+            error,
             attempts,
             totalTime: Date.now() - startTime,
           };
@@ -299,9 +303,9 @@ class RetryManager extends EventEmitter {
     return this.circuitBreakers.get(context)!;
   }
 
-  private isRetryableError(error: Error, config: RetryConfig): boolean {
+  private isRetryableError(error: Error | any, config: RetryConfig): boolean {
     const errorMessage = error.message.toLowerCase();
-    const errorCode = (error as any).code;
+    const errorCode = error.code;
 
     return config.retryableErrors.some((retryableError) => {
       const retryable = retryableError.toLowerCase();
@@ -375,4 +379,4 @@ class RetryManager extends EventEmitter {
 }
 
 export { RetryManager };
-export type { RetryConfig, CircuitBreakerConfig, RetryAttempt, RetryResult };
+export type { CircuitBreakerConfig, RetryAttempt, RetryConfig, RetryResult };

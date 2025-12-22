@@ -1,3 +1,4 @@
+import type { PipelineType } from '@huggingface/transformers';
 import { pipeline } from '@huggingface/transformers';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -5,7 +6,7 @@ import * as path from 'path';
 interface ModelDefinition {
   id: string;
   name: string;
-  task: string;
+  task: PipelineType;
   description: string;
   size: string;
   languages?: string[];
@@ -197,7 +198,7 @@ class ModelInstaller {
       );
 
       const downloadPromise = pipeline(taskType, modelId, {
-        quantized: true, // Use quantized models for smaller size
+        dtype: 'q8', // Use quantized models for smaller size instead of {quantized: true}
         local_files_only: false, // Allow downloading ONLY during installation
         cache_dir: process.env.TRANSFORMERS_CACHE, // Store locally
       });
@@ -222,7 +223,7 @@ class ModelInstaller {
       // Verify installation if requested
       if (config.verifyInstallation) {
         console.log(`   🔍 Verifying installation...`);
-        await this.verifyModel(model as any, taskType);
+        await this.verifyModel(model, taskType);
         console.log(`   ✅ Verification passed`);
       }
 
@@ -233,14 +234,14 @@ class ModelInstaller {
 
       console.log(`   ✅ ${modelName} installed successfully`);
       console.log(`   🔒 Model is now available for OFFLINE use only\n`);
-    } catch (error) {
+    } catch (error: Error | any) {
       console.error(`   ❌ Failed to install ${modelName}:`);
       console.error(`   Error: ${error.message}\n`);
       throw error;
     }
   }
 
-  private async verifyModel(model: any, taskType: string): Promise<void> {
+  private async verifyModel(model: any, taskType: PipelineType): Promise<void> {
     try {
       const testInputs = {
         'sentiment-analysis': 'This is a great day!',
@@ -248,11 +249,11 @@ class ModelInstaller {
         'text-classification': 'This is a sample document.',
         summarization:
           'This is a long document that needs to be summarized for testing purposes.',
-      };
+      } as Record<PipelineType, string>;
 
       const testInput = testInputs[taskType] || 'Test input';
       await model(testInput);
-    } catch (error) {
+    } catch (error: Error | any) {
       throw new Error(`Model verification failed: ${error.message}`);
     }
   }
@@ -262,7 +263,7 @@ class ModelInstaller {
       // Try to load model with local_files_only=true (OFFLINE ONLY)
       await pipeline('text-classification', modelId, {
         local_files_only: true, // 🔒 CRITICAL: Only use local files
-        quantized: true,
+        dtype: 'q8', // Use quantized models for smaller size instead of {quantized: true}
       });
       return true;
     } catch {
@@ -436,7 +437,7 @@ Note: Verification is DISABLED by default to avoid ONNX.js runtime issues.
     // ✅ Success exit
     console.log('🎉 Model installation completed successfully!');
     process.exit(0);
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('💥 Model installation failed:', error.message);
 
     // ✅ Provide helpful guidance for ONNX issues

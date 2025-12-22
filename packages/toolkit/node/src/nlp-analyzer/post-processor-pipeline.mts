@@ -111,11 +111,11 @@ class PostProcessorPipeline extends EventEmitter {
         };
 
         this.emit('processor-complete', executionResult);
-      } catch (error) {
+      } catch (error: Error | any) {
         const executionTime = Date.now() - startTime;
         const executionResult: PostProcessorExecutionResult = {
           success: false,
-          error: error as Error,
+          error,
           processorIndex: i,
           executionTime,
         };
@@ -123,7 +123,7 @@ class PostProcessorPipeline extends EventEmitter {
         this.emit('processor-error', executionResult);
 
         // Decide whether to continue or fail the pipeline
-        if (this.shouldContinueOnError(error as Error, i, config)) {
+        if (this.shouldContinueOnError(error, i, config)) {
           console.warn(
             `Post-processor ${i} failed, continuing with previous result:`,
             error.message,
@@ -132,7 +132,7 @@ class PostProcessorPipeline extends EventEmitter {
         } else {
           // Fail the entire pipeline
           this.emit('pipeline-error', {
-            error: error as Error,
+            error,
             failedProcessorIndex: i,
             totalTime: Date.now() - pipelineStartTime,
           });

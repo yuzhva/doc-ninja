@@ -1,4 +1,4 @@
-import { createNLPAnalyzer } from '../../src/index';
+import { createNLPAnalyzer } from '../../src/index.mjs';
 
 async function adaptiveLearningExample() {
   console.log('🧠 Starting Adaptive Learning Example');
@@ -32,7 +32,7 @@ async function adaptiveLearningExample() {
     // Show learning stats
     const stats = analyzer.getLearningStats();
     console.log('\n🧠 Learning Stats:', stats);
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('Analysis failed:', error.message);
   } finally {
     await analyzer.dispose();

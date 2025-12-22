@@ -2,6 +2,10 @@ class LRUCache<K, V> {
   private cache = new Map<K, V>();
   constructor(private maxSize: number) {}
 
+  get size(): number {
+    return this.cache.size;
+  }
+
   get(key: K): V | undefined {
     if (!this.cache.has(key)) return undefined;
     const value = this.cache.get(key)!;

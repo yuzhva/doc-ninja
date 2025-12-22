@@ -3,21 +3,21 @@ import { EventEmitter } from 'events';
 import * as path from 'path';
 
 import { AdaptiveLearningManager } from './managers/adaptive-learning-manager.mjs';
+import type { CacheStats } from './managers/cache-manager.mjs';
 import { CacheManager } from './managers/cache-manager.mjs';
 import { ModelManager } from './managers/model-manager.mjs';
 import { ResourceMonitor } from './managers/resource-monitor.mjs';
 import { RetryManager } from './managers/retry-manager.mjs';
+import type { WorkflowCallbacks } from './managers/workflow-manager.mjs';
 import { WorkflowManager } from './managers/workflow-manager.mjs';
 import { PostProcessorPipeline } from './post-processor-pipeline.mjs';
 import { TextProcessor } from './processors/text-processor.mjs';
 import {
   AdaptiveLearningResult,
-  AdaptiveTextAnalyzer,
   AnalysisConfig,
   AnalysisResult,
   AnalysisResultWithLearning,
   AnalysisTask,
-  DocumentAnalyzer,
   DocumentChunk,
   DocumentMetadata,
   LearningContext,
@@ -25,11 +25,10 @@ import {
   ModelConfig,
   PostProcessor,
   ProcessingProgress,
-  WorkflowCallbacks,
 } from './types.mjs';
 import { WorkerPool } from './worker-pool.mjs';
 
-class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
+class NLPAnalyzer extends EventEmitter {
   private textProcessor: TextProcessor;
   private modelManager: ModelManager;
   private cacheManager: CacheManager;
@@ -358,7 +357,7 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
             metadata.id,
           );
           return { task, result };
-        } catch (error) {
+        } catch (error: Error | any) {
           console.error(`Task ${task} failed:`, error.message);
           return { task, result: null };
         }
@@ -455,10 +454,10 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
     } else {
       try {
         return await analyzeOperation();
-      } catch (error) {
+      } catch (error: Error | any) {
         if (!config.enableWorkflows) {
           await this.workflowManager.executeAnalysisError(
-            error as Error,
+            error,
             document,
             config,
           );
@@ -815,7 +814,11 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
     }));
 
     // Calculate overall sentiment
-    const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+    const sentimentCounts: Record<string, number> = {
+      positive: 0,
+      negative: 0,
+      neutral: 0,
+    };
     let totalScore = 0;
 
     results.forEach((r) => {
@@ -837,17 +840,24 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
 
   private postProcessEntityResults(results: any[]): any {
     const entities = results.filter((e) => e.confidence >= 0.7);
-    const summary = entities.reduce((acc, entity) => {
-      acc[entity.label] = (acc[entity.label] || 0) + 1;
-      return acc;
-    }, {});
+    const summary = entities.reduce(
+      (acc: Record<string, number>, entity) => {
+        acc[entity.label] = (acc[entity.label] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
     return { entities, summary };
   }
 
-  private postProcessClassificationResults(results: any[]): any {
+  private postProcessClassificationResults(
+    results: Array<{
+      classifications?: Array<{ label: string; score: number }>;
+    }>,
+  ): any {
     // Aggregate classification results
-    const aggregated = {};
+    const aggregated: Record<string, number> = {};
     let validResults = 0;
 
     results.forEach((r) => {
@@ -1001,6 +1011,13 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
     }
 
     return this.adaptiveLearningManager.getLearningStats();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): CacheStats {
+    return this.cacheManager.getCacheStats();
   }
 
   /**
@@ -1165,9 +1182,9 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
 
       // Post-process results to match expected format
       return this.postProcessWorkerResults(task, results, chunks);
-    } catch (error) {
+    } catch (error: Error | any) {
       // If workers are not available, fallback gracefully
-      const errorMessage = (error as Error).message;
+      const errorMessage = error.message;
 
       if (errorMessage.includes('Workers not available')) {
         console.log(
@@ -1306,22 +1323,12 @@ class NLPAnalyzer extends EventEmitter implements AdaptiveTextAnalyzer {
   /**
    * Add a workflow rule
    */
-  addWorkflowRule(rule: {
-    id: string;
-    name: string;
-    description: string;
-    condition: (
-      result: AnalysisResult,
-      document: { content: string; metadata: DocumentMetadata },
-    ) => boolean;
-    action: (
-      result: AnalysisResult,
-      document: { content: string; metadata: DocumentMetadata },
-      config: AnalysisConfig,
-    ) => Promise<void> | void;
-    priority?: number;
-    enabled?: boolean;
-  }): void {
+  addWorkflowRule(
+    rule: Omit<WorkflowManager.Rule, 'priority' | 'enabled'> & {
+      priority?: number;
+      enabled?: boolean;
+    },
+  ): void {
     this.workflowManager.addRule({
       ...rule,
       priority: rule.priority || 1,

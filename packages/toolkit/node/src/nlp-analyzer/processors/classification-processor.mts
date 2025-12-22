@@ -59,7 +59,7 @@ class ClassificationProcessor implements TaskProcessor {
         } else {
           chunkResults.push(cleanedResult);
         }
-      } catch (error) {
+      } catch (error: Error | any) {
         // ✅ Keep error logging but make it less verbose
         if (process.env.DEBUG) {
           console.warn(
@@ -134,7 +134,7 @@ class ClassificationProcessor implements TaskProcessor {
       // ✅ Comment out debug logging
       // console.log(`🔄 Raw model response type:`, typeof result, Array.isArray(result));
       return result;
-    } catch (error) {
+    } catch (error: Error | any) {
       console.error(`🚨 Model execution error:`, error);
       throw new Error(`Model execution failed: ${error.message}`);
     }

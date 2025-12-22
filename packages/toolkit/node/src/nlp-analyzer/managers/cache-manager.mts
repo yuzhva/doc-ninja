@@ -19,6 +19,15 @@ interface CacheEntry {
   lastAccessed: number;
 }
 
+interface CacheStats {
+  size: number;
+  maxSize: number;
+  hitRate: number;
+  memoryUsageMB: number;
+  oldestEntry?: number;
+  newestEntry?: number;
+}
+
 class CacheManager {
   private cache = new Map<string, CacheEntry>();
   private config: CacheConfig;
@@ -153,14 +162,7 @@ class CacheManager {
     }
   }
 
-  getCacheStats(): {
-    size: number;
-    maxSize: number;
-    hitRate: number;
-    memoryUsageMB: number;
-    oldestEntry?: number;
-    newestEntry?: number;
-  } {
+  getCacheStats(): CacheStats {
     const entries = Array.from(this.cache.values());
     const timestamps = entries.map((e) => e.timestamp);
 
@@ -198,4 +200,4 @@ class CacheManager {
 }
 
 export { CacheManager };
-export type { CacheConfig, CacheEntry };
+export type { CacheConfig, CacheEntry, CacheStats };

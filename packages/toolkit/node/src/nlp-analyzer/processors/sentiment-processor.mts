@@ -16,7 +16,7 @@ class SentimentProcessor implements TaskProcessor {
   ): Promise<SentimentResult> {
     const chunkResults: Array<{
       text: string;
-      sentiment: string;
+      sentiment: 'positive' | 'negative' | 'neutral';
       score: number;
     }> = [];
     let totalPositive = 0;

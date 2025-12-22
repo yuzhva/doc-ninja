@@ -6,9 +6,8 @@
     "purge:workspace--node_modules": "for /d /r . %d in (node_modules) do @if exist \"%d\" rmdir /s /q \"%d\"",
     "purge:workspace--dist": "for /d /r . %d in (dist) do @if exist \"%d\" rmdir /s /q \"%d\"",
     "purge": "npm run purge:workspace--node_modules && npm run purge:workspace--dist",
-    "build:packages-and-apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" build",
-    "build:apps": "pnpm --filter \"./apps/**\" build",
-    "dev:apps": "pnpm --filter \"./apps/**\" dev",
+    "build:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" build",
+    "dev:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" dev",
     "el:start": "pnpm --filter \"./apps/electron\" start",
     "el:make": "pnpm --filter \"./apps/electron\" make"
   },

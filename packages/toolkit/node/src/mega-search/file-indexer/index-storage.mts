@@ -432,12 +432,9 @@ class IndexStorage {
         'documents',
         (entries: [string, any][]) => {
           for (const [filePath, doc] of entries) {
-            if (
-              !doc.metadata.originalFilePath &&
-              (doc.metadata as any).filePath
-            ) {
-              doc.metadata.originalFilePath = (doc.metadata as any).filePath;
-              delete (doc.metadata as any).filePath;
+            if (!doc.metadata.originalFilePath && doc.metadata.filePath) {
+              doc.metadata.originalFilePath = doc.metadata.filePath;
+              delete doc.metadata.filePath;
             }
             if (!doc.metadata.textFilePath) {
               doc.metadata.textFilePath = this.getTextCachePath(

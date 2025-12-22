@@ -3,8 +3,23 @@ import type {
   AnalysisResult,
   PostProcessor,
   TextMetadata,
-} from '../../src/index';
-import { createNLPAnalyzer } from '../../src/index';
+} from '../../src/index.mjs';
+import { createNLPAnalyzer } from '../../src/index.mjs';
+
+// Define extended metadata type for our custom processors
+interface EnhancedMetadata {
+  wordCount?: number;
+  readingTimeMinutes?: number;
+  enhancedAt?: string;
+  textCharacteristics?: {
+    averageWordsPerSentence: number;
+    sentenceCount: number;
+    paragraphCount: number;
+  };
+  humanSummary?: string;
+  timestampProcessedAt?: number;
+  [key: string]: any; // Allow other dynamic properties
+}
 
 // Define custom post-processors
 const confidenceBoostProcessor: PostProcessor = (
@@ -50,11 +65,9 @@ const metadataEnhancerProcessor: PostProcessor = (
 ): AnalysisResult => {
   console.log('📊 Running metadata enhancer processor...');
 
-  const enhancedResult = { ...result };
-
-  // Add enhanced metadata
-  enhancedResult.metadata = {
-    ...enhancedResult.metadata,
+  // Create enhanced metadata object
+  const enhancedMetadata: EnhancedMetadata = {
+    ...result.metadata,
     // Add word count and reading time
     wordCount: document.content.split(/\s+/).length,
     readingTimeMinutes: Math.ceil(document.content.split(/\s+/).length / 200), // Avg 200 words/min
@@ -74,7 +87,10 @@ const metadataEnhancerProcessor: PostProcessor = (
     enhancedAt: new Date().toISOString(),
   };
 
-  return enhancedResult;
+  return {
+    ...result,
+    metadata: enhancedMetadata as any, // Cast to any to satisfy strict AnalysisResult type
+  };
 };
 
 const resultSummarizerProcessor: PostProcessor = (
@@ -84,7 +100,10 @@ const resultSummarizerProcessor: PostProcessor = (
 ): AnalysisResult => {
   console.log('📝 Running result summarizer processor...');
 
-  const summarizedResult = { ...result };
+  // Create summarized metadata
+  const summarizedMetadata: EnhancedMetadata = {
+    ...result.metadata,
+  };
 
   // Create a human-readable summary
   const summaryParts: string[] = [];
@@ -113,12 +132,12 @@ const resultSummarizerProcessor: PostProcessor = (
   }
 
   // Add summary to metadata
-  summarizedResult.metadata = {
-    ...summarizedResult.metadata,
-    humanSummary: summaryParts.join('. ') + '.',
-  };
+  summarizedMetadata.humanSummary = summaryParts.join('. ') + '.';
 
-  return summarizedResult;
+  return {
+    ...result,
+    metadata: summarizedMetadata as any,
+  };
 };
 
 function calculateAverageWordsPerSentence(text: string): number {
@@ -174,6 +193,9 @@ async function postProcessorsExample() {
       useCache: false, // Disable cache to see post-processing effects
     });
 
+    // Cast metadata to our enhanced type for access
+    const enhancedMeta = result.metadata as unknown as EnhancedMetadata;
+
     console.log('\n✅ Analysis Results (Post-Processed):');
     console.log('📊 Processing Time:', result.metadata.processingTime, 'ms');
     console.log(
@@ -184,16 +206,12 @@ async function postProcessorsExample() {
 
     // Show enhanced metadata
     console.log('\n📊 Enhanced Metadata:');
-    console.log('  Word Count:', (result.metadata as any).wordCount);
-    console.log(
-      '  Reading Time:',
-      (result.metadata as any).readingTimeMinutes,
-      'minutes',
-    );
-    console.log('  Enhanced At:', (result.metadata as any).enhancedAt);
+    console.log('  Word Count:', enhancedMeta.wordCount);
+    console.log('  Reading Time:', enhancedMeta.readingTimeMinutes, 'minutes');
+    console.log('  Enhanced At:', enhancedMeta.enhancedAt);
 
-    if ((result.metadata as any).textCharacteristics) {
-      const chars = (result.metadata as any).textCharacteristics;
+    if (enhancedMeta.textCharacteristics) {
+      const chars = enhancedMeta.textCharacteristics;
       console.log('  Text Characteristics:');
       console.log(
         '    Average Words/Sentence:',
@@ -204,9 +222,9 @@ async function postProcessorsExample() {
     }
 
     // Show human summary
-    if ((result.metadata as any).humanSummary) {
+    if (enhancedMeta.humanSummary) {
       console.log('\n📝 Human Summary:');
-      console.log('  ', (result.metadata as any).humanSummary);
+      console.log('  ', enhancedMeta.humanSummary);
     }
 
     // Show individual results
@@ -250,7 +268,7 @@ async function postProcessorsExample() {
         metadata: {
           ...result.metadata,
           timestampProcessedAt: Date.now(),
-        },
+        } as any,
       };
     };
 
@@ -262,16 +280,15 @@ async function postProcessorsExample() {
       useCache: false,
     });
 
-    console.log(
-      '  Timestamp Added:',
-      !!(secondResult.metadata as any).timestampProcessedAt,
-    );
+    const secondMeta = secondResult.metadata as unknown as EnhancedMetadata;
+
+    console.log('  Timestamp Added:', !!secondMeta.timestampProcessedAt);
 
     // Clear all processors and test
     analyzer.clearPostProcessors();
     const finalStats = analyzer.getPostProcessorStats();
     console.log('  Processors After Clear:', finalStats.processorCount);
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Analysis failed:', error.message);
   } finally {
     console.log('\n🧹 Cleaning up...');

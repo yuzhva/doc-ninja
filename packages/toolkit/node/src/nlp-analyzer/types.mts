@@ -1,3 +1,5 @@
+import type { CacheStats } from './managers/cache-manager.mjs';
+
 interface TextMetadata {
   id: string;
   title: string;
@@ -172,6 +174,8 @@ interface AdaptiveTextAnalyzer extends TextAnalyzer {
   ): Promise<AdaptiveLearningResult>;
 
   getLearningStats(): any;
+
+  getCacheStats?(): CacheStats;
 }
 
 // Post-processing types
@@ -190,70 +194,24 @@ type PostProcessor = (
   context?: PostProcessingContext,
 ) => AnalysisResult | Promise<AnalysisResult>;
 
-// Workflow types
-type WorkflowCallback = (
-  result: AnalysisResult,
-  document: { content: string; metadata: TextMetadata },
-  config: AnalysisConfig,
-) => Promise<void> | void;
-
-interface WorkflowCallbacks {
-  onAnalysisStart?: (
-    document: { content: string; metadata: TextMetadata },
-    config: AnalysisConfig,
-  ) => Promise<void> | void;
-  onAnalysisComplete?: WorkflowCallback;
-  onAnalysisError?: (
-    error: Error,
-    document: { content: string; metadata: TextMetadata },
-    config: AnalysisConfig,
-  ) => Promise<void> | void;
-  onBatchStart?: (
-    documents: Array<{ content: string; metadata: TextMetadata }>,
-    config: AnalysisConfig,
-  ) => Promise<void> | void;
-  onBatchComplete?: (
-    results: AnalysisResult[],
-    documents: Array<{ content: string; metadata: TextMetadata }>,
-    config: AnalysisConfig,
-  ) => Promise<void> | void;
-  onBatchProgress?: (
-    progress: { completed: number; total: number; percentage: number },
-    config: AnalysisConfig,
-  ) => Promise<void> | void;
-  onModelLoaded?: (modelId: string, task: string) => Promise<void> | void;
-  onResourceAlert?: (alert: {
-    type: string;
-    level: string;
-    message: string;
-    value: number;
-  }) => Promise<void> | void;
-  onCircuitBreakerTripped?: (
-    context: string,
-    failures: number,
-  ) => Promise<void> | void;
-}
-
 export type {
-  DocumentMetadata,
-  AnalysisConfig,
-  AnalysisResultWithLearning,
-  TextMetadata,
-  ModelConfig,
-  AnalysisTask,
-  AnalysisResult,
-  SentimentResult,
-  EntityResult,
-  DocumentChunk,
-  ProcessingProgress,
-  TextAnalyzer,
-  DocumentAnalyzer,
-  PostProcessor,
-  PostProcessingContext,
-  WorkflowCallback,
-  WorkflowCallbacks,
-  LearningOpportunity,
-  LearningContext,
   AdaptiveLearningResult,
   AdaptiveTextAnalyzer,
+  AnalysisConfig,
+  AnalysisResult,
+  AnalysisResultWithLearning,
+  AnalysisTask,
+  DocumentAnalyzer,
+  DocumentChunk,
+  DocumentMetadata,
+  EntityResult,
+  LearningContext,
+  LearningOpportunity,
+  ModelConfig,
+  PostProcessingContext,
+  PostProcessor,
+  ProcessingProgress,
+  SentimentResult,
+  TextAnalyzer,
+  TextMetadata,
 };

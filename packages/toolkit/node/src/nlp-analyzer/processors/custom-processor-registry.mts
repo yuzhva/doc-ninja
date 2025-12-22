@@ -1,3 +1,4 @@
+import type { PipelineType } from '@huggingface/transformers';
 import { Pipeline } from '@huggingface/transformers';
 
 import { TaskProcessor } from '../managers/model-manager.mjs';
@@ -9,7 +10,7 @@ interface ProcessorDefinition {
   description: string;
   requiresModel: boolean;
   defaultModelId?: string;
-  defaultTaskType?: string;
+  defaultTaskType?: PipelineType;
   processorClass: new (model?: Pipeline, config?: any) => TaskProcessor;
 }
 

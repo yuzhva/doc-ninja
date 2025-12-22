@@ -2,7 +2,7 @@ import {
   AnalysisConfig,
   DocumentChunk,
   createNLPAnalyzer,
-} from '../../src/index';
+} from '../../src/index.mjs';
 import { CustomProcessorRegistry } from '../../src/nlp-analyzer/processors/index.mjs';
 
 // Define a custom processor for technical document analysis
@@ -216,7 +216,7 @@ async function customProcessorsExample() {
         '%',
       );
     }
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Analysis failed:', error.message);
   } finally {
     console.log('\n🧹 Cleaning up...');

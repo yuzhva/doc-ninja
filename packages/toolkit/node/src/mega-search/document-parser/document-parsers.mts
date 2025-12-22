@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { promisify } from 'util';
+import { TextDecoder, promisify } from 'util';
 import * as zlib from 'zlib';
 
 import type { DocumentInput } from './document-parsers.utils.mjs';
@@ -447,7 +447,10 @@ class DocParser implements DocumentParser {
           if (currentLength >= minLength) {
             const chunk = buffer.subarray(start, start + currentLength * step);
             try {
-              const str = chunk.toString(encoding);
+              const str =
+                encoding === 'win1251'
+                  ? new TextDecoder('windows-1251').decode(chunk)
+                  : chunk.toString(encoding);
               // Additional filter: must have at least one letter to be considered text
               // (avoids sequences of just punctuation or spaces)
               if (/[a-zA-Zа-яїієґА-ЯЇІЄҐ]/.test(str)) {
@@ -467,7 +470,10 @@ class DocParser implements DocumentParser {
     if (start !== -1 && currentLength >= minLength) {
       const chunk = buffer.subarray(start, start + currentLength * step);
       try {
-        const str = chunk.toString(encoding);
+        const str =
+          encoding === 'win1251'
+            ? new TextDecoder('windows-1251').decode(chunk)
+            : chunk.toString(encoding);
         if (/[a-zA-Zа-яїієґА-ЯЇІЄҐ]/.test(str)) {
           foundStrings.push(str.trim());
         }

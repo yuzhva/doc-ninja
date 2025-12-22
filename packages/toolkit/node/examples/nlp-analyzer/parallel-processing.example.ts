@@ -1,4 +1,4 @@
-import { createNLPAnalyzer } from '../../src/index';
+import { createNLPAnalyzer } from '../../src/index.mjs';
 
 async function runParallelProcessingDemo() {
   console.log('🚀 Parallel Processing Demo\n');
@@ -59,22 +59,23 @@ async function runParallelProcessingDemo() {
   // Test 1: Batch Processing (Optimized)
   console.log('🔄 Test 1: Batch Processing (Optimized batching)');
   const batchStart = Date.now();
+  let batchTime = 0;
 
   try {
     const batchResults = await parallelAnalyzer.analyzeBatch(
       documents,
       { ...config, batchSize: 5 }, // Smaller batches for better performance
-      (progress) => {
+      (progress: any) => {
         if (progress.progress % 25 === 0 || progress.progress === 100) {
           console.log(`   Progress: ${progress.progress.toFixed(1)}%`);
         }
       },
     );
 
-    const batchTime = Date.now() - batchStart;
+    batchTime = Date.now() - batchStart;
     console.log(`✅ Batch processing completed in ${batchTime}ms`);
     console.log(`📊 Processed ${batchResults.length} documents\n`);
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Batch processing failed:', error.message);
   }
 
@@ -106,7 +107,8 @@ async function runParallelProcessingDemo() {
     console.log(`📊 Processed ${sequentialResults.length} documents\n`);
 
     // Performance comparison
-    const improvement = ((sequentialTime - batchTime) / sequentialTime) * 100;
+    const improvement =
+      batchTime > 0 ? ((sequentialTime - batchTime) / sequentialTime) * 100 : 0;
 
     console.log('📊 Performance Comparison:');
     console.log(`   Batch Processing: ${batchTime}ms`);
@@ -115,7 +117,7 @@ async function runParallelProcessingDemo() {
     console.log(
       '   Note: Both use main thread due to ONNX Runtime limitations\n',
     );
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Sequential processing failed:', error.message);
   }
 
@@ -147,7 +149,7 @@ async function runParallelProcessingDemo() {
 
     console.log(`✅ Large document processed in ${memoryTestTime}ms`);
     console.log('🛡️ Memory isolation prevented main thread blocking');
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('❌ Memory test failed:', error.message);
   }
 
@@ -221,13 +223,13 @@ async function parallelProcessingExample() {
         tasks: ['sentiment', 'entities'],
         batchSize: 2,
       },
-      (progress) => {
+      (progress: any) => {
         console.log(`📊 Progress: ${progress.progress.toFixed(1)}%`);
       },
     );
 
     console.log('\n✅ Batch Results:');
-    results.forEach((result, index) => {
+    results.forEach((result: any, index: number) => {
       console.log(`\nDocument ${index + 1}:`);
       console.log(`  Sentiment: ${result.tasks.sentiment.overall.label}`);
       console.log(`  Entities: ${result.tasks.entities.entities.length}`);
@@ -241,7 +243,7 @@ async function parallelProcessingExample() {
       console.log(`  CPU Usage: ${metrics.cpu.usage.toFixed(1)}%`);
       console.log(`  Memory Usage: ${metrics.memory.usage}%`);
     }
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error('Batch processing failed:', error.message);
   } finally {
     await analyzer.dispose();

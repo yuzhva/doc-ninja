@@ -3,12 +3,8 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 
 import { NLPAnalyzer } from './analyzer.mjs';
-import {
-  AdaptiveTextAnalyzer,
-  ModelConfig,
-  PostProcessor,
-  WorkflowCallbacks,
-} from './types.mjs';
+import type { WorkflowCallbacks } from './managers/workflow-manager.mjs';
+import type { ModelConfig, PostProcessor } from './types.mjs';
 import { PerformanceOptimizer } from './utils/performance-optimizer.mjs';
 
 interface AnalyzerOptions {
@@ -28,9 +24,7 @@ interface AnalyzerOptions {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MODELS_PATH = path.resolve(__dirname, '../../../models');
 
-function createNLPAnalyzer(
-  options: AnalyzerOptions = {},
-): AdaptiveTextAnalyzer {
+function createNLPAnalyzer(options: AnalyzerOptions = {}): NLPAnalyzer {
   // Auto-optimize configuration based on system resources
   const optimizer = PerformanceOptimizer.getInstance();
   const systemInfo = {
@@ -73,7 +67,7 @@ function createNLPAnalyzer(
     finalOptions.postProcessors || [],
     finalOptions.workflowCallbacks || {},
     finalOptions.enableAdaptiveLearning !== false,
-  ) as AdaptiveTextAnalyzer;
+  );
 }
 
 interface PerformancePreset {
@@ -129,7 +123,7 @@ const PERFORMANCE_PRESETS: Record<string, PerformancePreset> = {
 function createOptimizedAnalyzer(
   preset: keyof typeof PERFORMANCE_PRESETS = 'balanced',
   overrides: Partial<AnalyzerOptions> = {},
-): AdaptiveTextAnalyzer {
+): NLPAnalyzer {
   const presetOptions = PERFORMANCE_PRESETS[preset].options;
   const finalOptions = { ...presetOptions, ...overrides };
 
@@ -144,7 +138,7 @@ function createOptimizedAnalyzer(
 export {
   createNLPAnalyzer,
   createOptimizedAnalyzer,
-  PERFORMANCE_PRESETS,
   DEFAULT_MODELS_PATH,
+  PERFORMANCE_PRESETS,
 };
 export type { AnalyzerOptions, PerformancePreset };

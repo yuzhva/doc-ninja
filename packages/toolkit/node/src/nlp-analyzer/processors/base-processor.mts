@@ -32,11 +32,20 @@ abstract class BaseProcessor extends EventEmitter implements TaskProcessor {
    * Common preprocessing pipeline
    */
   protected preprocessText(text: string): string {
-    return text
-      .replace(/\r\n/g, '\n')
-      .replace(/\t/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  protected async processWithFallback<T>(
+    primaryFn: () => Promise<T>,
+    fallbackFn: () => T | Promise<T>,
+    context: string,
+  ): Promise<T> {
+    try {
+      return await primaryFn();
+    } catch (error) {
+      console.warn(`${context} failed, falling back to rules:`, error);
+      return fallbackFn();
+    }
   }
 
   /**
@@ -73,7 +82,7 @@ abstract class BaseProcessor extends EventEmitter implements TaskProcessor {
         } catch (error) {
           this.stats.errors++;
           if (continueOnError) {
-            return { result: null, error: error as Error, index: globalIndex };
+            return { result: null, error, index: globalIndex };
           }
           throw error;
         }
@@ -130,7 +139,7 @@ abstract class BaseProcessor extends EventEmitter implements TaskProcessor {
         }
 
         return await promise;
-      } catch (error) {
+      } catch (error: Error | any) {
         if (attempt === maxRetries) {
           if (fallback) {
             console.warn(

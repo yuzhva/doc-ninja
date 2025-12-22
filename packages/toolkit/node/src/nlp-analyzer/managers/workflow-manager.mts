@@ -2,43 +2,53 @@ import { EventEmitter } from 'events';
 
 import { AnalysisConfig, AnalysisResult, TextMetadata } from '../types.mjs';
 
+type WorkflowDocument = { content: string; metadata: TextMetadata };
+
+type WorkflowBatchProgress = {
+  completed: number;
+  total: number;
+  percentage: number;
+};
+
+type WorkflowResourceAlert = {
+  type: string;
+  level: string;
+  message: string;
+  value: number;
+};
+
 type WorkflowCallback = (
   result: AnalysisResult,
-  document: { content: string; metadata: TextMetadata },
+  document: WorkflowDocument,
   config: AnalysisConfig,
 ) => Promise<void> | void;
 
 interface WorkflowCallbacks {
   onAnalysisStart?: (
-    document: { content: string; metadata: TextMetadata },
+    document: WorkflowDocument,
     config: AnalysisConfig,
   ) => Promise<void> | void;
   onAnalysisComplete?: WorkflowCallback;
   onAnalysisError?: (
     error: Error,
-    document: { content: string; metadata: TextMetadata },
+    document: WorkflowDocument,
     config: AnalysisConfig,
   ) => Promise<void> | void;
   onBatchStart?: (
-    documents: Array<{ content: string; metadata: TextMetadata }>,
+    documents: Array<WorkflowDocument>,
     config: AnalysisConfig,
   ) => Promise<void> | void;
   onBatchComplete?: (
     results: AnalysisResult[],
-    documents: Array<{ content: string; metadata: TextMetadata }>,
+    documents: Array<WorkflowDocument>,
     config: AnalysisConfig,
   ) => Promise<void> | void;
   onBatchProgress?: (
-    progress: { completed: number; total: number; percentage: number },
+    progress: WorkflowBatchProgress,
     config: AnalysisConfig,
   ) => Promise<void> | void;
   onModelLoaded?: (modelId: string, task: string) => Promise<void> | void;
-  onResourceAlert?: (alert: {
-    type: string;
-    level: string;
-    message: string;
-    value: number;
-  }) => Promise<void> | void;
+  onResourceAlert?: (alert: WorkflowResourceAlert) => Promise<void> | void;
   onCircuitBreakerTripped?: (
     context: string,
     failures: number,
@@ -49,10 +59,7 @@ interface WorkflowRule {
   id: string;
   name: string;
   description: string;
-  condition: (
-    result: AnalysisResult,
-    document: { content: string; metadata: TextMetadata },
-  ) => boolean;
+  condition: (result: AnalysisResult, document: WorkflowDocument) => boolean;
   action: WorkflowCallback;
   priority: number;
   enabled: boolean;
@@ -140,7 +147,7 @@ class WorkflowManager extends EventEmitter {
    * Execute analysis start workflows
    */
   async executeAnalysisStart(
-    document: { content: string; metadata: TextMetadata },
+    document: WorkflowDocument,
     config: AnalysisConfig,
   ): Promise<void> {
     if (this.callbacks.onAnalysisStart) {
@@ -166,7 +173,7 @@ class WorkflowManager extends EventEmitter {
    */
   async executeAnalysisComplete(
     result: AnalysisResult,
-    document: { content: string; metadata: TextMetadata },
+    document: WorkflowDocument,
     config: AnalysisConfig,
   ): Promise<void> {
     // Execute callback first
@@ -198,7 +205,7 @@ class WorkflowManager extends EventEmitter {
    */
   async executeAnalysisError(
     error: Error,
-    document: { content: string; metadata: TextMetadata },
+    document: WorkflowDocument,
     config: AnalysisConfig,
   ): Promise<void> {
     if (this.callbacks.onAnalysisError) {
@@ -225,7 +232,7 @@ class WorkflowManager extends EventEmitter {
    * Execute batch start workflows
    */
   async executeBatchStart(
-    documents: Array<{ content: string; metadata: TextMetadata }>,
+    documents: Array<WorkflowDocument>,
     config: AnalysisConfig,
   ): Promise<void> {
     if (this.callbacks.onBatchStart) {
@@ -251,7 +258,7 @@ class WorkflowManager extends EventEmitter {
    */
   async executeBatchComplete(
     results: AnalysisResult[],
-    documents: Array<{ content: string; metadata: TextMetadata }>,
+    documents: Array<WorkflowDocument>,
     config: AnalysisConfig,
   ): Promise<void> {
     if (this.callbacks.onBatchComplete) {
@@ -278,7 +285,7 @@ class WorkflowManager extends EventEmitter {
    * Execute batch progress workflows
    */
   async executeBatchProgress(
-    progress: { completed: number; total: number; percentage: number },
+    progress: WorkflowBatchProgress,
     config: AnalysisConfig,
   ): Promise<void> {
     if (this.callbacks.onBatchProgress) {
@@ -317,12 +324,7 @@ class WorkflowManager extends EventEmitter {
   /**
    * Execute resource alert workflows
    */
-  async executeResourceAlert(alert: {
-    type: string;
-    level: string;
-    message: string;
-    value: number;
-  }): Promise<void> {
+  async executeResourceAlert(alert: WorkflowResourceAlert): Promise<void> {
     if (this.callbacks.onResourceAlert) {
       try {
         await Promise.resolve(this.callbacks.onResourceAlert(alert));
@@ -375,7 +377,7 @@ class WorkflowManager extends EventEmitter {
    */
   private async executeMatchingRules(
     result: AnalysisResult,
-    document: { content: string; metadata: TextMetadata },
+    document: WorkflowDocument,
     config: AnalysisConfig,
   ): Promise<WorkflowExecutionResult[]> {
     const enabledRules = Array.from(this.rules.values())
@@ -402,8 +404,7 @@ class WorkflowManager extends EventEmitter {
             documentId: result.documentId,
           });
         }
-      } catch (err) {
-        error = err as Error;
+      } catch (error: Error | any) {
         console.error(`❌ Workflow rule '${rule.name}' failed:`, error.message);
         console.error(`   Rule ID: ${rule.id}`);
         console.error(`   Document: ${result.documentId}`);
@@ -495,10 +496,23 @@ class WorkflowManager extends EventEmitter {
   }
 }
 
+namespace WorkflowManager {
+  export type Callback = WorkflowCallback;
+  export type Callbacks = WorkflowCallbacks;
+  export type Rule = WorkflowRule;
+  export type ExecutionResult = WorkflowExecutionResult;
+  export type Document = WorkflowDocument;
+  export type BatchProgress = WorkflowBatchProgress;
+  export type ResourceAlert = WorkflowResourceAlert;
+}
+
 export { WorkflowManager };
 export type {
+  WorkflowBatchProgress,
   WorkflowCallback,
   WorkflowCallbacks,
-  WorkflowRule,
+  WorkflowDocument,
   WorkflowExecutionResult,
+  WorkflowResourceAlert,
+  WorkflowRule,
 };

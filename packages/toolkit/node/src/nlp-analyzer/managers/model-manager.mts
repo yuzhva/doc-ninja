@@ -1,3 +1,4 @@
+import type { PipelineType } from '@huggingface/transformers';
 import { Pipeline, pipeline } from '@huggingface/transformers';
 
 import { ClassificationProcessor } from '../processors/classification-processor.mjs';
@@ -64,7 +65,7 @@ class ModelManager {
 
     try {
       let modelName: string;
-      let pipelineTask: string;
+      let pipelineTask: PipelineType;
 
       // Handle custom processors with models
       if (this.customProcessorRegistry.has(task)) {
@@ -110,12 +111,12 @@ class ModelManager {
       }
 
       // Load model pipeline with STRICT local-only settings
-      const model = await pipeline(pipelineTask, modelName, {
+      const model = (await pipeline(pipelineTask, modelName, {
         local_files_only: true, // 🔒 CRITICAL: NEVER download during analysis
         device: config?.device || 'cpu',
-        quantized: config?.quantized !== false,
+        dtype: config?.quantized !== false ? 'q8' : 'fp32', // Use dtype for quantization instead of {quantized: true}
         cache_dir: process.env.TRANSFORMERS_CACHE, // Use local cache only
-      });
+      })) as unknown as Pipeline;
 
       this.loadedModels.set(task, model);
       this.modelVersions.set(task, modelName);
@@ -127,20 +128,18 @@ class ModelManager {
       if (process.env.DEBUG) {
         console.log(`✅ Model ${modelName} loaded from local cache`);
       }
-    } catch (error) {
+    } catch (error: Error | any) {
       console.error(`Failed to load model for task ${task}:`, error);
 
-      if ((error as Error).message.includes('local_files_only')) {
+      if (error.message.includes('local_files_only')) {
         throw new Error(
           `Model not found locally for ${task}. Please install models first:\n` +
             `  pnpm run install-models:default\n` +
-            `Original error: ${(error as Error).message}`,
+            `Original error: ${error.message}`,
         );
       }
 
-      throw new Error(
-        `Model loading failed for ${task}: ${(error as Error).message}`,
-      );
+      throw new Error(`Model loading failed for ${task}: ${error.message}`);
     }
   }
 
@@ -158,7 +157,7 @@ class ModelManager {
           this.processors.set(task, customProcessor);
           return;
         }
-      } catch (error) {
+      } catch (error: Error | any) {
         console.error(`Failed to create custom processor for ${task}:`, error);
         throw new Error(
           `Custom processor creation failed for ${task}: ${error.message}`,
@@ -208,7 +207,7 @@ class ModelManager {
       description?: string;
       requiresModel?: boolean;
       defaultModelId?: string;
-      defaultTaskType?: string;
+      defaultTaskType?: PipelineType;
     } = {},
   ): void {
     this.customProcessorRegistry.register({
