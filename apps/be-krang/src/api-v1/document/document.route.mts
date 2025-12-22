@@ -1,3 +1,4 @@
+import type { Router } from 'express';
 import express from 'express';
 
 import {
@@ -6,7 +7,7 @@ import {
 } from '../../middleware/upload.middleware.mjs';
 import * as ApiV1DocumentController from './document.controller.mjs';
 
-const expressRouter = express.Router();
+const expressRouter: Router = express.Router();
 
 const DocumentRoute = expressRouter
   .post(

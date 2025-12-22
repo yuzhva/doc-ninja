@@ -1,0 +1,6 @@
+{
+  "extends": "@mainset/dev-stack-fe/tsconfig--type-only",
+  "compilerOptions": {
+    "outDir": "./dist/types"
+  }
+}

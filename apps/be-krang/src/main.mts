@@ -1,11 +1,11 @@
 import cookieParser from 'cookie-parser';
+import type { Express, NextFunction, Request, Response } from 'express';
 import express from 'express';
-import type { NextFunction, Request, Response } from 'express';
 import { pathToFileURL } from 'url';
 
 import { apiV1Routes } from './api-v1/index.mjs';
 
-const app = express();
+const app: Express = express();
 const port = process.env.PORT || 3000;
 
 const handleForwardingToLatestApiPrefix = (

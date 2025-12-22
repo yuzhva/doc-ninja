@@ -98,10 +98,10 @@ class ExcelReportGenerator {
     // Add summary section
     data.push([]);
     data.push(['=== DOCUMENT INTELLIGENCE SUMMARY ===']);
-    data.push(['Total Matches Found:', reportRows.length]);
+    data.push(['Total Matches Found:', reportRows.length.toString()]);
     data.push([
       'Documents Processed:',
-      new Set(reportRows.map((m) => m.foundInDocument)).size,
+      new Set(reportRows.map((m) => m.foundInDocument)).size.toString(),
     ]);
     data.push(['Generated At:', new Date().toLocaleString('uk-UA')]);
 

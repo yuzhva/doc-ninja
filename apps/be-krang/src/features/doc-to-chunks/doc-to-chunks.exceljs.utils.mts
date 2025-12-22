@@ -484,7 +484,7 @@ function createChunkNameExtractor(chunkNamePattern?: string) {
     try {
       const match = stringValue.match(regex);
       return match ? (match[1] || match[0]).trim() : stringValue;
-    } catch (error) {
+    } catch (error: Error | any) {
       console.error(
         `❌ Invalid regex pattern "${chunkNamePattern}": ${error.message}`,
       );

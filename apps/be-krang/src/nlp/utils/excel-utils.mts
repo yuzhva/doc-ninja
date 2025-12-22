@@ -1,11 +1,11 @@
 import fs from 'fs/promises';
 import * as XLSX from 'xlsx';
 
-import type { NameMatch } from '../nlp/name-matcher.mjs';
+import type { ExtendedNameMatch } from '../../features/nlp-extract-info.mjs';
 
 interface ProcessingResult {
   inputName: string;
-  matches: NameMatch[];
+  matches: ExtendedNameMatch[];
   documentsSearched: number;
   totalMatches: number;
 }
@@ -34,7 +34,7 @@ async function readExcelData(filePath: string): Promise<string[]> {
     }
 
     return names;
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error(`Failed to read Excel file ${filePath}:`, error);
     throw new Error(`Could not read input Excel file: ${error.message}`);
   }
@@ -63,7 +63,7 @@ async function writeExcelResults(
 
     for (const result of results) {
       // Group matches by document for better presentation
-      const matchesByDoc = new Map<string, NameMatch[]>();
+      const matchesByDoc = new Map<string, ExtendedNameMatch[]>();
       result.matches.forEach((match) => {
         const docPath = match.documentPath || 'unknown';
         if (!matchesByDoc.has(docPath)) {
@@ -125,7 +125,7 @@ async function writeExcelResults(
     await fs.writeFile(outputPath, buffer);
 
     console.log(`📊 Excel results written to: ${outputPath}`);
-  } catch (error) {
+  } catch (error: Error | any) {
     console.error(`Failed to write Excel results:`, error);
     throw new Error(`Could not write Excel results: ${error.message}`);
   }

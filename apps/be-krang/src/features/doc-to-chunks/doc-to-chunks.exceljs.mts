@@ -1,8 +1,5 @@
 import ExcelJS from 'exceljs';
-import fs from 'fs/promises';
-import path from 'path';
 
-import { runtimePathById } from '../../supplement/index.mjs';
 import {
   createChunkNameExtractor,
   createSheetWithData,
@@ -12,28 +9,7 @@ import {
   getSheetStructure,
   processAdditionalSheets,
 } from './doc-to-chunks.exceljs.utils.mjs';
-
-interface SliceOptions {
-  buffer: Buffer; // Changed from docPath to buffer
-  sheetToChunkPosition?: number;
-  headerRows?: number;
-  splitColumnPosition?: number;
-  maxColumnsToInclude?: number;
-  chunkNamePattern?: string;
-  includeHiddenSheets?: boolean;
-  additionalSheets?: Array<{
-    sheetIndex: number;
-    filterColumnPosition: number;
-    headerRows?: number;
-    maxColumnsToInclude?: number;
-  }>;
-}
-
-interface ChunkFile {
-  name: string;
-  content: Buffer;
-  relativePath: string;
-}
+import type { ChunkFile, SliceOptions } from './doc-to-chunks.types.ts';
 
 const sliceDocumentForChunks = async ({
   buffer, // Use buffer instead of file path
@@ -53,7 +29,7 @@ const sliceDocumentForChunks = async ({
     console.log(`⏱️ Started at: ${new Date().toLocaleTimeString()}`);
 
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer); // Load from buffer instead of file
+    await workbook.xlsx.load(buffer as any); // Load from buffer instead of file
 
     const loadTime = Date.now() - startTime;
     console.log(`📖 Document loaded in: ${loadTime}ms`);
@@ -290,7 +266,7 @@ const sliceDocumentForChunks = async ({
 
       chunkFiles.push({
         name: fileName,
-        content: buffer as Buffer,
+        content: Buffer.from(buffer),
         relativePath: fileName,
       });
 

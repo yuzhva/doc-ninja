@@ -16,7 +16,7 @@ async function downloadModels() {
       'token-classification',
       'Xenova/bert-base-multilingual-cased',
       {
-        aggregation_strategy: 'simple',
+        // aggregation_strategy: 'simple',
         progress_callback: (progress: any) => {
           if (progress.status === 'downloading') {
             const percent = ((progress.loaded / progress.total) * 100).toFixed(

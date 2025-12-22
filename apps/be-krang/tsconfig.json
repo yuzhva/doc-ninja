@@ -2,5 +2,8 @@
   "extends": ["@mainset/dev-stack-fe/tsconfig--bundler"],
   "compilerOptions": {
     "outDir": "./dist"
+
+    // "emitDeclarationOnly": true,
+    // "declaration": true,
   }
 }

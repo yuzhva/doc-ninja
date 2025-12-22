@@ -115,7 +115,7 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
       console.log(
         `✅ Successfully converted ${fileName} to static format as ${staticFileName}`,
       );
-    } catch (error) {
+    } catch (error: Error | any) {
       console.error(`❌ Failed to convert ${fileName}:`, error);
       failedFiles.push({
         fileName,
@@ -134,9 +134,9 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
         failed: failedFiles.length,
       },
     });
-  } catch (error) {
+  } catch (error: Error | any) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(StatusCodes.REQUEST_ENTITY_TOO_LARGE).json({
+      return res.status(StatusCodes.REQUEST_TOO_LONG).json({
         error: {
           code: 'FILE_TOO_LARGE',
           message: 'File size exceeds 100MB limit',
@@ -214,7 +214,7 @@ const postDocumentToText = async (req: Request, res: Response) => {
           relativePath: appendExtension(fileData.path, '.txt'),
           originalPath: fileData.path,
         });
-      } catch (error) {
+      } catch (error: Error | any) {
         failedFiles.push({
           fileName: fileData.name,
           path: fileData.path,
@@ -282,7 +282,7 @@ const postTextToIndex = async (req: Request, res: Response) => {
           relativePath: replaceExtension(fileData.path, '.json'),
           originalPath: fileData.path,
         });
-      } catch (error) {
+      } catch (error: Error | any) {
         failedFiles.push({
           fileName: fileData.name,
           path: fileData.path,
@@ -368,7 +368,7 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
       console.log(
         `✅ Successfully processed ${chunkFiles.length} chunks from ${fileName}`,
       );
-    } catch (error) {
+    } catch (error: Error | any) {
       console.error(`❌ Failed to process ${fileName}:`, error);
       failedFiles.push({
         fileName,
@@ -387,9 +387,9 @@ const postDocumentToSlice = async (req: Request, res: Response) => {
         failed: failedFiles.length,
       },
     });
-  } catch (error) {
+  } catch (error: Error | any) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(StatusCodes.REQUEST_ENTITY_TOO_LARGE).json({
+      return res.status(StatusCodes.REQUEST_TOO_LONG).json({
         error: {
           code: 'FILE_TOO_LARGE',
           message: 'File size exceeds 100MB limit',
