@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@mainset/bundler-webpack": "^0.3.1",
-    "@mainset/cli": "^0.3.2",
+    "@mainset/cli": "^0.4.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

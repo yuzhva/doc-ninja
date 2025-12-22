@@ -38,7 +38,7 @@
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {
-    "@mainset/cli": "^0.3.2",
+    "@mainset/cli": "^0.4.0",
     "@types/node": "^25.0.3",
     "@types/word-extractor": "^1.0.6",
     "typescript": "^5.9.3"

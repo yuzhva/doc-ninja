@@ -1,11 +1,38 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const fs = require('fs');
+const path = require('path');
+
+// Prepare dist directory
+const distDir = path.join(__dirname, 'dist');
+if (fs.existsSync(distDir)) {
+  fs.rmSync(distDir, { recursive: true, force: true });
+}
+fs.mkdirSync(distDir, { recursive: true });
+
+// Helper to copy directory recursively (Node 16.7+)
+const copyDir = (src, dest) => {
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+  fs.mkdirSync(dest, { recursive: true });
+  fs.cpSync(src, dest, { recursive: true });
+};
+
+// Copy UI
+const uiSource = path.join(__dirname, '../ui-sauce/dist');
+const uiDest = path.join(distDir, 'ui-sauce');
+if (fs.existsSync(uiSource)) copyDir(uiSource, uiDest);
+
+// Copy Backend
+const beSource = path.join(__dirname, '../be-krang/dist');
+const beDest = path.join(distDir, 'be-krang');
+if (fs.existsSync(beSource)) copyDir(beSource, beDest);
 
 module.exports = {
   packagerConfig: {
     asar: true,
-    // Include the React dist folder in the packaged app
-    extraResource: ['../ui-sauce/dist'],
+    extraResource: [distDir],
   },
   rebuildConfig: {},
   makers: [

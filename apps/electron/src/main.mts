@@ -1,14 +1,13 @@
-import { BrowserWindow, app as electronApp, ipcMain } from 'electron';
+import { BrowserWindow, dialog, app as electronApp, ipcMain } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import request from 'supertest';
 import { fileURLToPath } from 'url';
 
-// Import your refactored Express app
-import { app as expressApp } from '../../be-krang/dist/main.mjs';
-
-// import { app as expressApp } from '../../be-krang/src/main.mts';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Hold the express app instance
+let expressApp: any;
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -31,14 +30,31 @@ const createWindow = () => {
   if (electronApp.isPackaged) {
     reactIndexPath = path.join(
       process.resourcesPath,
-      'ui-sauce/dist/public/server.html',
+      'dist/ui-sauce/public/server.html',
     );
   }
 
   win.loadFile(reactIndexPath);
 };
 
-electronApp.whenReady().then(() => {
+electronApp.whenReady().then(async () => {
+  // Dynamically load the backend app
+  let backendPath: string;
+  if (electronApp.isPackaged) {
+    // Production: use bundled files inside ASAR
+    backendPath = path.join(
+      process.resourcesPath,
+      'dist/be-krang/cjs/index.cjs',
+    );
+  } else {
+    // Development: use workspace files
+    backendPath = path.resolve(__dirname, '../../be-krang/src/main.mts');
+  }
+
+  // Use dynamic import to load the module
+  const backendModule = await import(backendPath);
+  expressApp = backendModule.app;
+
   // Handle IPC calls from the React UI
   ipcMain.handle(
     'api-request',
