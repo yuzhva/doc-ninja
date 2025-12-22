@@ -37,8 +37,8 @@ const ssrServerConfig: SSRConfigParams = {
               });
 
               const content = htmlData.replace(
-                '<div id="nlp-ninja--ui-sauce"></div>',
-                `<div id="nlp-ninja--ui-sauce">${ReactDOMServer.renderToString(
+                '<div id="doc-ninja--ui-sauce"></div>',
+                `<div id="doc-ninja--ui-sauce">${ReactDOMServer.renderToString(
                   appHtml,
                 )}</div>`,
               );

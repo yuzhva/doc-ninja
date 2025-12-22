@@ -1,5 +1,5 @@
 {
-  "name": "nlp-ninja--ui-sauce",
+  "name": "doc-ninja--ui-sauce",
   "version": "1.0.0",
   "description": "",
   "main": "./src/index.csr.ts",

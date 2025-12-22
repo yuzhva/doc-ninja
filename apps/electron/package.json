@@ -1,7 +1,7 @@
 {
   "name": "electron",
   "version": "1.0.0",
-  "description": "NLP Ninja Electron Wrapper over React PWA",
+  "description": "DOC Ninja Electron Wrapper over React PWA",
   "author": "Yevhen Uzhva",
   "main": "./src/main.mts",
   "scripts": {

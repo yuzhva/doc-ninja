@@ -27,7 +27,7 @@ const FormConvertTextToIndexTabItem = ({
         validationMessage:
           'Please select both source and output folders first.',
         successMessage: 'Successfully indexed text files!',
-        subfolderPath: '.nlp-ninja/index',
+        subfolderPath: '.doc-ninja/index',
       })(async (batch, batchIndex, totalBatches, structure) => {
         return fetchRequest('/api-local/convert/text-to-index', {
           method: 'POST',
@@ -86,7 +86,7 @@ const FormConvertTextToIndexTabItem = ({
           : 'Обробити Текст в Індекси'}
       </ProcessingButton>
       <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-        💡 Індекс файли будуть збережені в папці ".nlp-ninja/index" всередині
+        💡 Індекс файли будуть збережені в папці ".doc-ninja/index" всередині
         вибраної папки.
       </div>
     </form>

@@ -1,4 +1,4 @@
-# 🤖 NLP Ninja - Enterprise-Grade Document Analysis
+# 🤖 DOC Ninja - Enterprise-Grade Document Analysis
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -50,7 +50,7 @@ A powerful, **privacy-first** NLP document analysis system that processes docume
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd nlp-ninja
+cd doc-ninja
 
 # Install dependencies
 pnpm install
@@ -367,7 +367,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 git clone <repository-url>
-cd nlp-ninja
+cd doc-ninja
 pnpm install
 pnpm run install-models:default
 pnpm run nlp:example  # Test the installation
@@ -404,9 +404,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 🏆 **Why Choose NLP Ninja?**
+## 🏆 **Why Choose DOC Ninja?**
 
-| Feature             | NLP Ninja                     | Cloud APIs               | Other Libraries         |
+| Feature             | DOC Ninja                     | Cloud APIs               | Other Libraries         |
 | ------------------- | ----------------------------- | ------------------------ | ----------------------- |
 | **Privacy**         | ✅ 100% Local                 | ❌ Data sent to cloud    | ⚠️ Varies               |
 | **Performance**     | ✅ Optimized for batches      | ⚠️ API rate limits       | ⚠️ Basic                |
@@ -415,7 +415,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 | **Scalability**     | ✅ 5k+ documents tested       | ⚠️ Cost increases        | ❌ Limited              |
 | **Offline Support** | ✅ Works without internet     | ❌ Requires connection   | ⚠️ Varies               |
 
-**NLP Ninja** = **Privacy** + **Performance** + **Production-Ready** + **Peace of Mind** 🚀
+**DOC Ninja** = **Privacy** + **Performance** + **Production-Ready** + **Peace of Mind** 🚀
 
 ---
 

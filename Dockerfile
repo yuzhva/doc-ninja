@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g pnpm@${PNPM_VERSION}
 
-WORKDIR /usr/src/nlp-ninja
+WORKDIR /usr/src/doc-ninja
 
 ################################################################################
 # install-dependencies
@@ -79,8 +79,8 @@ FROM install-dependencies AS production
 ENV NODE_ENV production
 
 # Copy the built source code from the pre-build stage.
-# COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/packages/toolkit/dist ./packages/toolkit/dist
-COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
+# COPY --chown=node:node --from=pre-build--source-code /usr/src/doc-ninja/packages/toolkit/dist ./packages/toolkit/dist
+COPY --chown=node:node --from=pre-build--source-code /usr/src/doc-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
 
 # Run the application as a non-root user.
 USER node
@@ -102,8 +102,8 @@ FROM install-dependencies AS development
 ENV NODE_ENV development
 
 # Copy the built source code from the pre-build stage.
-# COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/packages/toolkit/dist ./packages/toolkit/dist
-COPY --chown=node:node --from=pre-build--source-code /usr/src/nlp-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
+# COPY --chown=node:node --from=pre-build--source-code /usr/src/doc-ninja/packages/toolkit/dist ./packages/toolkit/dist
+COPY --chown=node:node --from=pre-build--source-code /usr/src/doc-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
 
 # Run the application as a non-root user.
 USER node

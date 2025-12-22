@@ -8,7 +8,7 @@
 # database or a cache. For examples, see the Awesome Compose repository:
 # https://github.com/docker/awesome-compose
 services:
-  nlp-ninja:
+  doc-ninja:
     build:
       context: .
       target: production
@@ -23,22 +23,22 @@ services:
       - 'traefik.enable=true'
 
       # --- UI Router and Service (Port 8080) ---
-      # This router will handle requests for ui.nlp-ninja.localhost
-      - 'traefik.http.routers.nlp-ninja-ui.rule=Host(`ui.nlp-ninja.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
-      - 'traefik.http.routers.nlp-ninja-ui.service=nlp-ninja-ui-service'
+      # This router will handle requests for ui.doc-ninja.localhost
+      - 'traefik.http.routers.doc-ninja-ui.rule=Host(`ui.doc-ninja.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
+      - 'traefik.http.routers.doc-ninja-ui.service=doc-ninja-ui-service'
       # This service points to port 8080 inside the container
-      - 'traefik.http.services.nlp-ninja-ui-service.loadbalancer.server.port=8080'
+      - 'traefik.http.services.doc-ninja-ui-service.loadbalancer.server.port=8080'
 
       # --- API Router and Service (Port 3000) ---
-      # This router will handle requests for api.nlp-ninja.localhost
-      - 'traefik.http.routers.nlp-ninja-api.rule=Host(`api.nlp-ninja.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
-      - 'traefik.http.routers.nlp-ninja-api.service=nlp-ninja-api-service'
+      # This router will handle requests for api.doc-ninja.localhost
+      - 'traefik.http.routers.doc-ninja-api.rule=Host(`api.doc-ninja.${DEV__DOMAIN_LOCALHOST:-localhost}`)'
+      - 'traefik.http.routers.doc-ninja-api.service=doc-ninja-api-service'
       # This service points to port 3000 inside the container
-      - 'traefik.http.services.nlp-ninja-api-service.loadbalancer.server.port=3000'
+      - 'traefik.http.services.doc-ninja-api-service.loadbalancer.server.port=3000'
     networks:
       - network--dev
-  nlp-ninja--dev:
-    extends: nlp-ninja
+  doc-ninja--dev:
+    extends: doc-ninja
     build:
       target: development
     environment:
@@ -49,23 +49,23 @@ services:
     #   - ./.env.development
     volumes:
       # Bind Mount code for Live Update
-      - ./apps:/usr/src/nlp-ninja/apps
-      - ./packages:/usr/src/nlp-ninja/packages
+      - ./apps:/usr/src/doc-ninja/apps
+      - ./packages:/usr/src/doc-ninja/packages
       # Bind Mount models from host machine
-      # - ./apps/be-krang/models:/usr/src/nlp-ninja/models
+      # - ./apps/be-krang/models:/usr/src/doc-ninja/models
       # !IMPORTANT: ensure that the volume mounting does not overwrite any of the folders that are supposed to be created by Dockerfile build steps
       # Step-1: mount monorepo: root files
-      - /usr/src/nlp-ninja/node_modules
-      - /usr/src/nlp-ninja/.pnpm-store
+      - /usr/src/doc-ninja/node_modules
+      - /usr/src/doc-ninja/.pnpm-store
       # Step-2: mount monorepo: web-apps and packages files
-      - /usr/src/nlp-ninja/apps/be-krang/node_modules
-      # - /usr/src/nlp-ninja/apps/be-krang/dist
-      - /usr/src/nlp-ninja/apps/ui-sauce/node_modules
-      # - /usr/src/nlp-ninja/apps/ui-sauce/dist
-      - /usr/src/nlp-ninja/apps/electron/node_modules
-      # - /usr/src/nlp-ninja/apps/electron/dist
-      - /usr/src/nlp-ninja/packages/toolkit/node_modules
-      # - /usr/src/nlp-ninja/packages/toolkit/dist
+      - /usr/src/doc-ninja/apps/be-krang/node_modules
+      # - /usr/src/doc-ninja/apps/be-krang/dist
+      - /usr/src/doc-ninja/apps/ui-sauce/node_modules
+      # - /usr/src/doc-ninja/apps/ui-sauce/dist
+      - /usr/src/doc-ninja/apps/electron/node_modules
+      # - /usr/src/doc-ninja/apps/electron/dist
+      - /usr/src/doc-ninja/packages/toolkit/node_modules
+      # - /usr/src/doc-ninja/packages/toolkit/dist
     # the Docker {extends} syntax is designed to cherry-pick (and customize) a single service in a target
     # https://stackoverflow.com/a/78257041/4591347
     # the {profiles: []} Array will be concatenated with the profiles of it's parent e.g. [prod, dev, dev-packages]
