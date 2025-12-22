@@ -34,7 +34,10 @@ app.use('/api', [apiV1Routes]);
 
 // Only start the server if this file is run directly (ES module version)
 // Convert process.argv[1] to file URL format for comparison
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   app.listen(port, () => console.log(`Example app listening on port ${port}!`));
 }
 
