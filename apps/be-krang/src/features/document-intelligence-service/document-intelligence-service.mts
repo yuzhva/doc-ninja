@@ -61,7 +61,7 @@ class DocumentIntelligenceService {
           results: searchResult.results,
           pagination: searchResult.pagination,
         });
-      } catch (error) {
+      } catch (error: Error | any) {
         results.push({
           query,
           success: false,

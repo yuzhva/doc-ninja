@@ -4,11 +4,17 @@
   "type": "module",
   "sideEffects": false,
   "files": [
-    "src"
+    "dist"
   ],
   "exports": {
-    "./node": "./dist/esm/node/src/index.mjs",
-    "./browser": "./dist/esm/browser/index.mjs"
+    "./node": {
+      "import": "./dist/esm/node/src/index.mjs",
+      "types": "./dist/types/node/src/index.d.mts"
+    },
+    "./browser": {
+      "import": "./dist/esm/browser/index.mjs",
+      "types": "./dist/types/browser/index.d.mts"
+    }
   },
   "scripts": {
     "dev": "ms-cli source-code --exec watch",

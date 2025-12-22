@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import multer from 'multer';
 
 // Conditional multipart handler - only processes if content-type is multipart/form-data
@@ -19,9 +19,9 @@ const upload = multer({
 });
 
 // Specific middleware for single file upload
-const uploadSingle = upload.single('file');
+const uploadSingle: RequestHandler = upload.single('file');
 
 // Specific middleware for single file upload
-const uploadMultiple = upload.array('files');
+const uploadMultiple: RequestHandler = upload.array('files');
 
 export { handleMultipart, upload, uploadMultiple, uploadSingle };

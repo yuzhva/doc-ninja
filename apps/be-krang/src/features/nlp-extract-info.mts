@@ -7,18 +7,11 @@ import type { NameMatch } from '../nlp/index.mjs';
 import type { ExtractedInfo } from '../nlp/information-extractor.mjs';
 import { InformationExtractor } from '../nlp/information-extractor.mjs';
 import { readExcelData } from '../nlp/utils/excel-utils.mjs';
-import {
-  collectFilePaths,
-  getFoldersRecursive,
-  runtimePathById,
-} from '../supplement/index.mjs';
+import { runtimePathById } from '../supplement/index.mjs';
 
-// Extend NameMatch to include new extracted info
-declare module './nlp/name-matcher.mjs' {
-  interface NameMatch {
-    documentPath?: string;
-    extractedInfo?: ExtractedInfo;
-  }
+interface ExtendedNameMatch extends NameMatch {
+  documentPath?: string;
+  extractedInfo?: ExtractedInfo;
 }
 
 type SourceType = 'documents' | 'index';
@@ -142,7 +135,7 @@ async function extractInformation({ queries }: { queries?: string[] } = {}) {
     );
 
     // 4. Process files based on source type
-    const allMatches: NameMatch[] = [];
+    const allMatches: ExtendedNameMatch[] = [];
 
     await processNameAcrossFiles(
       sourceFiles,
@@ -222,7 +215,7 @@ async function processNameAcrossFiles(
   config: ProcessingConfig,
   baseNames: string[],
   matcher: AdaptiveUkrainianNameMatcher,
-  allMatches: NameMatch[],
+  allMatches: ExtendedNameMatch[],
 ) {
   let remainingNames = [...baseNames];
 
@@ -265,9 +258,15 @@ async function processNameAcrossFiles(
       for (const match of matchesInFile) {
         namesFoundInThisFile.add(match.name);
 
-        match.documentPath = originalPath;
-        match.extractedInfo = InformationExtractor.extract(content, match);
-        allMatches.push(match);
+        // Cast to ExtendedNameMatch to add extra properties
+        const extendedMatch = match as ExtendedNameMatch;
+        extendedMatch.documentPath = originalPath;
+        extendedMatch.documentName = originalPath; // Ensure documentName is set for extraction logic
+        extendedMatch.extractedInfo = InformationExtractor.extract(
+          content,
+          extendedMatch,
+        );
+        allMatches.push(extendedMatch);
 
         console.log(
           `    📝 Processed match for "${match.name}" (declension: "${match.declension}")`,
@@ -311,7 +310,7 @@ async function processNameAcrossFiles(
  */
 async function simulateFeedback(
   matcher: AdaptiveUkrainianNameMatcher,
-  match: NameMatch,
+  match: ExtendedNameMatch,
 ) {
   // Simulate feedback logic based on match quality indicators
   let isCorrect = true;
@@ -335,7 +334,7 @@ async function simulateFeedback(
 }
 
 async function writeResultsToExcel(
-  matches: NameMatch[],
+  matches: ExtendedNameMatch[],
   matcher: AdaptiveUkrainianNameMatcher,
   filename: string,
 ) {
@@ -404,7 +403,7 @@ async function writeResultsToExcel(
   // Add summary sheet with learning stats
   data.push([]);
   data.push(['=== ADAPTIVE LEARNING SUMMARY ===']);
-  data.push(['Total Feedback Entries:', stats.totalFeedback]);
+  data.push(['Total Feedback Entries:', stats.totalFeedback.toString()]);
   data.push(['Recent Accuracy:', `${stats.recentAccuracy.toFixed(1)}%`]);
   data.push([
     'Current 2-Word Threshold:',
@@ -508,3 +507,4 @@ function extractDateFromPath(filePath: string): Date | null {
 }
 
 export { extractInformation };
+export type { ExtendedNameMatch };

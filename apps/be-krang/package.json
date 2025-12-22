@@ -4,11 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch ./src/main.mts",
-    "build:be": "ms-cli source-code --exec compile",
+    "build": "ms-cli source-code --exec compile",
     "serve": "node ./dist/main.mjs",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
-    "doc:to-text": "tsx ./src/features/doc-to-text.mts",
-    "doc:build-index": "tsx ./src/features/doc-build-index.mts",
     "nlp:extract-info": "tsx ./src/features/nlp-extract-info.mts",
     "nlp:demo--inline": "tsx ./src/examples/nlp--inline.example.mts",
     "nlp:demo--adaptive": "tsx ./src/examples/nlp--adaptive.example.mts"
@@ -17,6 +15,7 @@
     "@mainset/cli": "^0.3.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0",
     "@types/node": "^25.0.3",
     "@types/textract": "^2.4.5",
     "cross-env": "^10.1.0",

@@ -35,7 +35,7 @@ const mapExtractedResultsToReportRows = (results: any[]) => {
 const postProcessDocuments = async (req: Request, res: Response) => {
   try {
     // Get queries from bulkNames payload
-    const bulkNames = req.body.bulkNames || '';
+    const bulkNames: string = req.body.bulkNames || '';
     const queries = bulkNames
       .split(/[,\n]/)
       .map((name) => name.trim())

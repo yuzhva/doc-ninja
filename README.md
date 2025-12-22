@@ -14,25 +14,6 @@ Examples for documents preparation and procession on local env.
 pnpm i
 ```
 
-### Document preparation
-
-1. Process documents: put .doc / .docx into `assets/docs-to-convert` folder (sub-folders are supported) and run:
-
-```bash
-pnpm run doc:to-text
-```
-
-It will create `assets/docs-for-nlp` folder with \*.txt files - which are suitable for NLP procession.
-NOTE: Setting-up the input / output folders available in `src/doc-to-text.mts` file.
-
-2. Then, build the search index from your .txt files. This is a one-time step you only need to re-run if your documents change.
-
-```bash
-pnpm run doc:build-index
-```
-
-It will create `assets/nlp-index` folder with \*.json files - which are suitable for NLP procession.
-
 ### Document procession
 
 !IMPORTANT: load models to local first:

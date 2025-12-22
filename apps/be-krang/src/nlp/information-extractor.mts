@@ -3,18 +3,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import type { SearchResult } from '../features/document-intelligence-service/index.mjs';
+import type { NameMatch } from './name-matcher.mjs';
 
-type NameMatch = {
-  searchQuery: string;
-  foundInDocument: string;
-  matchedText: string;
-  position: number;
-};
-
-type ExtractedInfo = Pick<
-  NameMatch,
-  'searchQuery' | 'foundInDocument' | 'matchedText'
-> & {
+type ExtractedInfo = {
+  name: string;
+  documentName?: string;
+  declension: string;
   content: string | null;
   sectionTitle: string | null;
   reason: string | null;
@@ -25,6 +19,10 @@ type ExtractedInfo = Pick<
   summary: string | null;
   status: string | null;
   commandType: string | null;
+  // Legacy fields for compatibility
+  searchQuery?: string;
+  foundInDocument?: string;
+  matchedText?: string;
 };
 
 type StatusRule = {
@@ -189,7 +187,7 @@ class InformationExtractor {
 
     const paragraphContent = this.getParagraphContent(
       containingSectionText,
-      match.matchedText,
+      match.declension,
     );
     const actionDateContent = this.findActionDateContent(containingSectionText);
     const reason = this.findReason(containingSectionText);
@@ -205,7 +203,9 @@ class InformationExtractor {
       (reason && this.findActionDate(reason)) ||
       // NOTE: in title / reason: there are dates of legal laws / acts are used, so it's better not to parse them
       // (sectionTitle && this.findActionDate(sectionTitle)) ||
-      this.extractDateFromFilename(match.foundInDocument);
+      (match.documentName
+        ? this.extractDateFromFilename(match.documentName)
+        : null);
 
     // Generate summary and determine status
     const summary = this.generateSummary(
@@ -219,9 +219,12 @@ class InformationExtractor {
     const commandType = this.determineCommandType(summary, status);
 
     return {
-      searchQuery: match.searchQuery,
-      foundInDocument: match.foundInDocument,
-      matchedText: match.matchedText,
+      name: match.name,
+      documentName: match.documentName,
+      declension: match.declension,
+      searchQuery: match.name,
+      foundInDocument: match.documentName,
+      matchedText: match.declension,
       content: paragraphContent,
       sectionTitle,
       reason,
@@ -264,11 +267,12 @@ class InformationExtractor {
           // Process each snippet in this document
           for (const matchedSnippet of searchMatch.snippets) {
             // Create a proper NameMatch object for the extract method
-            const nameMatch = {
-              searchQuery: searchResult.query,
-              foundInDocument: docName,
-              matchedText: matchedSnippet.match || '',
+            const nameMatch: NameMatch = {
+              name: searchResult.query,
+              documentName: docName,
+              declension: matchedSnippet.match || '',
               position: matchedSnippet.matchCharStart || 0,
+              confidence: 1.0, // Default confidence for search results
             };
 
             const extractedResult = this.extract(content, nameMatch);

@@ -9,12 +9,13 @@ type NameMatch = {
   declension: string;
   position: number;
   confidence: number;
+  documentName?: string;
 };
 
 class UkrainianNameMatcher {
-  private tokenClassifier: any = null;
-  private embedder: any = null;
-  private embeddingCache = new Map<string, any>();
+  protected tokenClassifier: any = null;
+  protected embedder: any = null;
+  protected embeddingCache = new Map<string, any>();
 
   async initialize() {
     try {
@@ -25,7 +26,7 @@ class UkrainianNameMatcher {
         'token-classification',
         'Xenova/bert-base-multilingual-cased',
         {
-          aggregation_strategy: 'simple',
+          // aggregation_strategy: 'simple',
           local_files_only: true, // Only use local files
         },
       );
@@ -46,7 +47,7 @@ class UkrainianNameMatcher {
         'token-classification',
         'Xenova/bert-base-multilingual-cased',
         {
-          aggregation_strategy: 'simple',
+          // aggregation_strategy: 'simple',
           progress_callback: (progress: any) => {
             if (progress.status === 'downloading') {
               const percent = (
@@ -283,7 +284,7 @@ class UkrainianNameMatcher {
   /**
    * Get embedding for a text, using cache if available.
    */
-  private async getCachedEmbedding(text: string): Promise<any> {
+  protected async getCachedEmbedding(text: string): Promise<any> {
     if (this.embeddingCache.has(text)) {
       // console.log(`🔄 Using cached embedding for: "${text}"`);
       return this.embeddingCache.get(text);
@@ -303,7 +304,7 @@ class UkrainianNameMatcher {
   /**
    * Extract only capitalized Ukrainian words with their positions (more likely to be names)
    */
-  private extractCapitalizedWordsWithPositions(
+  protected extractCapitalizedWordsWithPositions(
     content: string,
   ): Array<{ text: string; position: number }> {
     // Only match capitalized Ukrainian words (proper nouns)
@@ -509,7 +510,7 @@ class UkrainianNameMatcher {
   /**
    * Remove duplicates and sort matches
    */
-  private deduplicateAndSort(matches: NameMatch[]): NameMatch[] {
+  protected deduplicateAndSort(matches: NameMatch[]): NameMatch[] {
     const uniqueMatches = new Map<string, NameMatch>();
 
     matches.forEach((match) => {
@@ -593,7 +594,7 @@ class UkrainianNameMatcher {
   /**
    * Calculate cosine similarity between two vectors
    */
-  private cosineSimilarity(vecA: number[], vecB: number[]): number {
+  protected cosineSimilarity(vecA: number[], vecB: number[]): number {
     const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
     const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
     const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));

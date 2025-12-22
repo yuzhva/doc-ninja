@@ -4,29 +4,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-interface SliceOptions {
-  buffer: Buffer;
-  originalFileName?: string;
-  sheetToChunkPosition?: number;
-  headerRows?: number;
-  splitColumnPosition?: number;
-  maxColumnsToInclude?: number;
-  filenameSuffix?: string;
-  chunkNamePattern?: string;
-  includeHiddenSheets?: boolean;
-  additionalSheets?: Array<{
-    sheetIndex: number;
-    filterColumnPosition: number;
-    headerRows?: number;
-    maxColumnsToInclude?: number;
-  }>;
-}
-
-interface ChunkFile {
-  name: string;
-  content: Buffer;
-  relativePath: string;
-}
+import type { ChunkFile, SliceOptions } from './doc-to-chunks.types.ts';
 
 const sliceDocumentForChunks = async ({
   buffer,
