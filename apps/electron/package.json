@@ -1,5 +1,5 @@
 {
-  "name": "electron",
+  "name": "doc-ninja--electron",
   "version": "1.0.0",
   "description": "DOC Ninja Electron Wrapper over React PWA",
   "author": "Yevhen Uzhva",
