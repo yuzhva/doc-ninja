@@ -6,6 +6,7 @@ LICENSE
 # package manager
 pnpm-lock.yaml
 pnpm-workspace.yaml
+.npmrc
 .npmrc.example
 
 # packages

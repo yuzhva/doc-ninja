@@ -8,7 +8,9 @@
     "purge": "npm run purge:workspace--node_modules && npm run purge:workspace--dist",
     "build:packages-and-apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" build",
     "build:apps": "pnpm --filter \"./apps/**\" build",
-    "dev:apps": "pnpm --filter \"./apps/**\" dev"
+    "dev:apps": "pnpm --filter \"./apps/**\" dev",
+    "el:start": "pnpm --filter \"./apps/electron\" start",
+    "el:make": "pnpm --filter \"./apps/electron\" make"
   },
   "devDependencies": {
     "@mainset/dev-stack-fe": "^0.2.0",
