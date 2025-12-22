@@ -2,19 +2,19 @@ import fs from 'fs/promises';
 import path from 'path';
 import * as XLSX from 'xlsx';
 
-import { AdaptiveUkrainianNameMatcher } from '../nlp/adaptive-matcher.mts';
-import type { NameMatch } from '../nlp/index.mts';
-import type { ExtractedInfo } from '../nlp/information-extractor.mts';
-import { InformationExtractor } from '../nlp/information-extractor.mts';
-import { readExcelData } from '../nlp/utils/excel-utils.mts';
+import { AdaptiveUkrainianNameMatcher } from '../nlp/adaptive-matcher.mjs';
+import type { NameMatch } from '../nlp/index.mjs';
+import type { ExtractedInfo } from '../nlp/information-extractor.mjs';
+import { InformationExtractor } from '../nlp/information-extractor.mjs';
+import { readExcelData } from '../nlp/utils/excel-utils.mjs';
 import {
   collectFilePaths,
   getFoldersRecursive,
   runtimePathById,
-} from '../supplement/index.mts';
+} from '../supplement/index.mjs';
 
 // Extend NameMatch to include new extracted info
-declare module './nlp/name-matcher.mts' {
+declare module './nlp/name-matcher.mjs' {
   interface NameMatch {
     documentPath?: string;
     extractedInfo?: ExtractedInfo;

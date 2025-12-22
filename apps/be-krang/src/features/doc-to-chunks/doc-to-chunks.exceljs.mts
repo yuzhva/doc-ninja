@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import fs from 'fs/promises';
 import path from 'path';
 
-import { runtimePathById } from '../../supplement/index.mts';
+import { runtimePathById } from '../../supplement/index.mjs';
 import {
   createChunkNameExtractor,
   createSheetWithData,
@@ -11,7 +11,7 @@ import {
   getSheetByConfig,
   getSheetStructure,
   processAdditionalSheets,
-} from './doc-to-chunks.exceljs.utils.mts';
+} from './doc-to-chunks.exceljs.utils.mjs';
 
 interface SliceOptions {
   buffer: Buffer; // Changed from docPath to buffer

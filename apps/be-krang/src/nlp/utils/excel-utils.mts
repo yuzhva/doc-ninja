@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import * as XLSX from 'xlsx';
 
-import type { NameMatch } from '../nlp/name-matcher.mts';
+import type { NameMatch } from '../nlp/name-matcher.mjs';
 
 interface ProcessingResult {
   inputName: string;

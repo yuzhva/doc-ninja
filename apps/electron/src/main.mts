@@ -4,7 +4,8 @@ import request from 'supertest';
 import { fileURLToPath } from 'url';
 
 // Import your refactored Express app
-import { app as expressApp } from '../../be-krang/src/main.mts';
+// import { app as expressApp } from '../../be-krang/dist/esm/main.mjs';
+import { app as expressApp } from '../../be-krang/src/main.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -1,6 +1,6 @@
 import express from 'express';
 
-import * as ApiV1WelcomeController from './welcome.controller.mts';
+import * as ApiV1WelcomeController from './welcome.controller.mjs';
 
 const expressRouter = express.Router();
 

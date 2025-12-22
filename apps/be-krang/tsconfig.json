@@ -1,8 +1,6 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": ["@mainset/dev-stack-fe/tsconfig--bundler"],
   "compilerOptions": {
-    "allowImportingTsExtensions": false,
     "outDir": "./dist"
-  },
-  "include": ["src/**/*"]
+  }
 }

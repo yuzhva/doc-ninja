@@ -1,4 +1,4 @@
-import { UkrainianNameMatcher } from '../nlp/name-matcher.mts';
+import { UkrainianNameMatcher } from '../nlp/name-matcher.mjs';
 
 async function runInlineExample() {
   const matcher = new UkrainianNameMatcher();

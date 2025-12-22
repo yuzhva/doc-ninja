@@ -1,3 +1,3 @@
-export { UkrainianNameMatcher } from './name-matcher.mts';
-export type { NameMatch } from './name-matcher.mts';
-export { readExcelData, writeExcelResults } from './utils/excel-utils.mts';
+export { UkrainianNameMatcher } from './name-matcher.mjs';
+export type { NameMatch } from './name-matcher.mjs';
+export { readExcelData, writeExcelResults } from './utils/excel-utils.mjs';

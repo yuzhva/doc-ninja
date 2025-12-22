@@ -1,8 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-import { collectFilePaths } from './collect-file-paths.mts';
-import { convertDocViaHtmlToTxtAdvanced } from './convert-doc-to-txt.mts';
+import { collectFilePaths } from './collect-file-paths.mjs';
+import { convertDocViaHtmlToTxtAdvanced } from './convert-doc-to-txt.mjs';
 
 /**
  * Converts all docs and preserves structure under destRoot

@@ -5,19 +5,20 @@
   "scripts": {
     "purge:workspace--node_modules": "for /d /r . %d in (node_modules) do @if exist \"%d\" rmdir /s /q \"%d\"",
     "purge:workspace--dist": "for /d /r . %d in (dist) do @if exist \"%d\" rmdir /s /q \"%d\"",
-    "purge": "pnpm run purge:workspace--node_modules && pnpm run purge:workspace--dist",
+    "purge": "npm run purge:workspace--node_modules && npm run purge:workspace--dist",
+    "build:packages-and-apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" build",
     "build:apps": "pnpm --filter \"./apps/**\" build",
     "dev:apps": "pnpm --filter \"./apps/**\" dev"
   },
   "devDependencies": {
     "@mainset/dev-stack-fe": "^0.2.0",
     "cross-env": "^10.1.0",
-    "eslint": "^9.39.0",
+    "eslint": "^9.39.2",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.6",
-    "nodemon": "^3.1.10",
-    "prettier": "^3.6.2",
-    "stylelint": "^16.25.0"
+    "lint-staged": "^16.2.7",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.7.4",
+    "stylelint": "^16.26.1"
   },
-  "packageManager": "pnpm@10.20.0"
+  "packageManager": "pnpm@10.26.1"
 }

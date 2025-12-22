@@ -1,8 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 
-import { UkrainianNameMatcher } from './name-matcher.mts';
-import type { NameMatch } from './name-matcher.mts';
+import { UkrainianNameMatcher } from './name-matcher.mjs';
+import type { NameMatch } from './name-matcher.mjs';
 
 interface UserFeedback {
   match: NameMatch;

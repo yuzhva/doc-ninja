@@ -4,7 +4,7 @@ import {
   getFoldersRecursive,
   processFolderAllDocs,
   runtimePathById,
-} from '../supplement/index.mts';
+} from '../supplement/index.mjs';
 
 async function processFoldersTree(
   srcRoot = path.join(runtimePathById.assets, 'docs-to-convert'),

@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import fs from 'fs/promises';
 import path from 'path';
 
-import { runtimePathById } from '../../supplement/index.mts';
+import { runtimePathById } from '../../supplement/index.mjs';
 
 // Optimized merge detection with caching
 const mergeCache = new WeakMap<

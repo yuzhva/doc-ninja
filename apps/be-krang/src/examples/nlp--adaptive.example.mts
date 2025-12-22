@@ -1,4 +1,4 @@
-import { AdaptiveUkrainianNameMatcher } from '../nlp/adaptive-matcher.mts';
+import { AdaptiveUkrainianNameMatcher } from '../nlp/adaptive-matcher.mjs';
 
 async function runAdaptiveDemo() {
   console.log('🧠 Starting Adaptive Ukrainian Name Matcher Demo...\n');

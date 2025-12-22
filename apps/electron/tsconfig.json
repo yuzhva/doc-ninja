@@ -1,3 +1,7 @@
 {
-  "extends": "../../tsconfig.json"
+  "extends": ["@mainset/dev-stack-fe/tsconfig--bundler"]
+  // "compilerOptions": {
+  //   "allowImportingTsExtensions": true,
+  //   "noEmit": true
+  // }
 }

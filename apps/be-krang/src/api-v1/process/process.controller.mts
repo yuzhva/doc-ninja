@@ -4,8 +4,8 @@ import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 import {
   DocumentIntelligenceService,
   ExcelReportGenerator,
-} from '../../features/document-intelligence-service/index.mts';
-import { InformationExtractor } from '../../nlp/information-extractor.mts';
+} from '../../features/document-intelligence-service/index.mjs';
+import { InformationExtractor } from '../../nlp/information-extractor.mjs';
 
 const mapExtractedResultsToReportRows = (results: any[]) => {
   return results.map((row: any) => {

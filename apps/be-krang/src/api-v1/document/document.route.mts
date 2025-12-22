@@ -3,8 +3,8 @@ import express from 'express';
 import {
   uploadMultiple,
   uploadSingle,
-} from '../../middleware/upload.middleware.mts';
-import * as ApiV1DocumentController from './document.controller.mts';
+} from '../../middleware/upload.middleware.mjs';
+import * as ApiV1DocumentController from './document.controller.mjs';
 
 const expressRouter = express.Router();
 

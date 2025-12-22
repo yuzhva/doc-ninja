@@ -6,7 +6,7 @@ import type {
 } from 'toolkit--local/node';
 import { createMegaSearch } from 'toolkit--local/node';
 
-import { runtimePathById } from '../../supplement/index.mts';
+import { runtimePathById } from '../../supplement/index.mjs';
 
 interface SearchResult {
   query: string;
