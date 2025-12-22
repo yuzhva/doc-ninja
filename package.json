@@ -3,8 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "purge:workspace--node_modules": "for /d /r . %d in (node_modules) do @if exist \"%d\" rmdir /s /q \"%d\"",
-    "purge:workspace--dist": "for /d /r . %d in (dist) do @if exist \"%d\" rmdir /s /q \"%d\"",
+    "purge:workspace--node_modules": "find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +",
+    "purge:workspace--dist": "find . -name 'dist' -type d -prune -exec rm -rf '{}' +",
     "purge": "npm run purge:workspace--node_modules && npm run purge:workspace--dist",
     "build:apps": "pnpm --filter \"./packages/**\" build --filter \"./apps/**\" build",
     "dev:apps": "pnpm  --filter \"./packages/**\" dev --filter \"./apps/**\" dev"
@@ -12,12 +12,12 @@
   "devDependencies": {
     "@mainset/dev-stack-fe": "^0.2.0",
     "cross-env": "^10.1.0",
-    "eslint": "^9.39.0",
+    "eslint": "^9.39.2",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.6",
-    "nodemon": "^3.1.10",
-    "prettier": "^3.6.2",
-    "stylelint": "^16.25.0"
+    "lint-staged": "^16.2.7",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.7.4",
+    "stylelint": "^16.26.1"
   },
   "packageManager": "pnpm@10.26.1"
 }

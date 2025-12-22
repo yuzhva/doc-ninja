@@ -26,14 +26,14 @@
     "demo:nlp--parallel": "tsx ./node/examples/nlp-analyzer/parallel-processing.example.ts"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.7.6",
+    "@huggingface/transformers": "^3.8.1",
     "mammoth": "^1.11.0",
     "natural": "^8.1.0",
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "@mainset/cli": "^0.3.0",
-    "@types/node": "^24.8.1"
+    "@types/node": "^25.0.3"
   },
   "packageManager": "pnpm@10.26.1"
 }
