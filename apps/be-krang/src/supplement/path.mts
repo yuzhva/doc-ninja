@@ -7,6 +7,7 @@ const runtimePathById = {
   root,
 
   src: path.join(root, 'src'),
+  dist: path.join(root, 'dist'),
   assets: path.join(root, 'assets'),
   // assets: path.join(root, 'assets/demo--extract-info'),
   // assets: path.join(root, 'assets/demo--process-data'),

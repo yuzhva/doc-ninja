@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch ./src/index.mts",
-    "build": "ms-cli node-sourcer --exec build",
+    "build": "ms-cli node-sourcer --exec build && pnpm run build:python",
+    "build:python": "bash scripts/build-python-source-code.sh",
     "serve": "node ./dist/cjs/index.cjs",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
     "nlp:extract-info": "tsx ./src/features/nlp-extract-info.mts",

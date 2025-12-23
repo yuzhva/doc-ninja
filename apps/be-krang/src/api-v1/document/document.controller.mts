@@ -1,16 +1,15 @@
-import { spawn } from 'child_process';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 import os from 'os';
 import path from 'path';
 import { DocumentExtractor } from 'toolkit--local/node';
-import { fileURLToPath } from 'url';
 
 import {
   sliceDocumentForChunksViaExcelJs,
   sliceDocumentForChunksViaPythonScript,
 } from '../../features/doc-to-chunks/index.mjs';
+import { executePythonScript } from '../../python-scripts/python-executor.mjs';
 import {
   appendExtension,
   replaceExtension,
@@ -57,8 +56,6 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
 
     try {
       // Setup paths
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
       const tempDir = os.tmpdir();
       const timestamp = Date.now();
 
@@ -70,31 +67,16 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
       // Write buffer to temp file
       await fs.writeFile(inputFilePath, buffer);
 
-      // Spawn Python script
-      const scriptPath = path.join(
-        __dirname,
-        '../../scripts/convert_xlsx_to_static.py',
-      );
       console.log('Spawning Python conversion script (openpyxl)...');
 
-      await new Promise<void>((resolve, reject) => {
-        const pythonProcess = spawn(
-          'python3',
-          [scriptPath, inputFilePath, outputFilePath],
-          { env: process.env },
-        );
-
-        pythonProcess.stdout.on('data', (data) =>
-          console.log(`Python: ${data}`),
-        );
-        pythonProcess.stderr.on('data', (data) =>
-          console.error(`Python Error: ${data}`),
-        );
-        pythonProcess.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`Python script exited with code ${code}`));
-        });
-      });
+      await executePythonScript(
+        'convert_xlsx_to_static',
+        [inputFilePath, outputFilePath],
+        {
+          onLog: (str) => console.log(`Python: ${str}`),
+          onError: (str) => console.error(`Python Error: ${str}`),
+        },
+      );
 
       // Read the converted file
       const convertedBuffer = await fs.readFile(outputFilePath);

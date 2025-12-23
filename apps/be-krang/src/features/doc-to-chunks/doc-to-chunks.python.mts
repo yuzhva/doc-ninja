@@ -1,9 +1,9 @@
-import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import { executePythonScript } from '../../python-scripts/python-executor.mjs';
 import type { ChunkFile, SliceOptions } from './doc-to-chunks.types.ts';
 
 const sliceDocumentForChunks = async ({
@@ -20,9 +20,6 @@ const sliceDocumentForChunks = async ({
 }: SliceOptions): Promise<ChunkFile[]> => {
   const startTime = Date.now();
 
-  // Setup paths
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
   const tempDir = os.tmpdir();
   const timestamp = Date.now();
   const runId = Math.random().toString(36).substring(7);
@@ -51,37 +48,20 @@ const sliceDocumentForChunks = async ({
       additionalSheets,
     };
 
-    // Spawn Python script
-    const scriptPath = path.join(
-      __dirname,
-      '../../scripts/slice_xlsx_for_chunks.py',
+    console.log('Spawning slicing process...');
+
+    await executePythonScript(
+      'slice_xlsx_for_chunks',
+      [inputFilePath, outputDir, JSON.stringify(config)],
+      {
+        onLog: (str) => {
+          if (!str.startsWith('JSON_RESULT:')) {
+            console.log(`Python: ${str.trim()}`);
+          }
+        },
+        onError: (str) => console.error(`Python Error: ${str}`),
+      },
     );
-    console.log('Spawning Python slicing script...');
-
-    await new Promise<void>((resolve, reject) => {
-      const pythonProcess = spawn(
-        'python3',
-        ['-u', scriptPath, inputFilePath, outputDir, JSON.stringify(config)], // show logs
-        // [scriptPath, inputFilePath, outputDir, JSON.stringify(config)], // without logs
-        { env: process.env },
-      );
-
-      pythonProcess.stdout.on('data', (data) => {
-        const str = data.toString();
-        if (!str.startsWith('JSON_RESULT:')) {
-          console.log(`Python: ${str.trim()}`);
-        }
-      });
-
-      pythonProcess.stderr.on('data', (data) =>
-        console.error(`Python Error: ${data}`),
-      );
-
-      pythonProcess.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Python script exited with code ${code}`));
-      });
-    });
 
     // Read generated files
     const files = await fs.readdir(outputDir);
