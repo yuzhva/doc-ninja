@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch ./src/index.mts",
     "build": "ms-cli node-sourcer --exec build && pnpm run build:python",
-    "build:python": "bash scripts/build-python-source-code.sh",
+    "build:python": "node ./scripts/build-python-source-code.mjs",
     "serve": "node ./dist/cjs/index.cjs",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
     "nlp:extract-info": "tsx ./src/features/nlp-extract-info.mts",
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@mainset/builder-rslib": "^0.2.0",
-    "@mainset/cli": "^0.4.0",
+    "@mainset/cli": "^0.4.3",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",

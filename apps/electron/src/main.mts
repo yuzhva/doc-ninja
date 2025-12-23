@@ -1,8 +1,7 @@
-import { BrowserWindow, dialog, app as electronApp, ipcMain } from 'electron';
-import fs from 'fs';
+import { BrowserWindow, app as electronApp, ipcMain } from 'electron';
 import path from 'path';
 import request from 'supertest';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,7 +51,7 @@ electronApp.whenReady().then(async () => {
   }
 
   // Use dynamic import to load the module
-  const backendModule = await import(backendPath);
+  const backendModule = await import(pathToFileURL(backendPath).href);
   expressApp = backendModule.app;
 
   // Handle IPC calls from the React UI

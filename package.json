@@ -7,7 +7,7 @@
     "purge:workspace--dist": "for /d /r . %d in (dist) do @if exist \"%d\" rmdir /s /q \"%d\"",
     "purge": "npm run purge:workspace--node_modules && npm run purge:workspace--dist",
     "build:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" build",
-    "dev:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" dev",
+    "dev:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" --parallel dev",
     "el:start": "pnpm --filter \"./apps/electron\" start",
     "el:make": "pnpm --filter \"./apps/electron\" make"
   },

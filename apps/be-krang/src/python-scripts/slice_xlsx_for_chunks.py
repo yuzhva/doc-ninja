@@ -7,6 +7,7 @@ import traceback
 import concurrent.futures
 from openpyxl import load_workbook
 from openpyxl.worksheet.views import Selection
+import multiprocessing
 
 def cleanup_workbook(wb):
     print("Cleaning up workbook structure to prevent corruption warnings...")
@@ -409,6 +410,9 @@ def process(input_path, output_dir, config_json):
     print("JSON_RESULT:" + json.dumps(generated_files))
 
 if __name__ == "__main__":
+    # Required for PyInstaller to work with multiprocessing
+    multiprocessing.freeze_support()
+
     if len(sys.argv) < 4:
         print("Usage: python slice_xlsx_for_chunks.py <input_file> <output_dir> <config_json>")
         sys.exit(1)
