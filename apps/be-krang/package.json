@@ -12,7 +12,7 @@
     "nlp:demo--adaptive": "tsx ./src/examples/nlp--adaptive.example.mts"
   },
   "devDependencies": {
-    "@mainset/cli": "^0.3.0",
+    "@mainset/cli": "^0.3.2",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",
