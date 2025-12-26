@@ -52,6 +52,9 @@ export class InvertedIndex {
     }
   }
 
+  /**
+   * Get entries for a specific term.
+   */
   get(term: string): InvertedIndexEntry[] | undefined {
     const list = this.index.get(term);
     if (!list) return undefined;
@@ -73,6 +76,13 @@ export class InvertedIndex {
       });
     }
     return entries;
+  }
+
+  /**
+   * Delete a term from the index.
+   */
+  delete(term: string): boolean {
+    return this.index.delete(term);
   }
 
   has(term: string): boolean {

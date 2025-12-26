@@ -53,10 +53,13 @@ const postProcessDocuments = async (req: Request, res: Response) => {
     const searchOptions = {
       pageSize: pageSize === 'ALL' ? pageSize : Number(pageSize) || 10,
       sortOrder,
+      searchScopedPaths: req.body.searchScopedPaths,
     };
 
     // Use DocumentIntelligenceService for search
-    const documentIntelligenceService = new DocumentIntelligenceService();
+    const documentIntelligenceService = new DocumentIntelligenceService(
+      req.body.sourcePath,
+    );
     const excelReportGenerator = new ExcelReportGenerator();
 
     const searchResults = await documentIntelligenceService.searchDocuments(

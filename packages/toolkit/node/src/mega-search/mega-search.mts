@@ -1,3 +1,4 @@
+import path from 'path';
 import * as v8 from 'v8';
 
 import { BM25Scorer } from './bm25-scorer.mjs';
@@ -24,7 +25,6 @@ class MegaSearch {
   private bm25Scorer: BM25Scorer;
   private phraseMatcher: PhraseMatcher;
   private snippetGenerator: SnippetGenerator;
-  private stemDictionary = new Map<string, string[]>(); // STAGE 1
 
   // ADD: Query preprocessing cache
   private queryCache = new Map<
@@ -229,8 +229,7 @@ class MegaSearch {
     const searchStartTime = Date.now();
     logger.info(`🔍 [START] Search request: "${query}"`);
 
-    // Cast options to any to support new sorting parameters not yet in the interface
-    const opts = options as any;
+    // Options are now fully typed via SearchOptions interface
     const {
       topN = 50,
       fuzzy = true,
@@ -244,9 +243,22 @@ class MegaSearch {
       sortOrder = 'desc',
       filenameDatePattern,
       includeHighlights = false,
-      snippetContextBefore = 0, // Default to 0 as requested
-      snippetContextAfter = 30, // Reduced default from 50 to 30 (~250 chars)
-    } = opts;
+      snippetContextBefore = 0,
+      snippetContextAfter = 30,
+      searchScopedPaths = [],
+    } = options;
+
+    // Resolve scoped paths to absolute paths relative to rootDirectory
+    const resolvedScopedPaths = searchScopedPaths.map((p) => {
+      // If path is already absolute and within root, keep it
+      if (path.isAbsolute(p) && p.startsWith(this.config.rootDirectory)) {
+        return p;
+      }
+      // Otherwise treat as relative to root
+      // Remove leading slash if present to ensure path.join works correctly as relative
+      const cleanPath = p.replace(/^[/\\]/, '');
+      return path.join(this.config.rootDirectory, cleanPath);
+    });
 
     // ✅ FIX: Create a comprehensive cache key that includes all options.
     const cacheKey = JSON.stringify({ query, options });
@@ -377,6 +389,18 @@ class MegaSearch {
             return false;
           });
         }
+
+        // ✅ STAGE 4: Apply Path Filtering for Phrase Search
+        if (resolvedScopedPaths.length > 0) {
+          filteredDocIds = filteredDocIds.filter((docId) => {
+            const doc = docCache.get(docId);
+            if (!doc) return false;
+            return resolvedScopedPaths.some((p: string) =>
+              doc.metadata.originalFilePath.startsWith(p),
+            );
+          });
+        }
+
         logger.debug(
           `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
         );
@@ -447,6 +471,14 @@ class MegaSearch {
               const doc = docCache.get(entry.documentId);
 
               if (!doc) continue;
+
+              // ✅ STAGE 4: Apply Path Filtering for Normal Search
+              if (resolvedScopedPaths.length > 0) {
+                const isAllowed = resolvedScopedPaths.some((p: string) =>
+                  doc.metadata.originalFilePath.startsWith(p),
+                );
+                if (!isAllowed) continue;
+              }
 
               let score: number;
 
@@ -898,32 +930,6 @@ async function createMegaSearch(
   return megaSearch;
 }
 
-// Legacy compatibility
-async function createFileIndexer(
-  config: Partial<SearchConfig> = {},
-): Promise<FileIndexer> {
-  const finalConfig = { ...defaultConfig, ...config };
-  const fileIndexer = new FileIndexer(finalConfig);
-  return fileIndexer;
-}
-
-// Test function for CLI usage
-async function testMegaSearch(
-  config: Partial<SearchConfig> = {},
-): Promise<void> {
-  const finalConfig = { ...defaultConfig, ...config };
-  const megaSearch = new MegaSearch(finalConfig);
-
-  // Test without full indexing first
-  await megaSearch.testDocumentParsing();
-}
-
-export {
-  createFileIndexer,
-  createMegaSearch,
-  defaultConfig,
-  MegaSearch,
-  testMegaSearch,
-};
+export { createMegaSearch, defaultConfig, MegaSearch };
 
 export type { SearchOptions };

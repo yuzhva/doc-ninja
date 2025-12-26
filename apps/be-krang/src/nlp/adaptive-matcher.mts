@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 
+import { runtimePathById } from '../supplement/index.mjs';
 import { UkrainianNameMatcher } from './name-matcher.mjs';
 import type { NameMatch } from './name-matcher.mjs';
 
@@ -28,7 +29,8 @@ class AdaptiveUkrainianNameMatcher extends UkrainianNameMatcher {
   constructor(settingsPath?: string) {
     super();
     this.settingsPath =
-      settingsPath || path.join(process.cwd(), 'assets/adaptive-settings.json');
+      settingsPath ||
+      path.join(runtimePathById.assets, 'adaptive-settings.json');
     this.adaptiveSettings = {
       confidenceThresholds: {
         twoWordMatch: 0.9,
