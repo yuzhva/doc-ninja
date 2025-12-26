@@ -32,7 +32,7 @@ type SearchOptions = {
   /**
    * Number of results per page (default: 10).
    */
-  pageSize?: number;
+  pageSize?: number | 'ALL';
 
   /**
    * Enable fuzzy matching *within* phrase searches (default: false).
@@ -82,6 +82,12 @@ type SearchOptions = {
    * Number of tokens to include after the match in the snippet (default: 30).
    */
   snippetContextAfter?: number;
+
+  /**
+   * List of paths to restrict the search to specific scopes (default: all indexed paths).
+   * Useful for multi-tenant setups or when documents are organized in distinct folders.
+   */
+  searchScopedPaths?: string[];
 };
 
 // NEW: Enhanced snippet information with position data

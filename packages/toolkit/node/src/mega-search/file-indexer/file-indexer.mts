@@ -11,7 +11,7 @@ import {
   SearchConfig,
 } from '../types.mjs';
 import { DocumentProcessor } from './document-processor.mjs';
-import { FileScanner } from './file-scanner.mjs';
+import { FileScannerIndexer } from './file-scanner.indexer.mjs';
 import { IndexBuilder } from './index-builder.mjs';
 import { IndexStorage } from './index-storage.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
@@ -30,14 +30,14 @@ class FileIndexer {
     lastWarmed: number;
   };
 
-  private scanner: FileScanner;
+  private scanner: FileScannerIndexer;
   private processor: DocumentProcessor;
   private storage: IndexStorage;
   private builder: IndexBuilder;
 
   constructor(private config: SearchConfig) {
     this.config.rootDirectory = path.resolve(this.config.rootDirectory);
-    this.scanner = new FileScanner(this.config, this.logger);
+    this.scanner = new FileScannerIndexer(this.config, this.logger);
     this.processor = new DocumentProcessor(this.config, this.logger);
     this.storage = new IndexStorage(this.config, this.logger, this.documentLRU);
     this.builder = new IndexBuilder(this.config, this.logger);
@@ -49,6 +49,55 @@ class FileIndexer {
 
   async extractTextFromFile(filePath: string): Promise<string> {
     return this.processor.extractTextFromFile(filePath);
+  }
+
+  /**
+   * Indexes only the specified paths (files or directories).
+   * Merges the results into the existing global index.
+   */
+  async indexSpecificPaths(paths: string[]): Promise<void> {
+    // Default behavior: if no paths provided, build full index
+    if (!paths || paths.length === 0) {
+      this.logger.info('No specific paths provided. Running full index build.');
+      return this.buildFullIndex();
+    }
+
+    this.logger.info(`🎯 Indexing ${paths.length} specific paths...`);
+
+    // Ensure global index is loaded so we can merge updates
+    if (this.documentCache.size === 0) {
+      const loadedData = await this.storage.loadGlobalIndex();
+      if (loadedData) {
+        this.documentCache = loadedData.documentCache;
+        this.invertedIndex = loadedData.invertedIndex;
+        this.stemDictionary = loadedData.stemDictionary;
+        this.logger.debug(
+          '📋 Loaded existing global index for partial update.',
+        );
+      }
+    }
+
+    // 1. Discover files within the requested paths
+    const filesToIndex = await this.scanner.discoverSpecificPaths(paths);
+
+    if (filesToIndex.length === 0) {
+      this.logger.info('No valid files found in the specified paths.');
+      return;
+    }
+
+    this.logger.info(`Found ${filesToIndex.length} files to process.`);
+
+    // 2. Select method (Sequential vs Parallel)
+    const indexingMethod = await this.selectIndexingMethod(filesToIndex);
+
+    // 3. Process files
+    // Note: We pass filesRemoved=false because we are doing an additive update,
+    // not a full sweep that should prune missing files.
+    if (indexingMethod === 'parallel') {
+      await this.buildFullIndexParallel(filesToIndex, {}, false);
+    } else {
+      await this.buildFullIndexSequential(filesToIndex, {}, false);
+    }
   }
 
   /**
@@ -195,6 +244,32 @@ class FileIndexer {
     }
   }
 
+  /**
+   * Removes a document's terms from the inverted index.
+   * Crucial for partial updates to prevent stale terms.
+   */
+  private purgeDocumentFromIndex(doc: DocumentIndex, docId: string) {
+    // Iterate over all terms in the old document
+    for (const term of doc.termFrequency.keys()) {
+      // Access entries using public get() method
+      const entries = this.invertedIndex.get(term);
+
+      if (entries && Array.isArray(entries)) {
+        // Mutate array in place to remove the document entry
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].documentId === docId) {
+            entries.splice(i, 1);
+          }
+        }
+
+        // If term has no more documents, remove the term entirely
+        if (entries.length === 0) {
+          this.invertedIndex.delete(term);
+        }
+      }
+    }
+  }
+
   private async selectIndexingMethod(
     files: DocumentMetadata[],
   ): Promise<'sequential' | 'parallel'> {
@@ -261,6 +336,14 @@ class FileIndexer {
             if (
               await this.processor.needsReindexing(file, this.documentCache)
             ) {
+              // PURGE: Remove old terms before re-indexing
+              if (wasInCache) {
+                const oldDoc = this.documentCache.get(file.originalFilePath);
+                if (oldDoc) {
+                  this.purgeDocumentFromIndex(oldDoc, file.originalFilePath);
+                }
+              }
+
               const result = await this.processor.indexDocument(file);
               this.documentCache.set(file.originalFilePath, result);
               const isNewlyProcessed = !wasInCache && result.metadata.indexed;
@@ -399,6 +482,15 @@ class FileIndexer {
         let workerErrors = 0;
         for (const file of chunk) {
           try {
+            // PURGE: Remove old terms before re-indexing
+            const wasInCache = this.documentCache.has(file.originalFilePath);
+            if (wasInCache) {
+              const oldDoc = this.documentCache.get(file.originalFilePath);
+              if (oldDoc) {
+                this.purgeDocumentFromIndex(oldDoc, file.originalFilePath);
+              }
+            }
+
             const result = await this.processor.indexDocument(file);
             this.documentCache.set(file.originalFilePath, result);
             workerIndexed++;

@@ -25,12 +25,20 @@ interface SearchResult {
 
 class DocumentIntelligenceService {
   private megaSearchInstance: MegaSearch | null = null;
+  private rootDirectory: string;
+
+  constructor(rootDirectory: string) {
+    this.rootDirectory = path.isAbsolute(rootDirectory)
+      ? rootDirectory
+      : // NOTE: "workaround" for "Browser dev mode"
+        // Docker container - does NOT have access to Local File System, so we are resolving to assets folder
+        path.join(runtimePathById.assets, rootDirectory);
+  }
 
   async getMegaSearchInstance(): Promise<MegaSearch> {
     if (!this.megaSearchInstance) {
-      const sourcePath = path.join(runtimePathById.assets, 'docs-for-nlp');
       this.megaSearchInstance = await createMegaSearch({
-        rootDirectory: sourcePath,
+        rootDirectory: this.rootDirectory,
         concurrency: 4,
       });
     }
