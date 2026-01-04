@@ -1,71 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-interface FileInfo {
-  filePath: string;
-  fileName: string;
-  lastModified: number;
-  size: number;
-  extension: string;
-}
-
-/**
- * Recursively scan directory for files with specific extensions
- */
-async function scanDirectory(
-  directory: string,
-  extensions: string[],
-  options: {
-    maxFileSize?: number;
-    excludeDirs?: string[];
-  } = {},
-): Promise<FileInfo[]> {
-  const { maxFileSize = Infinity, excludeDirs = ['.cache', 'node_modules'] } =
-    options;
-  const files: FileInfo[] = [];
-
-  async function scan(dir: string): Promise<void> {
-    try {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-
-        if (entry.isDirectory()) {
-          if (!excludeDirs.includes(entry.name)) {
-            await scan(fullPath);
-          }
-        } else if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-
-          if (extensions.includes(ext)) {
-            try {
-              const stats = await fs.stat(fullPath);
-
-              if (stats.size <= maxFileSize) {
-                files.push({
-                  filePath: fullPath,
-                  fileName: entry.name,
-                  lastModified: stats.mtimeMs,
-                  size: stats.size,
-                  extension: ext,
-                });
-              }
-            } catch (error) {
-              console.warn(`Cannot stat file ${entry.name}:`, error);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(`Cannot read directory ${dir}:`, error);
-    }
-  }
-
-  await scan(directory);
-  return files;
-}
-
 /**
  * Extract date from file path with multiple strategies
  */
@@ -94,23 +29,6 @@ function extractDateFromPath(filePath: string): Date | null {
   return null;
 }
 
-/**
- * Safe file operations with proper error handling
- */
-async function safeReadFile(
-  filePath: string,
-  encoding: BufferEncoding = 'utf8',
-): Promise<string> {
-  try {
-    await fs.access(filePath, fs.constants.R_OK);
-    return await fs.readFile(filePath, encoding);
-  } catch (error) {
-    throw new Error(
-      `Cannot read file ${path.basename(filePath)}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    );
-  }
-}
-
 async function safeWriteFile(filePath: string, content: string): Promise<void> {
   try {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -122,6 +40,4 @@ async function safeWriteFile(filePath: string, content: string): Promise<void> {
   }
 }
 
-export { extractDateFromPath, safeReadFile, safeWriteFile, scanDirectory };
-
-export type { FileInfo };
+export { extractDateFromPath, safeWriteFile };

@@ -1,6 +1,7 @@
 export {
   createMegaSearch,
   DocumentExtractor,
+  FileScannerNode,
   MegaSearch,
 } from './mega-search/index.mjs';
 export type {

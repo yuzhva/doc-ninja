@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { FileSystemService } from 'toolkit--local/browser';
 
-import { scanDirectory } from '../shared/file-utils.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { DocumentMetadata, SearchConfig } from '../types.mjs';
+import { FileScannerNode } from './file-scanner.node.mjs';
 
 class FileScannerIndexer {
   private absoluteTxtCacheRoot: string;
@@ -25,46 +26,31 @@ class FileScannerIndexer {
     return path.join(this.absoluteTxtCacheRoot, `${rel}.txt`);
   }
 
-  /**
-   * Check if file should be skipped (temp files, system files, etc.)
-   */
-  private shouldSkipFile(
-    fileName: string,
-    filePath: string,
-    fileSize?: number,
-  ): boolean {
-    // Skip Microsoft Office temp files
-    if (fileName.startsWith('~$')) return true;
-
-    // Skip system files
-    if (fileName.startsWith('.') || fileName.startsWith('~')) return true;
-
-    // Skip very large files that might cause memory issues
-    try {
-      const size =
-        fileSize !== undefined ? fileSize : fs.statSync(filePath).size;
-
-      if (size > (this.config.maxFileSize || 50 * 1024 * 1024)) return true;
-      if (size === 0) return true;
-    } catch (error) {
-      return true;
-    }
-
-    return false;
-  }
-
   async discoverFiles(): Promise<DocumentMetadata[]> {
     try {
       this.logger.info(`Starting file discovery ${this.config.rootDirectory}`);
 
-      const fileInfos = await scanDirectory(
+      const items = await FileScannerNode.scanDirectory(
         this.config.rootDirectory,
-        this.config.extensions,
         {
+          extensions: this.config.extensions,
           maxFileSize: this.config.maxFileSize,
           excludeDirs: [this.config.cacheRoot || '.cache'],
         },
       );
+
+      // Map FileSystemItem to the internal format expected by processFileInfos
+      const fileInfos = items.map((item) => ({
+        // Reconstruct absolute path from relative path returned by FileScannerNode
+        filePath: path.resolve(this.config.rootDirectory, item.path),
+        fileName: item.name,
+        size: item.size,
+        // Ensure timestamp format
+        lastModified:
+          item.modifiedAt instanceof Date
+            ? item.modifiedAt.getTime()
+            : new Date(item.modifiedAt || 0).getTime(),
+      }));
 
       return this.processFileInfos(fileInfos);
     } catch (error) {
@@ -89,10 +75,22 @@ class FileScannerIndexer {
       try {
         const stats = await fs.promises.stat(fullPath);
         if (stats.isDirectory()) {
-          const infos = await scanDirectory(fullPath, this.config.extensions, {
+          const items = await FileScannerNode.scanDirectory(fullPath, {
+            extensions: this.config.extensions,
             maxFileSize: this.config.maxFileSize,
             excludeDirs: [this.config.cacheRoot || '.cache'],
           });
+
+          const infos = items.map((item) => ({
+            filePath: path.resolve(fullPath, item.path),
+            fileName: item.name,
+            size: item.size,
+            lastModified:
+              item.modifiedAt instanceof Date
+                ? item.modifiedAt.getTime()
+                : new Date(item.modifiedAt || 0).getTime(),
+          }));
+
           allFileInfos.push(...infos);
         } else if (stats.isFile()) {
           const ext = path.extname(fullPath).toLowerCase();
@@ -115,9 +113,14 @@ class FileScannerIndexer {
   }
 
   private processFileInfos(fileInfos: any[]): DocumentMetadata[] {
-    // Filter out temp and system files
+    // Filter out temp and system files using the shared service
     const filteredFileInfos = fileInfos.filter(
-      (file) => !this.shouldSkipFile(file.fileName, file.filePath, file.size),
+      (file) =>
+        !FileSystemService.shouldSkipFile(
+          file.fileName,
+          file.size,
+          this.config.maxFileSize,
+        ),
     );
 
     const documentMetadata: DocumentMetadata[] = filteredFileInfos.map(

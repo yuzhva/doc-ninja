@@ -4,6 +4,7 @@
     // "@mainset/dev-stack-fe/tschunk--react"
   ],
   "compilerOptions": {
+    "rootDir": ".",
     "outDir": "./dist/esm"
   }
 }
