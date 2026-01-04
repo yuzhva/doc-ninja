@@ -1,154 +1,49 @@
-// Unified file system structure types
-export interface FileSystemItem {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  size?: number; // Only for files
-  extension?: string; // Only for files
-  modifiedAt?: string; // ISO string
-  children?: FileSystemItem[]; // Only for directories
-}
+import type { FileSystemProcessedResult } from 'toolkit--local/browser';
+import { FileSystemService } from 'toolkit--local/browser';
 
-export interface FileContent {
-  item: FileSystemItem;
-  content: string; // File content for processing
-}
+import type { UseDirectoryPicker } from '../hooks/use-file-system';
 
-export interface ProcessingResult {
-  structure: FileSystemItem;
-  files: FileContent[]; // Flat list of all files with content
-}
+type WriteFilesViaDestinationHandle = NonNullable<
+  NonNullable<UseDirectoryPicker['processedDir']>['browserFSAPIhandle']
+>;
 
-// Types for processed files (for API responses)
-export interface ProcessedFileData {
+interface APIResponseFileData {
   name: string;
   content: string;
   relativePath: string;
   originalPath?: string;
 }
 
-export class FileSystemAPIProcessor {
-  /**
-   * Process a single file and return unified structure
-   */
-  static async processSingleFile(
-    fileHandle: FileSystemFileHandle,
-  ): Promise<ProcessingResult> {
-    const file = await fileHandle.getFile();
-    const content = await file.text();
+interface FSBatchProcessorOptions {
+  subfolderPath?: FormDataEntryValue | string | undefined;
+  successMessage?: string;
+  isWritingFilesSkipped?: boolean;
+  onProgress?: (progress: {
+    current: number;
+    total: number;
+    batch: number;
+  }) => void;
+}
 
-    const fileItem: FileSystemItem = {
-      name: file.name,
-      path: `/${file.name}`,
-      type: 'file',
-      size: file.size,
-      extension: FileSystemAPIProcessor.getFileExtension(file.name),
-      modifiedAt: new Date(file.lastModified).toISOString(),
-    };
+interface FSBatchExecutionResult {
+  totalProcessed: number;
+  totalFailed: number;
+  allErrors: any[];
+  message: string;
+}
 
-    return {
-      structure: fileItem,
-      files: [
-        {
-          item: fileItem,
-          content,
-        },
-      ],
-    };
-  }
+type BatchFile = FileSystemProcessedResult['files'][0] & {
+  contentAsBlob: Blob;
+};
 
-  /**
-   * Process an entire directory and return unified structure
-   */
-  static async processDirectory(
-    directoryHandle: FileSystemDirectoryHandle,
-    basePath = '',
-  ): Promise<ProcessingResult> {
-    const allFiles: FileContent[] = [];
-
-    const processDirectoryRecursive = async (
-      handle: FileSystemDirectoryHandle,
-      currentPath: string,
-      isRoot: boolean = false,
-    ): Promise<FileSystemItem> => {
-      const children: FileSystemItem[] = [];
-
-      for await (const [name, entry] of handle.entries()) {
-        // For root level, don't include the directory name in the path
-        const itemPath = isRoot ? `/${name}` : `${currentPath}/${name}`;
-
-        if (entry.kind === 'directory') {
-          // Recursively process subdirectory
-          const subdirItem = await processDirectoryRecursive(
-            entry,
-            itemPath,
-            false,
-          );
-          children.push(subdirItem);
-        } else if (entry.kind === 'file') {
-          // Process file
-          const file = await entry.getFile();
-          // Read as ArrayBuffer for safe handling of all file types
-          const arrayBuffer = await file.arrayBuffer();
-          // Convert to base64 to send in JSON
-          const content = btoa(
-            new Uint8Array(arrayBuffer).reduce(
-              (data, byte) => data + String.fromCharCode(byte),
-              '',
-            ),
-          );
-
-          const fileItem: FileSystemItem = {
-            name: file.name,
-            path: itemPath,
-            type: 'file',
-            size: file.size,
-            extension: FileSystemAPIProcessor.getFileExtension(file.name),
-            modifiedAt: new Date(file.lastModified).toISOString(),
-          };
-
-          children.push(fileItem);
-          allFiles.push({
-            item: fileItem,
-            content,
-          });
-        }
-      }
-
-      return {
-        name: handle.name,
-        path: isRoot ? '/' : currentPath,
-        type: 'directory',
-        children: children.sort((a, b) => {
-          // Sort directories first, then files
-          if (a.type !== b.type) {
-            return a.type === 'directory' ? -1 : 1;
-          }
-          return a.name.localeCompare(b.name);
-        }),
-      };
-    };
-
-    // Start processing from root with isRoot=true to exclude root directory name from paths
-    const structure = await processDirectoryRecursive(
-      directoryHandle,
-      '',
-      true,
-    );
-
-    return {
-      structure,
-      files: allFiles,
-    };
-  }
-
+class FileSystemAPIProcessor {
   /**
    * Write processed files back to file system maintaining structure
    */
   static async writeProcessedFiles(
-    processedFiles: ProcessedFileData[],
-    destinationHandle: FileSystemDirectoryHandle,
-    subfolderPath?: string,
+    processedFiles: APIResponseFileData[],
+    destinationHandle: WriteFilesViaDestinationHandle,
+    subfolderPath?: FSBatchProcessorOptions['subfolderPath'],
   ): Promise<void> {
     for (const file of processedFiles) {
       await this.writeFileToPath(file, destinationHandle, subfolderPath);
@@ -159,9 +54,9 @@ export class FileSystemAPIProcessor {
    * Helper: Write a single file to the correct path in destination
    */
   private static async writeFileToPath(
-    file: ProcessedFileData,
-    destinationHandle: FileSystemDirectoryHandle,
-    subfolderPath?: string,
+    file: APIResponseFileData,
+    destinationHandle: WriteFilesViaDestinationHandle,
+    subfolderPath?: FSBatchProcessorOptions['subfolderPath'],
   ): Promise<void> {
     // Start with the destination handle
     let currentDir = destinationHandle;
@@ -169,6 +64,7 @@ export class FileSystemAPIProcessor {
     // Create subfolder structure if specified (handle nested paths)
     if (subfolderPath) {
       const subfolderParts = subfolderPath
+        .toString()
         .split('/')
         .filter((part) => part !== '');
 
@@ -210,7 +106,7 @@ export class FileSystemAPIProcessor {
 
     // Check if content is base64 (for binary files like Excel)
     const fileExtension =
-      FileSystemAPIProcessor.getFileExtension(fileName).toLowerCase(); // Use public method
+      FileSystemService.getFileExtension(fileName).toLowerCase(); // Use toolkit method
     const isBinaryFile = [
       'xlsx',
       'xlsm',
@@ -289,43 +185,119 @@ export class FileSystemAPIProcessor {
     return mimeTypes[extension] || 'application/octet-stream';
   }
 
-  /**
-   * Helper: Extract file extension (make public so it can be accessed by other methods)
-   */
-  static getFileExtension(fileName: string): string {
-    const lastDot = fileName.lastIndexOf('.');
-    return lastDot > 0 ? fileName.substring(lastDot + 1) : '';
-  }
+  static async executeBatch(
+    processedDir: Omit<
+      NonNullable<UseDirectoryPicker['processedDir']>,
+      'browserFSAPIhandle'
+    >,
+    destinationHandle: WriteFilesViaDestinationHandle,
+    options: FSBatchProcessorOptions,
+    apiCall: (
+      batchFiles: BatchFile[],
+      batchIndex: number,
+      totalBatches: number,
+      structure: any,
+    ) => Promise<any>,
+  ): Promise<FSBatchExecutionResult> {
+    const { subfolderPath, successMessage, isWritingFilesSkipped, onProgress } =
+      options;
 
-  /**
-   * Helper: Get total file count from structure
-   */
-  static getFileCount(structure: FileSystemItem): number {
-    if (structure.type === 'file') {
-      return 1;
+    try {
+      const result = processedDir;
+      console.log(`Processing ${result.files.length} files`);
+
+      const BATCH_SIZE = 50;
+      const batches: any[][] = [];
+      for (let i = 0; i < result.files.length; i += BATCH_SIZE) {
+        batches.push(result.files.slice(i, i + BATCH_SIZE));
+      }
+
+      let totalProcessed = 0;
+      let totalFailed = 0;
+      const allErrors: any[] = [];
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const batchIndex = i + 1;
+
+        if (onProgress) {
+          onProgress({
+            current: totalProcessed + totalFailed,
+            total: result.files.length,
+            batch: batchIndex,
+          });
+        }
+
+        try {
+          // Pre-fetch content for all files in the batch to stay DRY
+          const enrichedBatch = await Promise.all(
+            batch.map(async (file: any) => {
+              if (typeof file.getFileContent === 'function') {
+                const content = await file.getFileContent();
+                return { ...file, contentAsBlob: new Blob([content]) };
+              }
+
+              return file;
+            }),
+          );
+
+          const response = await apiCall(
+            enrichedBatch,
+            batchIndex,
+            batches.length,
+            result.structure,
+          );
+
+          console.log(`Batch ${batchIndex} response:`, response);
+
+          if (response.processedFiles?.length > 0 && !isWritingFilesSkipped) {
+            await this.writeProcessedFiles(
+              response.processedFiles,
+              destinationHandle,
+              subfolderPath,
+            );
+          }
+
+          totalProcessed += response.processedFiles?.length || 0;
+          if (response.failedFiles?.length > 0) {
+            totalFailed += response.failedFiles.length;
+            allErrors.push(...response.failedFiles);
+          }
+        } catch (error: any) {
+          console.error(`Batch ${batchIndex} failed:`, error);
+          totalFailed += batch.length;
+          allErrors.push({ batch: batchIndex, error: error.message });
+        }
+      }
+
+      const message =
+        `✅ ${successMessage || 'Processing complete'}\n` +
+        `📄 Successfully processed: ${totalProcessed}\n` +
+        `❌ Failed: ${totalFailed}\n` +
+        `📁 Files saved to selected output folder${
+          subfolderPath ? ` (subfolder: ${subfolderPath})` : ''
+        }.`;
+
+      if (allErrors.length > 0) {
+        console.warn('Processing errors:', allErrors);
+      }
+
+      return {
+        totalProcessed,
+        totalFailed,
+        allErrors,
+        message,
+      };
+    } catch (error: any) {
+      console.error('Processing failed:', error);
+      throw error;
     }
-
-    if (structure.type === 'directory' && structure.children) {
-      return structure.children.reduce((count, child) => {
-        return count + this.getFileCount(child);
-      }, 0);
-    }
-
-    return 0;
-  }
-
-  /**
-   * Helper: Get all file paths from structure (for progress tracking)
-   */
-  static getAllFilePaths(structure: FileSystemItem): string[] {
-    if (structure.type === 'file') {
-      return [structure.path];
-    }
-
-    if (structure.type === 'directory' && structure.children) {
-      return structure.children.flatMap((child) => this.getAllFilePaths(child));
-    }
-
-    return [];
   }
 }
+
+export { FileSystemAPIProcessor };
+export type {
+  BatchFile,
+  FSBatchProcessorOptions,
+  WriteFilesViaDestinationHandle,
+};

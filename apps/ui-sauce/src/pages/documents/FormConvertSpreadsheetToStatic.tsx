@@ -1,56 +1,60 @@
 import React from 'react';
 
 import { fetchRequest } from '../../utils';
-import { FileSystemAPIProcessor } from '../../utils/file-system-processor';
 import { FormInputFileSelect, ProcessingButton } from './documents-components';
+import type { FormPageSectionProps } from './documents.types';
 
 const FormConvertSpreadsheetToStatic = ({
-  handleFileSelect,
-  handleSourceDirectorySelect,
-  handleOutputDirectorySelect,
-  initFileSystemApiCallExecutor,
+  onSelectFile,
+  // onSelectSourceDirectory,
+  onSelectOutputDirectory,
+  executeBatch,
   initSubmitHandler,
-  sourceDirectoryHandle,
-  outputDirectoryHandle,
-  selectedFileHandle,
-  progress,
+  // sourceDirectory,
+  outputDirectory,
+  selectedFile,
+  // progress,
   isFileSystemAccessSupported,
   isProcessing,
-}) => {
-  const postConvertSpreadsheetToStatic = React.useCallback(
+}: FormPageSectionProps) => {
+  const postConvertSpreadsheetToStatic = React.useCallback<
+    Parameters<typeof initSubmitHandler>[0]
+  >(
     async (formDataJSON) => {
-      return initFileSystemApiCallExecutor({
-        formDataJSON,
-        sourceHandle: selectedFileHandle,
-        destinationHandle: outputDirectoryHandle,
-        processorFunction: FileSystemAPIProcessor.processSingleFile,
-        validationMessage:
-          'Please select both a spreadsheet file and an output folder.',
-        successMessage: 'Successfully converted spreadsheet to static!',
-        // subfolderPath: 'xlsx-static',
-      })(async (batch, batchIndex, totalBatches, structure) => {
-        // Create file from the original file handle
-        const file = await selectedFileHandle.getFile();
+      return executeBatch(
+        {
+          formDataJSON,
+          processedDir: selectedFile!,
+          destinationHandle: outputDirectory?.browserFSAPIhandle!,
+          validationMessage:
+            'Please select both a spreadsheet file and an output folder.',
+          successMessage: 'Successfully converted spreadsheet to static!',
+          // subfolderPath: 'xlsx-static',
+        },
+        async (batchFiles) => {
+          // Create file from the original file handle
+          const file = batchFiles[0];
 
-        // Create FormData with the actual file
-        const formData = new FormData();
-        // Use file.name directly to preserve encoding
-        formData.append('file', file, file.name);
+          // Create FormData with the actual file
+          const formData = new FormData();
+          // Use file.name directly to preserve encoding
+          formData.append('file', file.contentAsBlob, file.name);
 
-        console.log(
-          '📤 Uploading file for static conversion via multipart:',
-          file.name,
-          'Size:',
-          file.size,
-        );
+          console.log(
+            '📤 Uploading file for static conversion via multipart:',
+            file.name,
+            'Size:',
+            file.size,
+          );
 
-        return fetchRequest('/api-local/convert/spreadsheet-to-static', {
-          method: 'POST',
-          body: formData,
-        });
-      });
+          return fetchRequest('/api-local/convert/spreadsheet-to-static', {
+            method: 'POST',
+            body: formData,
+          });
+        },
+      );
     },
-    [initFileSystemApiCallExecutor, selectedFileHandle, outputDirectoryHandle],
+    [executeBatch, selectedFile, outputDirectory],
   );
 
   return (
@@ -70,8 +74,8 @@ const FormConvertSpreadsheetToStatic = ({
                 name="spreadsheetFile"
                 label="Оберіть Excel файл"
                 accept=".xlsx,.xlsm,.xls"
-                onClick={handleFileSelect}
-                selectedItem={selectedFileHandle}
+                onClick={onSelectFile}
+                selectedItem={selectedFile}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
                 icon="file"
               />
@@ -81,8 +85,8 @@ const FormConvertSpreadsheetToStatic = ({
                 id="outputFolder"
                 name="outputFolder"
                 label="Кінцева папка для збереження"
-                onClick={handleOutputDirectorySelect}
-                selectedItem={outputDirectoryHandle}
+                onClick={onSelectOutputDirectory}
+                selectedItem={outputDirectory}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
                 icon="folder"
               />
@@ -93,7 +97,7 @@ const FormConvertSpreadsheetToStatic = ({
             <ProcessingButton
               type="submit"
               isLoading={isProcessing}
-              disabled={!selectedFileHandle || !outputDirectoryHandle}
+              disabled={!selectedFile || !outputDirectory}
             >
               {isProcessing ? 'Конвертую...' : 'Конвертувати в Статику'}
             </ProcessingButton>

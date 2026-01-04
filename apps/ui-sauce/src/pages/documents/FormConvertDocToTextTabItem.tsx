@@ -1,55 +1,58 @@
 import React from 'react';
 
 import { fetchRequest } from '../../utils';
-import { FileSystemAPIProcessor } from '../../utils/file-system-processor';
 import { FormInputFileSelect, ProcessingButton } from './documents-components';
+import type { FormPageSectionProps } from './documents.types';
 
 const FormConvertDocToTextTabItem = ({
-  handleFileSelect,
-  handleSourceDirectorySelect,
-  handleOutputDirectorySelect,
-  initFileSystemApiCallExecutor,
+  // handleFileSelect,
+  onSelectSourceDirectory,
+  onSelectOutputDirectory,
+  executeBatch,
   initSubmitHandler,
-  sourceDirectoryHandle,
-  outputDirectoryHandle,
-  selectedFileHandle,
+  sourceDirectory,
+  outputDirectory,
+  selectedFile,
+  // selectedFileHandle,
   progress,
   isFileSystemAccessSupported,
   isProcessing,
-}) => {
-  const postConvertDocToText = React.useCallback(
+}: FormPageSectionProps) => {
+  const postConvertDocToText = React.useCallback<
+    Parameters<typeof initSubmitHandler>[0]
+  >(
     async (formDataJSON) => {
-      return initFileSystemApiCallExecutor({
-        formDataJSON,
-        sourceHandle: sourceDirectoryHandle,
-        destinationHandle: outputDirectoryHandle,
-        processorFunction: FileSystemAPIProcessor.processDirectory,
-        validationMessage:
-          'Please select both source and output folders first.',
-        successMessage: 'Successfully converted documents to text!',
-        subfolderPath: formDataJSON.subfolderPath || 'doc-to-text',
-      })(async (batch, batchIndex, totalBatches, structure) => {
-        const formData = new FormData();
-        formData.append('batchIndex', String(batchIndex));
-        formData.append('totalBatches', String(totalBatches));
-        formData.append('structure', JSON.stringify(structure));
+      return executeBatch(
+        {
+          formDataJSON,
+          processedDir: selectedFile!,
+          destinationHandle: outputDirectory?.browserFSAPIhandle!,
+          validationMessage:
+            'Please select both source and output folders first.',
+          successMessage: 'Successfully converted documents to text!',
+          subfolderPath: formDataJSON.subfolderPath || 'doc-to-text',
+        },
+        async (batchFiles, batchIndex, totalBatches, structure) => {
+          const formData = new FormData();
+          formData.append('batchIndex', String(batchIndex));
+          formData.append('totalBatches', String(totalBatches));
+          formData.append('structure', JSON.stringify(structure));
 
-        batch.forEach((f) => {
-          const blob = new Blob([f.content]);
-          formData.append('files', blob, f.item.name);
-        });
+          // Process files in parallel to get content (Lazy Loading)
+          await Promise.all(
+            batchFiles.map(async (f) => {
+              formData.append('files', f.contentAsBlob, f.name);
+            }),
+          );
 
-        return fetchRequest('/api-local/convert/doc-to-text', {
-          method: 'POST',
-          body: formData,
-        });
-      });
+          return fetchRequest('/api-local/convert/doc-to-text', {
+            method: 'POST',
+            body: formData,
+          });
+        },
+      );
     },
-    [
-      initFileSystemApiCallExecutor,
-      sourceDirectoryHandle,
-      outputDirectoryHandle,
-    ],
+    [executeBatch, sourceDirectory, outputDirectory],
   );
 
   return (
@@ -68,8 +71,8 @@ const FormConvertDocToTextTabItem = ({
                 id="sourceFolder"
                 name="sourceFolder"
                 label="Початкова папка з документами"
-                onClick={handleSourceDirectorySelect}
-                selectedItem={sourceDirectoryHandle}
+                onClick={onSelectSourceDirectory}
+                selectedItem={sourceDirectory}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
                 icon="folder"
               />
@@ -79,8 +82,8 @@ const FormConvertDocToTextTabItem = ({
                 id="outputFolder"
                 name="outputFolder"
                 label="Кінцева папка для збереження текстових файлів"
-                onClick={handleOutputDirectorySelect}
-                selectedItem={outputDirectoryHandle}
+                onClick={onSelectOutputDirectory}
+                selectedItem={outputDirectory}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
                 icon="folder"
               />
@@ -107,7 +110,7 @@ const FormConvertDocToTextTabItem = ({
             <ProcessingButton
               type="submit"
               isLoading={isProcessing}
-              disabled={!sourceDirectoryHandle || !outputDirectoryHandle}
+              disabled={!sourceDirectory || !outputDirectory}
             >
               {isProcessing
                 ? `Конвертую... (${progress.current}/${progress.total})`
