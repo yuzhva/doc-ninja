@@ -1,26 +1,14 @@
 import React from 'react';
 
 import { Tabs } from '../../components';
-import {
-  FileSystemAPIProcessor,
-  ProcessingResult,
-} from '../../utils/file-system-processor';
+import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
 import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
 import { FormProcessDocumentTabItem } from './FormProcessDocumentTabItem/index';
 import { LoadingSpinner } from './documents-components';
-
-interface FileSystemApiCallOptions {
-  formDataJSON: any;
-  sourceHandle: FileSystemFileHandle | FileSystemDirectoryHandle | null;
-  destinationHandle: FileSystemDirectoryHandle | null;
-  processorFunction: (handle: any) => Promise<ProcessingResult>;
-  validationMessage: string;
-  successMessage: string;
-  subfolderPath?: string; // Renamed from subfolderName to better reflect nested paths
-  isWritingFilesSkipped?: boolean;
-}
+import { FormPageSectionProps } from './documents.types';
+import { useBatchProcessor } from './use-batch-processor';
 
 interface ToastMessage {
   id: number;
@@ -131,23 +119,8 @@ const Toast = ({
 };
 
 const DocumentsPage = () => {
-  // Simplified state - only 3 handles needed
-  const [sourceDirectoryHandle, setSourceDirectoryHandle] =
-    React.useState<FileSystemDirectoryHandle | null>(null);
-  const [outputDirectoryHandle, setOutputDirectoryHandle] =
-    React.useState<FileSystemDirectoryHandle | null>(null);
-  const [selectedFileHandle, setSelectedFileHandle] =
-    React.useState<FileSystemFileHandle | null>(null);
-
-  const [isProcessing, setIsProcessing] = React.useState(false);
-  const [progress, setProgress] = React.useState({
-    current: 0,
-    total: 0,
-    batch: 0,
-  });
-
+  // --- Toast Management ---
   const [toasts, setToasts] = React.useState<ToastMessage[]>([]);
-
   const addToast = React.useCallback(
     (type: 'success' | 'error' | 'warning', content: string) => {
       const id = Date.now();
@@ -155,52 +128,15 @@ const DocumentsPage = () => {
     },
     [],
   );
-
   const removeToast = React.useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const isFileSystemAccessSupported =
-    typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+  // --- File System Hooks ---
+  const sourceDir = useDirectoryPicker({ mode: 'read' });
+  const outputDir = useDirectoryPicker({ mode: 'readwrite' });
 
-  // General File System API handler factory
-  const createFileSystemHandler = React.useCallback(
-    (config: {
-      type: 'file' | 'directory';
-      mode?: 'read' | 'readwrite';
-      types?: any[];
-      setter: (handle: any) => void;
-    }) => {
-      return async (e: React.MouseEvent) => {
-        if (isFileSystemAccessSupported) {
-          e.preventDefault();
-          try {
-            let handle;
-            if (config.type === 'directory') {
-              handle = await window.showDirectoryPicker({
-                mode: config.mode || 'read',
-              });
-            } else {
-              const [fileHandle] = await window.showOpenFilePicker({
-                types: config.types || [],
-                multiple: false,
-              });
-              handle = fileHandle;
-            }
-            config.setter(handle);
-          } catch (error) {
-            if (error.name !== 'AbortError')
-              console.error(`Error selecting ${config.type}:`, error);
-          }
-        }
-      };
-    },
-    [isFileSystemAccessSupported],
-  );
-
-  // Simplified handlers - only 3 needed
-  const handleFileSelect = createFileSystemHandler({
-    type: 'file',
+  const filePicker = useFilePicker({
     types: [
       {
         description: 'Excel files',
@@ -213,156 +149,23 @@ const DocumentsPage = () => {
         },
       },
     ],
-    setter: setSelectedFileHandle,
   });
 
-  const handleSourceDirectorySelect = createFileSystemHandler({
-    type: 'directory',
-    mode: 'read',
-    setter: setSourceDirectoryHandle,
-  });
-
-  const handleOutputDirectorySelect = createFileSystemHandler({
-    type: 'directory',
-    mode: 'readwrite',
-    setter: setOutputDirectoryHandle,
-  });
-
-  // Refactored to handle all API response processing centrally
-  const initFileSystemApiCallExecutor = React.useCallback(
-    (options: FileSystemApiCallOptions) => {
-      return async (
-        makeApiCall: (
-          batch: any[],
-          batchIndex: number,
-          totalBatches: number,
-          structure: any,
-        ) => Promise<any>,
-      ) => {
-        // Validation
-        if (
-          [
-            options.formDataJSON.hasOwnProperty('sourceHandle')
-              ? options.formDataJSON['sourceHandle']
-              : true,
-            options.formDataJSON.hasOwnProperty('destinationHandle')
-              ? options.formDataJSON['destinationHandle']
-              : true,
-          ].includes(false)
-        ) {
-          const notificationContent = options.validationMessage;
-          addToast('warning', notificationContent);
-          if (window.document.hidden) new Notification(notificationContent);
-          return;
-        }
-
-        setIsProcessing(true);
-        setProgress({ current: 0, total: 0, batch: 0 });
-
-        try {
-          const result = await (options.sourceHandle
-            ? options.processorFunction(options.sourceHandle)
-            : { files: [{}] });
-
-          console.log(`Processing ${result.files.length} files`);
-
-          // Unified batching logic for both single file and directory
-          const BATCH_SIZE = 50;
-          const batches: any[][] = [];
-          for (let i = 0; i < result.files.length; i += BATCH_SIZE) {
-            batches.push(result.files.slice(i, i + BATCH_SIZE));
-          }
-
-          let totalProcessed = 0;
-          let totalFailed = 0;
-          const allErrors: any[] = [];
-
-          for (let i = 0; i < batches.length; i++) {
-            const batch = batches[i];
-            const batchIndex = i + 1;
-
-            setProgress({
-              current: totalProcessed + totalFailed,
-              total: result.files.length,
-              batch: batchIndex,
-            });
-
-            try {
-              const response = await makeApiCall(
-                batch,
-                batchIndex,
-                batches.length,
-                result.structure,
-              );
-
-              console.log(`Batch ${batchIndex} response:`, response);
-
-              // Update the batch processing to handle directory creation correctly
-              if (
-                response.processedFiles?.length > 0 &&
-                !options.isWritingFilesSkipped
-              ) {
-                await FileSystemAPIProcessor.writeProcessedFiles(
-                  response.processedFiles,
-                  options.destinationHandle,
-                  options.subfolderPath,
-                );
-              }
-
-              totalProcessed += response.processedFiles?.length || 0;
-              if (response.failedFiles?.length > 0) {
-                totalFailed += response.failedFiles.length;
-                allErrors.push(...response.failedFiles);
-              }
-            } catch (error) {
-              console.error(`Batch ${batchIndex} failed:`, error);
-              totalFailed += batch.length;
-              allErrors.push({ batch: batchIndex, error: error.message });
-            }
-          }
-          const notificationContent =
-            `✅ ${options.successMessage}\n` +
-            `📄 Successfully processed: ${totalProcessed}\n` +
-            `❌ Failed: ${totalFailed}\n` +
-            `📁 Files saved to selected output folder${options.subfolderPath ? ` (subfolder: ${options.subfolderPath})` : ''}.`;
-
-          addToast('success', notificationContent);
-
-          if (window.document.hidden) new Notification(notificationContent);
-
-          if (allErrors.length > 0) {
-            console.warn('Processing errors:', allErrors);
-          }
-        } catch (error) {
-          console.error('Processing failed:', error);
-
-          const notificationContent =
-            '❌ Processing failed. Check console for details.';
-          addToast('error', notificationContent);
-          if (window.document.hidden) new Notification(notificationContent);
-        } finally {
-          setIsProcessing(false);
-        }
-      };
-    },
-    [addToast],
-  );
+  // --- Batch Processor Hook ---
+  const { execute, isProcessing, progress } = useBatchProcessor(addToast);
 
   const initSubmitHandler = React.useCallback(
-    (apiCallFunction: () => void) => {
+    (
+      apiCallFunction: Parameters<FormPageSectionProps['initSubmitHandler']>[0],
+    ) => {
       return (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
-
-        const formDataJSON = {
-          ...Object.fromEntries(formData || {}),
-        };
-
-        // Execute the passed API function
-        apiCallFunction(formDataJSON);
+        const formDataJSON = { ...Object.fromEntries(formData || {}) };
+        return apiCallFunction(formDataJSON);
       };
     },
-    [sourceDirectoryHandle, outputDirectoryHandle, selectedFileHandle],
+    [],
   );
 
   React.useEffect(() => {
@@ -391,7 +194,7 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {!isFileSystemAccessSupported && (
+      {!sourceDir.isSupported && (
         <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
           ⚠️ File System Access API не підтримується. Використовуйте Chrome 86+
           або Edge 86+.
@@ -401,78 +204,61 @@ const DocumentsPage = () => {
       <Tabs aria-label="Tabs with icons">
         <Tabs.Item title="Конвертувати .xlsx в cтатику">
           <FormConvertSpreadsheetToStatic
-            handleFileSelect={handleFileSelect}
-            handleSourceDirectorySelect={handleSourceDirectorySelect}
-            handleOutputDirectorySelect={handleOutputDirectorySelect}
-            initFileSystemApiCallExecutor={initFileSystemApiCallExecutor}
+            onSelectFile={filePicker.selectFile}
+            onSelectSourceDirectory={sourceDir.selectDirectory}
+            onSelectOutputDirectory={outputDir.selectDirectory}
+            executeBatch={execute}
             initSubmitHandler={initSubmitHandler}
-            sourceDirectoryHandle={sourceDirectoryHandle}
-            outputDirectoryHandle={outputDirectoryHandle}
-            selectedFileHandle={selectedFileHandle}
+            sourceDirectory={sourceDir.processedDir}
+            outputDirectory={outputDir.processedDir}
+            selectedFile={filePicker.processedDir}
             progress={progress}
-            isFileSystemAccessSupported={isFileSystemAccessSupported}
+            isFileSystemAccessSupported={sourceDir.isSupported}
             isProcessing={isProcessing}
           />
         </Tabs.Item>
         <Tabs.Item title="Нарізка таблиці">
           <FormChunkSpreadsheetTabItem
-            handleFileSelect={handleFileSelect}
-            handleSourceDirectorySelect={handleSourceDirectorySelect}
-            handleOutputDirectorySelect={handleOutputDirectorySelect}
-            initFileSystemApiCallExecutor={initFileSystemApiCallExecutor}
+            onSelectFile={filePicker.selectFile}
+            onSelectSourceDirectory={sourceDir.selectDirectory}
+            onSelectOutputDirectory={outputDir.selectDirectory}
+            executeBatch={execute}
             initSubmitHandler={initSubmitHandler}
-            sourceDirectoryHandle={sourceDirectoryHandle}
-            outputDirectoryHandle={outputDirectoryHandle}
-            selectedFileHandle={selectedFileHandle}
+            sourceDirectory={sourceDir.processedDir}
+            outputDirectory={outputDir.processedDir}
+            selectedFile={filePicker.processedDir}
             progress={progress}
-            isFileSystemAccessSupported={isFileSystemAccessSupported}
+            isFileSystemAccessSupported={sourceDir.isSupported}
             isProcessing={isProcessing}
           />
         </Tabs.Item>
         <Tabs.Item title="Конвертувати Документи в Текст">
           <FormConvertDocToTextTabItem
-            handleFileSelect={handleFileSelect}
-            handleSourceDirectorySelect={handleSourceDirectorySelect}
-            handleOutputDirectorySelect={handleOutputDirectorySelect}
-            initFileSystemApiCallExecutor={initFileSystemApiCallExecutor}
+            onSelectFile={filePicker.selectFile}
+            onSelectSourceDirectory={sourceDir.selectDirectory}
+            onSelectOutputDirectory={outputDir.selectDirectory}
+            executeBatch={execute}
             initSubmitHandler={initSubmitHandler}
-            sourceDirectoryHandle={sourceDirectoryHandle}
-            outputDirectoryHandle={outputDirectoryHandle}
-            selectedFileHandle={selectedFileHandle}
+            sourceDirectory={sourceDir.processedDir}
+            outputDirectory={outputDir.processedDir}
+            selectedFile={filePicker.processedDir}
             progress={progress}
-            isFileSystemAccessSupported={isFileSystemAccessSupported}
+            isFileSystemAccessSupported={sourceDir.isSupported}
             isProcessing={isProcessing}
           />
         </Tabs.Item>
-        {/*
-        <Tabs.Item title="Проіндексувати текстові файли">
-          <FormConvertTextToIndexTabItem
-            handleFileSelect={handleFileSelect}
-            handleSourceDirectorySelect={handleSourceDirectorySelect}
-            handleOutputDirectorySelect={handleOutputDirectorySelect}
-            initFileSystemApiCallExecutor={initFileSystemApiCallExecutor}
-            initSubmitHandler={initSubmitHandler}
-            sourceDirectoryHandle={sourceDirectoryHandle}
-            outputDirectoryHandle={outputDirectoryHandle}
-            selectedFileHandle={selectedFileHandle}
-            progress={progress}
-            isFileSystemAccessSupported={isFileSystemAccessSupported}
-            isProcessing={isProcessing}
-          />
-        </Tabs.Item>
-        */}
         <Tabs.Item title="Пошук збігів в документах">
           <FormProcessDocumentTabItem
-            handleFileSelect={handleFileSelect}
-            handleSourceDirectorySelect={handleSourceDirectorySelect}
-            handleOutputDirectorySelect={handleOutputDirectorySelect}
-            initFileSystemApiCallExecutor={initFileSystemApiCallExecutor}
+            onSelectFile={filePicker.selectFile}
+            onSelectSourceDirectory={sourceDir.selectDirectory}
+            onSelectOutputDirectory={outputDir.selectDirectory}
+            executeBatch={execute}
             initSubmitHandler={initSubmitHandler}
-            sourceDirectoryHandle={sourceDirectoryHandle}
-            outputDirectoryHandle={outputDirectoryHandle}
-            selectedFileHandle={selectedFileHandle}
+            sourceDirectory={sourceDir.processedDir}
+            outputDirectory={outputDir.processedDir}
+            selectedFile={filePicker.processedDir}
             progress={progress}
-            isFileSystemAccessSupported={isFileSystemAccessSupported}
+            isFileSystemAccessSupported={sourceDir.isSupported}
             isProcessing={isProcessing}
           />
         </Tabs.Item>

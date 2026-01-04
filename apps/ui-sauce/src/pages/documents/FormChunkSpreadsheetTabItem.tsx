@@ -1,22 +1,22 @@
 import React from 'react';
 
 import { fetchRequest } from '../../utils';
-import { FileSystemAPIProcessor } from '../../utils/file-system-processor';
 import { FormInputFileSelect, ProcessingButton } from './documents-components';
+import type { FormPageSectionProps } from './documents.types';
 
 const FormChunkSpreadsheetTabItem = ({
-  handleFileSelect,
-  handleSourceDirectorySelect,
-  handleOutputDirectorySelect,
-  initFileSystemApiCallExecutor,
+  onSelectFile,
+  // onSelectSourceDirectory,
+  onSelectOutputDirectory,
+  executeBatch,
   initSubmitHandler,
-  sourceDirectoryHandle,
-  outputDirectoryHandle,
-  selectedFileHandle,
-  progress,
+  // sourceDirectory,
+  outputDirectory,
+  selectedFile,
+  // progress,
   isFileSystemAccessSupported,
   isProcessing,
-}) => {
+}: FormPageSectionProps) => {
   // State for form data matching API format
   const [formState, setFormState] = React.useState({
     sheetToChunkPosition: 2,
@@ -50,9 +50,9 @@ const FormChunkSpreadsheetTabItem = ({
         ...prev.additionalSheets,
         {
           id: Date.now(),
-          sheetIndex: '',
-          headerRows: '',
-          filterColumnPosition: '',
+          sheetIndex: 0,
+          headerRows: 0,
+          filterColumnPosition: 0,
         },
       ],
     }));
@@ -88,86 +88,87 @@ const FormChunkSpreadsheetTabItem = ({
     }));
   };
 
-  const postDocumentToChunk = React.useCallback(
+  const postDocumentToChunk = React.useCallback<
+    Parameters<typeof initSubmitHandler>[0]
+  >(
     async (formDataJSON) => {
-      return initFileSystemApiCallExecutor({
-        formDataJSON,
-        sourceHandle: selectedFileHandle,
-        destinationHandle: outputDirectoryHandle,
-        processorFunction: FileSystemAPIProcessor.processSingleFile,
-        validationMessage: 'Please select a spreadsheet file first.',
-        successMessage: 'Spreadsheet slicing completed successfully!',
-        subfolderPath: formState.outputSubfolder || 'chunks',
-      })(async (batch, batchIndex, totalBatches, structure) => {
-        // Create file from the original file handle
-        const file = await selectedFileHandle.getFile();
+      return executeBatch(
+        {
+          formDataJSON,
+          processedDir: selectedFile!,
+          destinationHandle: outputDirectory?.browserFSAPIhandle!,
+          validationMessage: 'Please select a spreadsheet file first.',
+          successMessage: 'Spreadsheet slicing completed successfully!',
+          subfolderPath: formState.outputSubfolder || 'chunks',
+        },
+        async (batchFiles) => {
+          // Create file from the original file handle
+          const file = batchFiles[0];
 
-        // Create FormData with the actual file and parameters
-        const formData = new FormData();
-        // Use file.name directly to preserve encoding
-        formData.append('file', file, file.name);
+          // Create FormData with the actual file and parameters
+          const formData = new FormData();
+          // Use file.name directly to preserve encoding
+          formData.append('file', file.contentAsBlob, file.name);
 
-        // Add form parameters to FormData
-        formData.append(
-          'sheetToChunkPosition',
-          formState.sheetToChunkPosition.toString(),
-        );
-        formData.append('headerRows', formState.headerRows.toString());
-        formData.append(
-          'splitColumnPosition',
-          formState.splitColumnPosition.toString(),
-        );
-        formData.append(
-          'maxColumnsToInclude',
-          formState.maxColumnsToInclude.toString(),
-        );
-        formData.append('filenameSuffix', formState.filenameSuffix);
-        formData.append(
-          'isFasterLessStyledChunkerUsed',
-          formState.isFasterLessStyledChunkerUsed.toString(),
-        );
+          // Add form parameters to FormData
+          formData.append(
+            'sheetToChunkPosition',
+            formState.sheetToChunkPosition.toString(),
+          );
+          formData.append('headerRows', formState.headerRows.toString());
+          formData.append(
+            'splitColumnPosition',
+            formState.splitColumnPosition.toString(),
+          );
+          formData.append(
+            'maxColumnsToInclude',
+            formState.maxColumnsToInclude.toString(),
+          );
+          formData.append('filenameSuffix', formState.filenameSuffix);
+          formData.append(
+            'isFasterLessStyledChunkerUsed',
+            formState.isFasterLessStyledChunkerUsed.toString(),
+          );
 
-        // Prepare additional sheets data (remove id field for API)
-        const apiAdditionalSheets = formState.additionalSheets.map((sheet) => ({
-          sheetIndex: sheet.sheetIndex,
-          headerRows: sheet.headerRows,
-          filterColumnPosition: sheet.filterColumnPosition,
-          maxColumnsToInclude: sheet.maxColumnsToInclude,
-        }));
-        formData.append(
-          'additionalSheets',
-          JSON.stringify(apiAdditionalSheets),
-        );
+          // Prepare additional sheets data (remove id field for API)
+          const apiAdditionalSheets = formState.additionalSheets.map(
+            (sheet) => ({
+              sheetIndex: sheet.sheetIndex,
+              headerRows: sheet.headerRows,
+              filterColumnPosition: sheet.filterColumnPosition,
+              maxColumnsToInclude: sheet.maxColumnsToInclude,
+            }),
+          );
+          formData.append(
+            'additionalSheets',
+            JSON.stringify(apiAdditionalSheets),
+          );
 
-        console.log(
-          '📤 Uploading file via multipart:',
-          file.name,
-          'Size:',
-          file.size,
-        );
-        console.log('Form parameters:', {
-          sheetToChunkPosition: formState.sheetToChunkPosition,
-          headerRows: formState.headerRows,
-          splitColumnPosition: formState.splitColumnPosition,
-          maxColumnsToInclude: formState.maxColumnsToInclude,
-          filenameSuffix: formState.filenameSuffix,
-          isFasterLessStyledChunkerUsed:
-            formState.isFasterLessStyledChunkerUsed,
-          additionalSheets: apiAdditionalSheets,
-        });
+          console.log(
+            '📤 Uploading file via multipart:',
+            file.name,
+            'Size:',
+            file.size,
+          );
+          console.log('Form parameters:', {
+            sheetToChunkPosition: formState.sheetToChunkPosition,
+            headerRows: formState.headerRows,
+            splitColumnPosition: formState.splitColumnPosition,
+            maxColumnsToInclude: formState.maxColumnsToInclude,
+            filenameSuffix: formState.filenameSuffix,
+            isFasterLessStyledChunkerUsed:
+              formState.isFasterLessStyledChunkerUsed,
+            additionalSheets: apiAdditionalSheets,
+          });
 
-        return fetchRequest('/api-local/spreadsheet/slice', {
-          method: 'POST',
-          body: formData,
-        });
-      });
+          return fetchRequest('/api-local/spreadsheet/slice', {
+            method: 'POST',
+            body: formData,
+          });
+        },
+      );
     },
-    [
-      initFileSystemApiCallExecutor,
-      selectedFileHandle,
-      outputDirectoryHandle,
-      formState,
-    ],
+    [executeBatch, selectedFile, outputDirectory, formState],
   );
 
   return (
@@ -186,8 +187,8 @@ const FormChunkSpreadsheetTabItem = ({
               name="spreadsheetFile"
               label="Оберіть файл котрий буде нарізано"
               accept=".xlsx,.xlsm,.xlsb,.xls"
-              onClick={handleFileSelect}
-              selectedItem={selectedFileHandle}
+              onClick={onSelectFile}
+              selectedItem={selectedFile}
               isFileSystemAccessSupported={isFileSystemAccessSupported}
               icon="file"
             />
@@ -195,8 +196,8 @@ const FormChunkSpreadsheetTabItem = ({
               id="outputChunksFolder"
               name="outputFolder"
               label="Папка для збереження нарізаних частин"
-              onClick={handleOutputDirectorySelect}
-              selectedItem={outputDirectoryHandle}
+              onClick={onSelectOutputDirectory}
+              selectedItem={outputDirectory}
               isFileSystemAccessSupported={isFileSystemAccessSupported}
               icon="folder"
             />
@@ -474,7 +475,7 @@ const FormChunkSpreadsheetTabItem = ({
             <ProcessingButton
               type="submit"
               isLoading={isProcessing}
-              disabled={!selectedFileHandle || !outputDirectoryHandle}
+              disabled={!selectedFile || !outputDirectory}
             >
               {isProcessing
                 ? 'Нарізаю таблицю...'

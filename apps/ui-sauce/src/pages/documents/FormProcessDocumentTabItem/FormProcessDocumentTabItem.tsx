@@ -1,60 +1,71 @@
 import React from 'react';
 
 import { fetchRequest } from '../../../utils';
-import { FileSystemAPIProcessor } from '../../../utils/file-system-processor';
 import { ProcessingButton } from '../documents-components';
+import type { FormPageSectionProps } from '../documents.types';
 import { TableProcessedDocumentResults } from './FormProcessDocumentTabItem.components';
 
 const FormProcessDocumentTabItem = ({
-  handleFileSelect,
-  handleSourceDirectorySelect,
-  handleOutputDirectorySelect,
-  initFileSystemApiCallExecutor,
+  // handleFileSelect,
+  onSelectSourceDirectory,
+  // onSelectOutputDirectory,
+  executeBatch,
   initSubmitHandler,
-  sourceDirectoryHandle,
-  outputDirectoryHandle,
-  selectedFileHandle,
-  progress,
-  isFileSystemAccessSupported,
+  sourceDirectory,
+  outputDirectory,
+  selectedFile,
+  // progress,
+  // isFileSystemAccessSupported,
   isProcessing,
-}) => {
+}: FormPageSectionProps) => {
   const [processedResults, setProcessedResults] = React.useState({});
 
-  const postProcessDocuments = React.useCallback(
+  const postProcessDocuments = React.useCallback<
+    Parameters<typeof initSubmitHandler>[0]
+  >(
     async (formDataJSON) => {
-      return initFileSystemApiCallExecutor({
-        formDataJSON,
-        sourceHandle: selectedFileHandle,
-        destinationHandle: outputDirectoryHandle,
-        processorFunction: FileSystemAPIProcessor.processSingleFile,
-        validationMessage: 'Please select an output folder.',
-        successMessage: 'Document processing completed successfully!',
-        isWritingFilesSkipped: true,
-        // No subfolderPath specified - files will be saved in root
-      })(async (batch, batchIndex, totalBatches, structure) => {
-        return fetchRequest('/api-local/process/documents', {
-          method: 'POST',
-          body: JSON.stringify(formDataJSON),
-        }).then((resAsJson) => {
-          if (resAsJson && resAsJson.extractedResults) {
-            const groupedResults = resAsJson.extractedResults.reduce(
-              (acc, item) => {
-                const key = item.searchQuery;
-                if (!acc[key]) {
-                  acc[key] = [];
-                }
-                acc[key].push(item);
-                return acc;
-              },
-              {},
-            );
-            setProcessedResults(groupedResults);
-          }
-          return resAsJson;
-        });
-      });
+      const payload = {
+        ...formDataJSON,
+        // TODO: delete when Select Directory will be implemented
+        sourcePath: 'docs-for-nlp',
+        // searchScopedPaths: Array.from(selectedPaths),
+      };
+
+      return executeBatch(
+        {
+          formDataJSON: payload,
+          processedDir: selectedFile!,
+          destinationHandle: outputDirectory?.browserFSAPIhandle!,
+          validationMessage: 'Please select an output folder.',
+          successMessage: 'Document processing completed successfully!',
+          isWritingFilesSkipped: true,
+          // No subfolderPath specified - files will be saved in root
+        },
+        async () => {
+          return fetchRequest('/api-local/process/documents', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          }).then((resAsJson) => {
+            if (resAsJson && resAsJson.extractedResults) {
+              const groupedResults = resAsJson.extractedResults.reduce(
+                (acc, item) => {
+                  const key = item.searchQuery;
+                  if (!acc[key]) {
+                    acc[key] = [];
+                  }
+                  acc[key].push(item);
+                  return acc;
+                },
+                {},
+              );
+              setProcessedResults(groupedResults);
+            }
+            return resAsJson;
+          });
+        },
+      );
     },
-    [initFileSystemApiCallExecutor, selectedFileHandle, outputDirectoryHandle],
+    [executeBatch, selectedFile, outputDirectory, sourceDirectory],
   );
 
   const postFilteredResultExport = React.useCallback(
@@ -214,8 +225,8 @@ const FormProcessDocumentTabItem = ({
                     id="processDocumentsOutputFolder"
                     name="outputFolder"
                     label="Папка для збереження результатів"
-                    onClick={handleOutputDirectorySelect}
-                    selectedItem={outputDirectoryHandle}
+                    onClick={onSelectOutputDirectory}
+                    selectedItem={outputDirectory}
                     isFileSystemAccessSupported={isFileSystemAccessSupported}
                     icon="folder"
                   />
@@ -239,11 +250,7 @@ const FormProcessDocumentTabItem = ({
                 */}
               </div>
 
-              <ProcessingButton
-                type="submit"
-                isLoading={isProcessing}
-                // disabled={!outputDirectoryHandle}
-              >
+              <ProcessingButton type="submit" isLoading={isProcessing}>
                 {isProcessing ? 'Обробляю документ...' : 'Почати пошук збігів'}
               </ProcessingButton>
             </form>

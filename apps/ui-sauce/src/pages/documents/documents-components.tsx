@@ -1,5 +1,24 @@
 import React from 'react';
 
+import { UseFilePicker } from '../../hooks/use-file-system';
+
+interface FormInputFileSelectProps {
+  id: string;
+  name: string;
+  type?: 'file';
+  accept?: string;
+  onClick: () => void;
+  selectedItem: UseFilePicker['processedDir'] | null;
+  webkitdirectory?: React.DetailedHTMLProps<
+    React.InputHTMLAttributes<HTMLInputElement>,
+    HTMLInputElement
+  >;
+  directory?: string;
+  isFileSystemAccessSupported: boolean;
+  label: string;
+  icon?: 'file' | 'folder';
+}
+
 const FormInputFileSelect = ({
   id,
   name,
@@ -12,13 +31,12 @@ const FormInputFileSelect = ({
   isFileSystemAccessSupported,
   label,
   icon = 'file', // "file" or "folder"
-}) => {
+}: FormInputFileSelectProps) => {
   const displayName = React.useMemo(() => {
     if (!selectedItem) return 'Натисніть, щоб обрати ...';
 
-    const name = selectedItem.name;
-    const kind = selectedItem.kind;
-
+    const name = selectedItem.structure.name;
+    const kind = selectedItem.structure.fsItemType;
     return `${kind}://${name}`;
   }, [selectedItem]);
 
@@ -112,8 +130,17 @@ const LoadingSpinner = () => (
   </svg>
 );
 
+interface ProcessingButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  isLoading?: boolean;
+  children: React.ReactNode;
+}
+
 // Button component with loading state
-const ProcessingButton = ({ children, isLoading, ...props }) => (
+const ProcessingButton = ({
+  children,
+  isLoading,
+  ...props
+}: ProcessingButtonProps) => (
   <button
     {...props}
     disabled={isLoading || props.disabled}
