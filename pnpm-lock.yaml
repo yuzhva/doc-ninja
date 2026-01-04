@@ -151,6 +151,9 @@ importers:
       electron:
         specifier: ^39.2.7
         version: 39.2.7
+      toolkit--local:
+        specifier: workspace:^
+        version: link:../../packages/toolkit
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -169,6 +172,9 @@ importers:
       tailwindcss:
         specifier: ^4.1.18
         version: 4.1.18
+      toolkit--local:
+        specifier: workspace:^
+        version: link:../../packages/toolkit
     devDependencies:
       '@mainset/bundler-webpack':
         specifier: ^0.3.1

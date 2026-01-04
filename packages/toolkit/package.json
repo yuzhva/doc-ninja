@@ -12,8 +12,8 @@
       "types": "./dist/types/node/src/index.d.mts"
     },
     "./browser": {
-      "import": "./dist/esm/browser/index.mjs",
-      "types": "./dist/types/browser/index.d.mts"
+      "import": "./dist/esm/browser/src/index.mjs",
+      "types": "./dist/types/browser/src/index.d.mts"
     }
   },
   "scripts": {
