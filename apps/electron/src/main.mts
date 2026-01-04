@@ -1,6 +1,17 @@
-import { BrowserWindow, app as electronApp, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  Menu,
+  dialog,
+  app as electronApp,
+  ipcMain,
+  nativeImage,
+  screen,
+} from 'electron';
+import * as fs from 'fs';
 import path from 'path';
 import request from 'supertest';
+import { FileSystemService } from 'toolkit--local/browser';
+import { FileScannerNode } from 'toolkit--local/node';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -9,9 +20,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let expressApp: any;
 
 const createWindow = () => {
+  // Step-1: Set the application menu to null to remove the default menu bar
+  Menu.setApplicationMenu(null); // This is the key step
+
+  const { workAreaSize } = screen.getPrimaryDisplay();
+
+  // Step-2: Use nativeImage for more reliable cross-platform results,
+  // or a direct path can sometimes work depending on the setup
+  const iconPath = path.join(__dirname, '../images/icons/png/1024x1024.png');
+  const customIcon = nativeImage.createFromPath(iconPath);
+
+  // Step-3: Create the browser window with the custom icon
   const win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: workAreaSize.width * 0.75,
+    height: workAreaSize.height * 0.75,
+    title: 'DocNinja',
+    icon: customIcon,
     webPreferences: {
       // Use the constant provided by Electron Forge to load the compiled preload script
       preload: path.join(__dirname, 'preload.cjs'),
@@ -111,6 +135,56 @@ electronApp.whenReady().then(async () => {
       return { status: response.status, body: response.body };
     },
   );
+
+  // Handle file reading
+  ipcMain.handle('file:readFile', async (event, filePath: string) => {
+    return FileScannerNode.safeReadFile(filePath);
+  });
+
+  // Handle File/Directory Picker
+  ipcMain.handle('dialog:showOpenDialog', async (event, options) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: options?.properties || ['openFile'],
+      filters: options?.filters,
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return null;
+    }
+
+    const filePath = filePaths[0];
+    const name = path.basename(filePath);
+    const isDirectory = options?.properties?.includes('openDirectory');
+
+    if (isDirectory) {
+      const scannedFiles = await FileScannerNode.scanDirectory(filePath);
+
+      // Map to serializable DTOs to avoid "object could not be cloned" error
+      // Functions (like getFileContent) cannot be passed via IPC
+      const files = scannedFiles.map((file) => ({
+        ...file,
+        // path: path.join(filePath, file.path),
+      }));
+
+      return {
+        name,
+        filePath,
+        files,
+      };
+    }
+
+    const stats = await fs.promises.stat(filePath);
+
+    // Return a structure compatible with FileSystemItem + absolutePath
+    return {
+      name: name,
+      path: filePath,
+      size: stats.size,
+      modifiedAt: stats.mtime,
+      extension: FileSystemService.getFileExtension(filePath),
+      fsItemType: 'file',
+    };
+  });
 
   createWindow();
 

@@ -9,4 +9,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ...options,
     });
   },
+  readFile: (path) => ipcRenderer.invoke('file:readFile', path),
+  showDirectoryPicker: () =>
+    ipcRenderer.invoke('dialog:showOpenDialog', {
+      properties: ['openDirectory'],
+    }),
+  showOpenFilePicker: (options) =>
+    ipcRenderer.invoke('dialog:showOpenDialog', {
+      properties: ['openFile'],
+      filters: options?.types?.map((t) => ({
+        name: t.description || 'Files',
+        extensions: Object.values(t.accept)
+          .flat()
+          .map((ext) => ext.replace(/^\./, '')),
+      })),
+    }),
 });

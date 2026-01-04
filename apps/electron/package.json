@@ -26,7 +26,26 @@
     "@types/node": "^25.0.3",
     "@types/supertest": "^6.0.3",
     "electron": "^39.2.7",
+    "toolkit--local": "workspace:^",
     "typescript": "^5.9.3"
+  },
+  "build": {
+    "productName": "DocNinja",
+    "directories": {
+      "buildResources": "images"
+    },
+    "files": [
+      "**/*"
+    ],
+    "win": {
+      "icon": "images/icons/win/icon.ico"
+    },
+    "mac": {
+      "icon": "images/icons/mac/icon.icns"
+    },
+    "linux": {
+      "icon": "images/icons/png"
+    }
   },
   "packageManager": "pnpm@10.26.1"
 }
