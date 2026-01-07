@@ -18,6 +18,7 @@ interface FSBatchProcessorOptions {
   subfolderPath?: FormDataEntryValue | string | undefined;
   successMessage?: string;
   isWritingFilesSkipped?: boolean;
+  isLocalFileSystemRequest?: boolean;
   onProgress?: (progress: {
     current: number;
     total: number;
@@ -199,14 +200,19 @@ class FileSystemAPIProcessor {
       structure: any,
     ) => Promise<any>,
   ): Promise<FSBatchExecutionResult> {
-    const { subfolderPath, successMessage, isWritingFilesSkipped, onProgress } =
-      options;
+    const {
+      subfolderPath,
+      successMessage,
+      isWritingFilesSkipped,
+      isLocalFileSystemRequest,
+      onProgress,
+    } = options;
 
     try {
       const result = processedDir;
       console.log(`Processing ${result.files.length} files`);
 
-      const BATCH_SIZE = 50;
+      const BATCH_SIZE = isLocalFileSystemRequest ? result.files.length : 50;
       const batches: any[][] = [];
       for (let i = 0; i < result.files.length; i += BATCH_SIZE) {
         batches.push(result.files.slice(i, i + BATCH_SIZE));
@@ -232,7 +238,10 @@ class FileSystemAPIProcessor {
           // Pre-fetch content for all files in the batch to stay DRY
           const enrichedBatch = await Promise.all(
             batch.map(async (file: any) => {
-              if (typeof file.getFileContent === 'function') {
+              if (
+                !isLocalFileSystemRequest &&
+                typeof file.getFileContent === 'function'
+              ) {
                 const content = await file.getFileContent();
                 return { ...file, contentAsBlob: new Blob([content]) };
               }

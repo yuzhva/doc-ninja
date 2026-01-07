@@ -11,7 +11,7 @@ import { FileSystemAPIProcessor } from '../../utils/file-system-processor';
 
 interface BatchProcessorHookOptions extends Pick<
   FSBatchProcessorOptions,
-  'subfolderPath' | 'isWritingFilesSkipped'
+  'subfolderPath' | 'isWritingFilesSkipped' | 'isLocalFileSystemRequest'
 > {
   formDataJSON: any;
   processedDir: Omit<
@@ -54,7 +54,7 @@ function useBatchProcessor(
         // Use processedDir directly or fallback to empty structure
         const source = processedDir || {
           // TODO: delete workaround to make API call when there is no FileSelector
-          files: [{} as any],
+          files: [{}],
           // files: [],
           structure: {
             name: 'root',
