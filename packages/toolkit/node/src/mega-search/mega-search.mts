@@ -45,6 +45,10 @@ class MegaSearch {
   private searchCache = new Map<string, PaginatedSearchResult>();
   private readonly MAX_SEARCH_CACHE_SIZE = 100;
 
+  // Cache for fuzzy search optimization to avoid re-generating keys array on every search
+  private cachedIndexKeys: string[] | null = null;
+  private cachedIndexSize = 0;
+
   constructor(private config: SearchConfig) {
     this.fileIndexer = new FileIndexer(config);
     this.textProcessor = new UkrainianTextProcessor();
@@ -191,6 +195,20 @@ class MegaSearch {
     }
 
     this.queryCache.set(key, data);
+  }
+
+  /**
+   * Helper to get cached index keys to avoid expensive Array.from() on every fuzzy search
+   */
+  private getIndexKeys(
+    invertedIndex: Map<string, InvertedIndexEntry[]>,
+  ): string[] {
+    // Invalidate cache if index size changed (e.g. re-indexed)
+    if (!this.cachedIndexKeys || this.cachedIndexSize !== invertedIndex.size) {
+      this.cachedIndexKeys = Array.from(invertedIndex.keys());
+      this.cachedIndexSize = invertedIndex.size;
+    }
+    return this.cachedIndexKeys;
   }
 
   /**
@@ -456,10 +474,15 @@ class MegaSearch {
               candidateTerms = [term];
             } else {
               // Fallback for terms not in dictionary (e.g., misspellings)
-              candidateTerms = Array.from(invertedIndex.keys()).filter(
-                (idxTerm: string) =>
-                  levenshtein(term, idxTerm) <= maxTypoDistance,
-              );
+              // OPTIMIZATION: Use cached keys and early exit on length check
+              const allKeys = this.getIndexKeys(invertedIndex);
+              candidateTerms = allKeys.filter((idxTerm: string) => {
+                // Optimization: Levenshtein is expensive. Skip if length difference is too big.
+                if (Math.abs(term.length - idxTerm.length) > maxTypoDistance) {
+                  return false;
+                }
+                return levenshtein(term, idxTerm) <= maxTypoDistance;
+              });
             }
           }
 
