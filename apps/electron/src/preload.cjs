@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     });
   },
   readFile: (path) => ipcRenderer.invoke('file:readFile', path),
+  openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
   showDirectoryPicker: () =>
     ipcRenderer.invoke('dialog:showOpenDialog', {
       properties: ['openDirectory'],

@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
+import * as path from 'path';
+import { FileScannerNode } from 'toolkit--local/node';
 
 import {
   DocumentIntelligenceService,
@@ -54,6 +56,7 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       pageSize: pageSize === 'ALL' ? pageSize : Number(pageSize) || 10,
       sortOrder,
       searchScopedPaths: req.body.searchScopedPaths,
+      fuzzyPhrase: req.body.fuzzyPhrase || false,
     };
 
     // Use DocumentIntelligenceService for search
@@ -187,4 +190,47 @@ const postGenerateFilteredSpreadsheet = async (req: Request, res: Response) => {
   }
 };
 
-export { postGenerateFilteredSpreadsheet, postProcessDocuments };
+const postReadFileContent = async (req: Request, res: Response) => {
+  try {
+    const { filePath } = req.body;
+
+    if (!filePath || typeof filePath !== 'string') {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'INVALID_PARAMETERS',
+          message: 'filePath is required and must be a string.',
+        },
+      });
+    }
+
+    const fileBuffer = await FileScannerNode.safeReadFile(filePath);
+
+    const fileName = path.basename(filePath);
+    const mimeType = 'application/octet-stream'; // Default binary type, adjust logic if needed
+
+    // Return base64 encoded content so the frontend can handle binary or text
+    res.status(StatusCodes.OK).json({
+      fileName,
+      mimeType,
+      content: fileBuffer.toString('base64'),
+    });
+  } catch (error) {
+    console.error('Read local file error:', error);
+
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message:
+          error instanceof Error
+            ? error.message
+            : ReasonPhrases.INTERNAL_SERVER_ERROR,
+      },
+    });
+  }
+};
+
+export {
+  postGenerateFilteredSpreadsheet,
+  postProcessDocuments,
+  postReadFileContent,
+};

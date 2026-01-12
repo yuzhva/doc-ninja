@@ -6,6 +6,7 @@ import {
   ipcMain,
   nativeImage,
   screen,
+  shell,
 } from 'electron';
 import * as fs from 'fs';
 import path from 'path';
@@ -139,6 +140,17 @@ electronApp.whenReady().then(async () => {
   // Handle file reading
   ipcMain.handle('file:readFile', async (event, filePath: string) => {
     return FileScannerNode.safeReadFile(filePath);
+  });
+
+  // Handle file opening (shell integration)
+  ipcMain.handle('shell:openPath', async (event, filePath: string) => {
+    console.log(`📂 Opening file via shell: ${filePath}`);
+    // shell.openPath returns empty string on success, or error message on failure
+    const errorMessage = await shell.openPath(filePath);
+    if (errorMessage) {
+      console.error(`❌ Failed to open path: ${errorMessage}`);
+    }
+    return errorMessage;
   });
 
   // Handle File/Directory Picker

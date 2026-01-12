@@ -35,6 +35,7 @@ interface ElectronAPI {
   ) => Promise<FileSystemItem | null>;
   fetch: (url: string, options?: any) => Promise<any>;
   readFile: (path: string) => Promise<Buffer>;
+  openPath: (path: string) => Promise<string>;
 }
 
 // Extend the Window interface

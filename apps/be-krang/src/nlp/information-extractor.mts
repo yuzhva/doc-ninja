@@ -163,6 +163,22 @@ class InformationExtractor {
   static extract(content: string, match: NameMatch): ExtractedInfo {
     const documentDate = this.findDocumentDate(content);
 
+    // Extract original case matched text from content using position
+    let matchedText = match.declension;
+    if (
+      typeof match.position === 'number' &&
+      match.position >= 0 &&
+      match.declension
+    ) {
+      const length = match.declension.length;
+      if (match.position + length <= content.length) {
+        matchedText = content.substring(
+          match.position,
+          match.position + length,
+        );
+      }
+    }
+
     // Find the start and end of the paragraph containing the match.
     // A paragraph is assumed to be separated by double newlines or start/end of the document.
     const paragraphStart = content.lastIndexOf('\n\n', match.position);
@@ -224,7 +240,7 @@ class InformationExtractor {
       declension: match.declension,
       searchQuery: match.name,
       foundInDocument: match.documentName,
-      matchedText: match.declension,
+      matchedText,
       content: paragraphContent,
       sectionTitle,
       reason,

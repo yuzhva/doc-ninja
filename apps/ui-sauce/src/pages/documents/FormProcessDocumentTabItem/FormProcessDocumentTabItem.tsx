@@ -4,128 +4,15 @@ import { FileSystemItem } from 'toolkit--local/browser';
 import { fetchRequest } from '../../../utils';
 import { FormInputFileSelect, ProcessingButton } from '../documents-components';
 import type { FormPageSectionProps } from '../documents.types';
-import { TableProcessedDocumentResults } from './FormProcessDocumentTabItem.components';
-
-// Recursive Tree Item Component
-const DirectoryTreeItem = ({
-  fsNestedItem,
-  selectedPaths,
-  onTogglePath,
-}: {
-  fsNestedItem: FileSystemItem;
-  selectedPaths: Set<string>;
-  onTogglePath: (path: string, checked: boolean) => void;
-}) => {
-  const [isExpanded, setIsExpanded] = React.useState(false);
-  const isSelected = selectedPaths.has(fsNestedItem.path);
-  const hasChildren =
-    fsNestedItem.fsNestedItems && fsNestedItem.fsNestedItems.length > 0;
-  const isDirectory = fsNestedItem.fsItemType === 'directory';
-
-  const handleToggleExpand = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsExpanded(!isExpanded);
-  };
-
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onTogglePath(fsNestedItem.path, e.target.checked);
-  };
-
-  const handleContentClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    onTogglePath(fsNestedItem.path, !isSelected);
-  };
-
-  return (
-    <div className="w-full">
-      <div className="flex items-center gap-x-0.5 w-full py-0.5">
-        {/* Toggle Button */}
-        <button
-          type="button"
-          className={`shrink-0 w-6 h-6 flex justify-center items-center hover:bg-gray-100 rounded-md focus:outline-none focus:bg-gray-100 disabled:opacity-50 disabled:pointer-events-none dark:hover:bg-gray-700 dark:focus:bg-gray-700 ${!hasChildren ? 'invisible' : ''}`}
-          onClick={handleToggleExpand}
-        >
-          <svg
-            className={`w-4 h-4 text-gray-800 dark:text-gray-200 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
-
-        {/* Content */}
-        <div className="grow flex items-center gap-x-2 px-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-          {/* Checkbox */}
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={handleCheckboxChange}
-            className="shrink-0 w-4 h-4 bg-gray-100 border-gray-300 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-          />
-
-          {/* Icon & Name */}
-          <div
-            className="flex items-center gap-x-2 cursor-pointer grow py-1"
-            onClick={handleContentClick}
-          >
-            <svg
-              className="shrink-0 w-4 h-4 text-gray-500 dark:text-gray-400"
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {isDirectory ? (
-                <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
-              ) : (
-                <>
-                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path>
-                  <path d="M14 2v4a2 2 0 0 0 2 2h4"></path>
-                </>
-              )}
-            </svg>
-            <span className="text-sm text-gray-800 dark:text-gray-200 select-none">
-              {fsNestedItem.name}{' '}
-              {(fsNestedItem.fsFileCount || 0) > 0 && (
-                <span className="text-xs text-gray-400">
-                  ({fsNestedItem.fsFileCount})
-                </span>
-              )}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Children */}
-      {hasChildren && isExpanded && (
-        <div className="pl-7 relative before:absolute before:top-0 before:left-3 before:w-0.5 before:-ml-px before:h-full before:bg-gray-100 dark:before:bg-gray-700">
-          {fsNestedItem.fsNestedItems?.map((child: FileSystemItem) => (
-            <DirectoryTreeItem
-              key={child.path}
-              fsNestedItem={child}
-              selectedPaths={selectedPaths}
-              onTogglePath={onTogglePath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+import {
+  DirectoryTreeItem,
+  TableProcessedDocumentResults,
+} from './FormProcessDocumentTabItem.components';
+import type {
+  GroupedProcessedResults,
+  ProcessDocumentsApiResponse,
+  SearchResultItem,
+} from './FormProcessDocumentTabItem.types';
 
 const FormProcessDocumentTabItem = ({
   // handleFileSelect,
@@ -140,26 +27,125 @@ const FormProcessDocumentTabItem = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: FormPageSectionProps) => {
-  const [processedResults, setProcessedResults] = React.useState({});
-  const [directoryTree, setDirectoryTree] = React.useState<any>(null);
-  const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(
-    new Set(),
+  const [processedResults, setProcessedResults] =
+    React.useState<GroupedProcessedResults>({});
+
+  // Initialize from LocalStorage if available
+  // Store the entire processed result object instead of just the structure
+  const [directoryData, setDirectoryData] = React.useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('docNinja_directoryData'); // Renamed key
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const saved = localStorage.getItem('docNinja_selectedPaths');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const [isSettingsExpanded, setIsSettingsExpanded] = React.useState(
+    !!directoryData?.structure, // Check structure existence
   );
-  const [isSettingsExpanded, setIsSettingsExpanded] = React.useState(false);
+
+  const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
+  const [pageSizeValue, setPageSizeValue] = React.useState('10');
+  const [allowFuzzyMatch, setAllowFuzzyMatch] = React.useState(true);
+
+  // Persist state changes
+  React.useEffect(() => {
+    try {
+      if (directoryData) {
+        localStorage.setItem(
+          'docNinja_directoryData', // Renamed key
+          JSON.stringify(directoryData),
+        );
+      } else {
+        localStorage.removeItem('docNinja_directoryData');
+      }
+    } catch (e) {
+      console.warn('Failed to save directory data to storage', e);
+    }
+  }, [directoryData]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(
+        'docNinja_selectedPaths',
+        JSON.stringify(Array.from(selectedPaths)),
+      );
+    } catch (e) {}
+  }, [selectedPaths]);
+
+  // Build lookup maps for efficient recursive selection
+  const { parentMap, childrenMap } = React.useMemo(() => {
+    const parentMap = new Map<string, string | null>();
+    const childrenMap = new Map<string, string[]>();
+
+    if (!directoryData?.structure) return { parentMap, childrenMap }; // Check structure existence
+
+    const traverse = (node: FileSystemItem, parent: string | null) => {
+      parentMap.set(node.path, parent);
+      const kids = node.fsNestedItems?.map((c) => c.path) || [];
+      childrenMap.set(node.path, kids);
+      node.fsNestedItems?.forEach((child) => traverse(child, node.path));
+    };
+    traverse(directoryData.structure, null); // Use structure from stored data
+    return { parentMap, childrenMap };
+  }, [directoryData]);
 
   const handleTogglePath = React.useCallback(
     (path: string, checked: boolean) => {
       setSelectedPaths((prev) => {
         const next = new Set(prev);
-        if (checked) {
-          next.add(path);
+
+        // 1. Cascade DOWN: Select/Deselect all children/descendants
+        const toggleChildren = (p: string, state: boolean) => {
+          if (state) next.add(p);
+          else next.delete(p);
+
+          const kids = childrenMap.get(p);
+          kids?.forEach((k) => toggleChildren(k, state));
+        };
+        toggleChildren(path, checked);
+
+        // 2. Cascade UP: Update parents based on children state
+        if (!checked) {
+          // If unchecking a child, uncheck all parents immediately
+          let curr = parentMap.get(path);
+          while (curr && parentMap.has(curr)) {
+            // Add check for existence in map to be safe
+            next.delete(curr);
+            curr = parentMap.get(curr);
+          }
         } else {
-          next.delete(path);
+          // If checking, check parent ONLY if all its children are now checked
+          let curr = parentMap.get(path);
+          while (curr && parentMap.has(curr)) {
+            // Add check for existence in map to be safe
+            const siblings = childrenMap.get(curr) || [];
+            const allChecked = siblings.every((s) => next.has(s));
+            if (allChecked) {
+              next.add(curr);
+              curr = parentMap.get(curr);
+            } else {
+              break; // Parent not fully selected, stop walking up
+            }
+          }
         }
+
         return next;
       });
     },
-    [],
+    [childrenMap, parentMap], // Dependencies remain the same
   );
 
   React.useEffect(() => {
@@ -168,12 +154,11 @@ const FormProcessDocumentTabItem = ({
 
       try {
         // Use the structure already processed by FileSystemService
-        const tree = sourceDirectory.structure;
-        if (tree) {
-          setDirectoryTree(tree);
-          setSelectedPaths(new Set()); // Reset selection when source changes
+        if (sourceDirectory) {
+          setDirectoryData(sourceDirectory); // Store the full object
+          setSelectedPaths(new Set()); // Reset selection when source changes explicitly
           setIsSettingsExpanded(true); // Auto-expand settings when tree is loaded
-          console.log('Directory tree built:', tree);
+          console.log('Directory tree built:', sourceDirectory.structure);
         }
       } catch (error) {
         console.error('Failed to build directory tree:', error);
@@ -189,8 +174,12 @@ const FormProcessDocumentTabItem = ({
     async (formDataJSON) => {
       const payload = {
         ...formDataJSON,
-        sourcePath: sourceDirectory?.structure.path,
+        sourcePath:
+          sourceDirectory?.structure?.path ||
+          directoryData?.structure?.path ||
+          '',
         searchScopedPaths: Array.from(selectedPaths),
+        fuzzyPhrase: allowFuzzyMatch,
       };
 
       return executeBatch(
@@ -208,18 +197,66 @@ const FormProcessDocumentTabItem = ({
           return fetchRequest('/api-local/process/documents', {
             method: 'POST',
             body: JSON.stringify(payload),
-          }).then((resAsJson) => {
+          }).then((resAsJson: ProcessDocumentsApiResponse) => {
             if (resAsJson && resAsJson.extractedResults) {
+              // 1. Create a lookup map for search results by filename
+              // This allows us to link the extracted results with full file metadata
+              const searchResultLookup = new Map<string, SearchResultItem>();
+
+              // Handle nested structure: results is an array of SearchResultSet (one per query term)
+              if (Array.isArray(resAsJson.results)) {
+                for (const resultSet of resAsJson.results) {
+                  if (resultSet.results && Array.isArray(resultSet.results)) {
+                    for (const searchResult of resultSet.results) {
+                      if (searchResult.doc && searchResult.doc.fileName) {
+                        searchResultLookup.set(
+                          searchResult.doc.fileName,
+                          searchResult,
+                        );
+                      }
+                    }
+                  }
+                }
+              }
+
               const groupedResults = resAsJson.extractedResults.reduce(
-                (acc, item) => {
+                (acc: GroupedProcessedResults, item) => {
                   const key = item.searchQuery;
                   if (!acc[key]) {
                     acc[key] = [];
                   }
-                  acc[key].push(item);
+
+                  // 2. Wrap in RichProcessedResultItem container
+                  // Find corresponding search result if available
+                  let searchResult: SearchResultItem | null = null;
+                  if (item.documentName) {
+                    searchResult =
+                      searchResultLookup.get(item.documentName) || null;
+                  }
+
+                  // Group by documentName to show single row per document with multiple matches
+                  const existingDocGroup = acc[key].find(
+                    (g: any) => g.docName === item.documentName,
+                  );
+
+                  const newItem = {
+                    extracted: item,
+                    search: searchResult,
+                  };
+
+                  if (existingDocGroup) {
+                    (existingDocGroup as any).items.push(newItem);
+                  } else {
+                    acc[key].push({
+                      docName: item.documentName || 'Unknown',
+                      items: [newItem],
+                      // Use first result as the main search ref for file path/metadata
+                      search: searchResult,
+                    } as any);
+                  }
                   return acc;
                 },
-                {},
+                {} as GroupedProcessedResults,
               );
               setProcessedResults(groupedResults);
             }
@@ -233,13 +270,24 @@ const FormProcessDocumentTabItem = ({
       selectedFile,
       outputDirectory,
       sourceDirectory,
+      directoryData, // Updated dependency
       selectedPaths,
+      allowFuzzyMatch,
     ],
   );
 
   const postFilteredResultExport = React.useCallback(
     async (filteredResults: any) => {
-      const filteredResultsPayload = Object.values(filteredResults).flat();
+      // Flatten the grouped structure back to individual extracted items for the backend
+      const flattenedGroups = Object.values(filteredResults).flat();
+      const filteredResultsPayload = flattenedGroups.flatMap((group: any) => {
+        // Unpack from the grouped wrapper structure ({ extracted, search }) back to flat extracted results
+        if (group.items && Array.isArray(group.items)) {
+          return group.items.map((item: any) => item.extracted);
+        }
+        // Fallback if structure is already flat
+        return [group];
+      });
 
       // Use FormData to send large payloads as a file
       const formData = new FormData();
@@ -359,51 +407,100 @@ const FormProcessDocumentTabItem = ({
                     />
                   </div>
 
-                  <div className="sm:col-span-2 grid grid-cols-2 gap-4">
-                    <div>
-                      <label
-                        htmlFor="pageSize"
-                        className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
-                      >
-                        К-сть результатів
-                      </label>
-                      <input
-                        id="pageSize"
-                        name="pageSize"
-                        className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                        placeholder="ALL"
-                        type="text"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="sortOrder"
-                        className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
-                      >
-                        Сортування (дата)
-                      </label>
-                      <select
-                        id="sortOrder"
-                        name="sortOrder"
-                        className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                        defaultValue="desc"
-                      >
-                        <option value="desc">Новіші спочатку</option>
-                        <option value="asc">Старіші спочатку</option>
-                      </select>
+                  {/* Page Size & Toggle */}
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor="pageSizeNumber"
+                      className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+                    >
+                      К-сть результатів запиту
+                    </label>
+                    <div className="flex items-center gap-4">
+                      {/* Input - Swapped place with toggle */}
+                      <div className="flex-1">
+                        <input
+                          id="pageSizeNumber"
+                          type="number"
+                          min="1"
+                          value={pageSizeValue}
+                          onChange={(e) => setPageSizeValue(e.target.value)}
+                          disabled={isPageSizeAll}
+                          className="block w-full border disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                          placeholder="10"
+                        />
+                        {/* Hidden input to send correct value to API */}
+                        <input
+                          type="hidden"
+                          name="pageSize"
+                          value={isPageSizeAll ? 'ALL' : pageSizeValue}
+                        />
+                      </div>
+
+                      {/* Toggle - Swapped place with input */}
+                      <div className="flex items-center">
+                        <label className="inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={isPageSizeAll}
+                            onChange={(e) => setIsPageSizeAll(e.target.checked)}
+                          />
+                          <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                          <span className="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300 whitespace-nowrap">
+                            Знайти все
+                          </span>
+                        </label>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="sm:col-span-2 flex justify-end pb-2">
+                  {/* Sort Order - Moved to new line */}
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor="sortOrder"
+                      className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+                    >
+                      Сортування (дата)
+                    </label>
+                    <select
+                      id="sortOrder"
+                      name="sortOrder"
+                      className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                      defaultValue="desc"
+                    >
+                      <option value="desc">Новіші спочатку</option>
+                      <option value="asc">Старіші спочатку</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2 grid grid-cols-2 gap-4 pb-2">
                     <ProcessingButton
                       type="submit"
                       isLoading={isProcessing}
-                      disabled={!directoryTree}
+                      disabled={!directoryData?.structure}
                     >
-                      {isProcessing
-                        ? 'Обробляю документ...'
-                        : 'Почати пошук збігів'}
+                      {/* {isProcessing ? 'Обробляю документи...' : 'Пошук збігів'} */}
+                      Пошук
                     </ProcessingButton>
+
+                    {/* Fuzzy Phrase Toggle */}
+                    {/*}
+                    <div className="flex items-center h-10">
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={allowFuzzyMatch}
+                          onChange={(e) => setAllowFuzzyMatch(e.target.checked)}
+                        />
+                        <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                        <span className="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300 flex flex-col justify-center leading-tight">
+                          <span>Дозволити</span>
+                          <span>співпадіння</span>
+                        </span>
+                      </label>
+                    </div>
+                    */}
                   </div>
                 </div>
               </div>
@@ -445,28 +542,30 @@ const FormProcessDocumentTabItem = ({
                     name="sourceDirectory"
                     label="Папка з документами для пошуку"
                     onClick={onSelectSourceDirectory}
-                    selectedItem={sourceDirectory}
+                    selectedItem={sourceDirectory || directoryData}
                     isFileSystemAccessSupported={isFileSystemAccessSupported}
                     icon="folder"
                   />
                 </div>
 
                 {/* Directory Tree View */}
-                {directoryTree &&
-                  directoryTree.fsNestedItems &&
-                  directoryTree.fsNestedItems.length > 0 && (
+                {directoryData?.structure &&
+                  directoryData.structure.fsNestedItems &&
+                  directoryData.structure.fsNestedItems.length > 0 && (
                     <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
                         Оберіть папки для пошуку
                       </div>
-                      {directoryTree.fsNestedItems.map((fsNestedItem: any) => (
-                        <DirectoryTreeItem
-                          key={fsNestedItem.path}
-                          fsNestedItem={fsNestedItem}
-                          selectedPaths={selectedPaths}
-                          onTogglePath={handleTogglePath}
-                        />
-                      ))}
+                      {directoryData.structure.fsNestedItems.map(
+                        (fsNestedItem: any) => (
+                          <DirectoryTreeItem
+                            key={fsNestedItem.path}
+                            fsNestedItem={fsNestedItem}
+                            selectedPaths={selectedPaths}
+                            onTogglePath={handleTogglePath}
+                          />
+                        ),
+                      )}
                     </div>
                   )}
               </div>

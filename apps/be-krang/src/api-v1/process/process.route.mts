@@ -9,6 +9,10 @@ const expressRouter: Router = express.Router();
 const ProcessRoute = expressRouter
   .post('/process/documents', ApiV1ProcessController.postProcessDocuments)
   .post(
+    '/process/read-file-content',
+    ApiV1ProcessController.postReadFileContent,
+  )
+  .post(
     '/process/generate-filtered-spreadsheet',
     uploadSingle,
     ApiV1ProcessController.postGenerateFilteredSpreadsheet,

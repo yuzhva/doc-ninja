@@ -33,7 +33,8 @@ const FormInputFileSelect = ({
   icon = 'file', // "file" or "folder"
 }: FormInputFileSelectProps) => {
   const displayName = React.useMemo(() => {
-    if (!selectedItem) return 'Натисніть, щоб обрати ...';
+    // Check if selectedItem exists AND if its structure property exists
+    if (!selectedItem?.structure) return 'Натисніть, щоб обрати ...';
 
     const name = selectedItem.structure.name;
     const kind = selectedItem.structure.fsItemType;
