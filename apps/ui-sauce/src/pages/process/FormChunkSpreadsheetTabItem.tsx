@@ -1,8 +1,11 @@
 import React from 'react';
 
 import { fetchRequest } from '../../utils';
-import { FormInputFileSelect, ProcessingButton } from './documents-components';
-import type { FormPageSectionProps } from './documents.types';
+import {
+  FormInputFileSelect,
+  ProcessingButton,
+} from './process-page.components';
+import type { FormPageSectionProps } from './process-page.types';
 
 const FormChunkSpreadsheetTabItem = ({
   onSelectFile,

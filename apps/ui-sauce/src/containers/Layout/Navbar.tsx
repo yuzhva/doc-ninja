@@ -2,7 +2,11 @@ import React from 'react';
 
 const THEME_CURRENT_MODE__DEFAULT = 'dark';
 
-const Navbar = ({ onBtnToggleSidebarClick }) => {
+interface NavbarProps {
+  onBtnToggleSidebarClick: () => void;
+}
+
+const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
   const [themeCurrentMode, setThemeCurrentMode] = React.useState(
     THEME_CURRENT_MODE__DEFAULT,
   );

@@ -1,7 +1,13 @@
 import React from 'react';
+import {
+  RouterProvider,
+  // createBrowserRouter,
+  createHashRouter,
+} from 'react-router';
 
-import { HomePage } from './pages/index.ts';
+import routes from './routes';
 
-const BrowserReactApp = <HomePage />;
+// const BrowserReactApp = <RouterProvider router={createBrowserRouter(routes)} />;
+const BrowserReactApp = <RouterProvider router={createHashRouter(routes)} />;
 
 export default BrowserReactApp;

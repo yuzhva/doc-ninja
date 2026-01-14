@@ -2,8 +2,11 @@ import React from 'react';
 import { FileSystemItem } from 'toolkit--local/browser';
 
 import { fetchRequest } from '../../../utils';
-import { FormInputFileSelect, ProcessingButton } from '../documents-components';
-import type { FormPageSectionProps } from '../documents.types';
+import {
+  FormInputFileSelect,
+  ProcessingButton,
+} from '../../process/process-page.components';
+import type { FormPageSectionProps } from '../../process/process-page.types';
 import { TableProcessedDocumentResults } from './FormProcessDocumentTabItem.components';
 import type {
   GroupedProcessedResults,

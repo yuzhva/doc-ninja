@@ -418,7 +418,7 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
     let config: any[] = [];
     try {
       // Try local storage first
-      const saved = localStorage.getItem('docNinja_filterConfig');
+      const saved = window.localStorage.getItem('docNinja_filterConfig');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {

@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import type { FileSystemProcessedResult } from 'toolkit--local/browser';
 
 import type { UseDirectoryPicker } from '../../hooks/use-file-system';
 import type {

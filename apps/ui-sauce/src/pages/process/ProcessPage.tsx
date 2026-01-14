@@ -5,8 +5,7 @@ import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
 import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
-import { FormProcessDocumentTabItem } from './FormProcessDocumentTabItem/index';
-import { FormPageSectionProps } from './documents.types';
+import { FormPageSectionProps } from './process-page.types';
 import { useBatchProcessor } from './use-batch-processor';
 
 interface ToastMessage {
@@ -117,7 +116,7 @@ const Toast = ({
   );
 };
 
-const DocumentsPage = () => {
+const ProcessPage = () => {
   // --- Toast Management ---
   const [toasts, setToasts] = React.useState<ToastMessage[]>([]);
   const addToast = React.useCallback(
@@ -246,24 +245,9 @@ const DocumentsPage = () => {
             isProcessing={isProcessing}
           />
         </Tabs.Item>
-        <Tabs.Item title="Пошук збігів в документах">
-          <FormProcessDocumentTabItem
-            onSelectFile={filePicker.selectFile}
-            onSelectSourceDirectory={sourceDir.selectDirectory}
-            onSelectOutputDirectory={outputDir.selectDirectory}
-            executeBatch={execute}
-            initSubmitHandler={initSubmitHandler}
-            sourceDirectory={sourceDir.processedDir}
-            outputDirectory={outputDir.processedDir}
-            selectedFile={filePicker.processedDir}
-            progress={progress}
-            isFileSystemAccessSupported={sourceDir.isSupported}
-            isProcessing={isProcessing}
-          />
-        </Tabs.Item>
       </Tabs>
     </div>
   );
 };
 
-export { DocumentsPage };
+export { ProcessPage };

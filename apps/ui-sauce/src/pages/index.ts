@@ -1,2 +1,2 @@
-export { HomePage } from './HomePage';
-export { DocumentsPage } from './documents';
+export { ProcessPage } from './process';
+export { SearchPage } from './search';
