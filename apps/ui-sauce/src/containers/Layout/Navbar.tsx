@@ -56,13 +56,14 @@ const Navbar = ({ onBtnToggleSidebarClick }) => {
               <a className="flex items-center" href="/">
                 <img
                   alt=""
-                  src="/static-assets/images/80-ОДШБ.png"
+                  src="/static-assets/images/doc-ninja--logo.png"
                   className="mr-3 h-6 sm:h-8"
                 />
                 <span className="self-center whitespace-nowrap text-2xl font-semibold dark:text-white">
-                  80 ОДШБ
+                  DocNinja
                 </span>
               </a>
+              {/*
               <form className="ml-16 hidden md:block">
                 <label
                   className="text-sm font-medium text-gray-900 dark:text-gray-300 sr-only"
@@ -95,13 +96,14 @@ const Navbar = ({ onBtnToggleSidebarClick }) => {
                       id="search"
                       name="search"
                       placeholder="Search"
-                      required=""
-                      size="32"
+                      required
+                      size={32}
                       type="search"
                     />
                   </div>
                 </div>
               </form>
+              */}
             </div>
 
             <div className="flex items-center lg:gap-3">

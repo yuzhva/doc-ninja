@@ -4,15 +4,13 @@ import { FileSystemItem } from 'toolkit--local/browser';
 import { fetchRequest } from '../../../utils';
 import { FormInputFileSelect, ProcessingButton } from '../documents-components';
 import type { FormPageSectionProps } from '../documents.types';
-import {
-  DirectoryTreeItem,
-  TableProcessedDocumentResults,
-} from './FormProcessDocumentTabItem.components';
+import { TableProcessedDocumentResults } from './FormProcessDocumentTabItem.components';
 import type {
   GroupedProcessedResults,
   ProcessDocumentsApiResponse,
   SearchResultItem,
 } from './FormProcessDocumentTabItem.types';
+import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
 
 const FormProcessDocumentTabItem = ({
   // handleFileSelect,
@@ -558,7 +556,7 @@ const FormProcessDocumentTabItem = ({
                       </div>
                       {directoryData.structure.fsNestedItems.map(
                         (fsNestedItem: any) => (
-                          <DirectoryTreeItem
+                          <FPDDirectoryTreeItem
                             key={fsNestedItem.path}
                             fsNestedItem={fsNestedItem}
                             selectedPaths={selectedPaths}

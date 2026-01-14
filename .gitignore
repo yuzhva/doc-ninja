@@ -24,4 +24,3 @@ assets--prod
 
 # app based secrets
 apps/be-krang/src/nlp/extraction-rules.json
-apps/ui-sauce/src/pages/documents/FormProcessDocumentTabItem/process-document.config.json

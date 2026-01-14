@@ -1,42 +1,12 @@
 import React from 'react';
-import { FileSystemItem } from 'toolkit--local/browser';
 
+import {
+  Badge,
+  ButtonCopyToClipboard,
+  FilterDropdown,
+} from '../../../components';
 import { FormProcessDocumentSideOver } from './FormProcessDocumentSideOver';
-import PROCESS_DOCUMENT__CONFIG from './process-document.config.json';
-
-// Shared component for metadata badges (Status, Command Type, etc.)
-const MetadataBadge = ({
-  label,
-  value,
-  variant = 'blue',
-  hideLabel = false,
-}: {
-  label: string;
-  value?: string | null;
-  variant?: 'blue' | 'purple';
-  hideLabel?: boolean;
-}) => {
-  const displayValue = value || '---';
-
-  const variantClasses = {
-    blue: 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800/50',
-    purple:
-      'bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800/50',
-  };
-
-  return (
-    <div
-      className={`flex items-center gap-1.5 px-2 py-0.5 rounded border ${variantClasses[variant]}`}
-    >
-      {!hideLabel && (
-        <span className="text-[10px] uppercase font-bold opacity-60">
-          {label}:
-        </span>
-      )}
-      <span className="text-xs font-medium">{displayValue}</span>
-    </div>
-  );
-};
+import { FPDModalFilterSettings } from './components/FPDModalFilterSettings';
 
 // Helper component to highlight text safely without dangerous HTML
 const HighlightedText = ({
@@ -172,7 +142,7 @@ const ProcessedResultRow = ({
           {statuses.length > 0 ? (
             <div className="flex flex-col gap-1 items-center">
               {statuses.map((s: any, idx) => (
-                <MetadataBadge
+                <Badge
                   key={idx}
                   label="Статус"
                   value={s}
@@ -189,7 +159,7 @@ const ProcessedResultRow = ({
           {commandTypes.length > 0 ? (
             <div className="flex flex-col gap-1 items-center">
               {commandTypes.map((c: any, idx) => (
-                <MetadataBadge
+                <Badge
                   key={idx}
                   label="Тип наказу"
                   value={c}
@@ -225,13 +195,13 @@ const ProcessedResultRow = ({
                           {idx + 1}
                         </span>
 
-                        <MetadataBadge
+                        <Badge
                           label="Статус"
                           value={item.extracted.status}
                           variant="blue"
                         />
 
-                        <MetadataBadge
+                        <Badge
                           label="Тип наказу"
                           value={item.extracted.commandType}
                           variant="purple"
@@ -240,10 +210,18 @@ const ProcessedResultRow = ({
                     )}
                   </div>
 
-                  <HighlightedText
-                    text={item.extracted.summary}
-                    highlight={item.extracted.matchedText}
-                  />
+                  <div className="relative group">
+                    <HighlightedText
+                      text={item.extracted.summary}
+                      highlight={item.extracted.matchedText}
+                    />
+                    <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ButtonCopyToClipboard
+                        textToCopy={item.extracted.summary}
+                        placement="left"
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -264,7 +242,6 @@ const ProcessedResultGroup = ({
   onViewContent: (item: any) => void;
 }) => {
   const [isOpen, setIsOpen] = React.useState(true);
-  const [showCopied, setShowCopied] = React.useState(false);
 
   // State to track expanded rows (using index as key for simplicity in this context)
   // Initialize with all expanded (true)
@@ -294,17 +271,6 @@ const ProcessedResultGroup = ({
       }
       return next;
     });
-  };
-
-  const handleCopyQuery = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent toggling the group
-    try {
-      await navigator.clipboard.writeText(searchQuery);
-      setShowCopied(true);
-      setTimeout(() => setShowCopied(false), 2000); // Hide after 2 seconds
-    } catch (err) {
-      console.error('Failed to copy query', err);
-    }
   };
 
   const handleOpenFile = async (result: any) => {
@@ -349,51 +315,7 @@ const ProcessedResultGroup = ({
           <span className="text-blue-600 dark:text-blue-400">
             {searchQuery}
           </span>
-          <div className="relative flex items-center">
-            <button
-              type="button"
-              onClick={handleCopyQuery}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors"
-              title="Скопіювати запит"
-            >
-              {showCopied ? (
-                <svg
-                  className="w-4 h-4 text-green-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-              )}
-            </button>
-            {showCopied && (
-              <span className="absolute left-full ml-2 whitespace-nowrap bg-green-100 text-green-800 text-xs font-medium px-1.5 py-0.5 rounded dark:bg-green-900 dark:text-green-100 animate-fade-in transition-opacity duration-300">
-                Скопійовано!
-              </span>
-            )}
-          </div>
+          <ButtonCopyToClipboard textToCopy={searchQuery} placement="right" />
         </h3>
         <button
           type="button"
@@ -473,61 +395,42 @@ const ProcessedResultGroup = ({
 };
 
 const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
-  const [isFilterOpen, setIsFilterOpen] = React.useState(false);
-  const [isActionsOpen, setIsActionsOpen] = React.useState(false);
+  // Removed internal filter open/close state logic as it is now inside FilterDropdown
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
-  // Search states for dropdowns
-  const [statusFilterText, setStatusFilterText] = React.useState('');
-  const [commandTypeFilterText, setCommandTypeFilterText] = React.useState('');
+  // Trigger re-read of config when settings modal closes (in case of save)
+  const [configVersion, setConfigVersion] = React.useState(0);
 
-  const filterRef = React.useRef<HTMLDivElement>(null);
-  const actionsRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node)
-      ) {
-        setIsFilterOpen(false);
-      }
-      if (
-        actionsRef.current &&
-        !actionsRef.current.contains(event.target as Node)
-      ) {
-        setIsActionsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  // Filter states
+  // Search/Filter states
   const [searchTerm, setSearchTerm] = React.useState('');
   const [maxResults, setMaxResults] = React.useState<string>('');
-  const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>([]);
-  const [selectedCommandTypes, setSelectedCommandTypes] = React.useState<
-    string[]
-  >([]);
+
+  // Map of filter Title -> Array of selected items
+  const [selectedFilters, setSelectedFilters] = React.useState<
+    Record<string, string[]>
+  >({});
 
   // State for FormProcessDocumentSideOver
   const [previewItem, setPreviewItem] = React.useState<any | null>(null);
 
-  // Derived state for dropdown options
-  const visibleStatuses = React.useMemo(() => {
-    return PROCESS_DOCUMENT__CONFIG.FILTER_STATUSES.filter((status) =>
-      status.toLowerCase().includes(statusFilterText.toLowerCase()),
-    );
-  }, [statusFilterText]);
+  // Read configuration dynamically
+  const filterConfigs = React.useMemo(() => {
+    let config: any[] = [];
+    try {
+      // Try local storage first
+      const saved = localStorage.getItem('docNinja_filterConfig');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          config = parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load filter config from storage', e);
+    }
 
-  const visibleCommandTypes = React.useMemo(() => {
-    return PROCESS_DOCUMENT__CONFIG.ACTION_COMMAND_TYPES.filter((cmd) =>
-      cmd.toLowerCase().includes(commandTypeFilterText.toLowerCase()),
-    );
-  }, [commandTypeFilterText]);
+    return config;
+  }, [configVersion]); // Re-run when version changes
 
   // Filtering logic
   const filteredResults = React.useMemo(() => {
@@ -548,27 +451,38 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
       let filteredItems = (items as any[]).filter((group) => {
         const groupItems = group.items || [group];
 
-        // Status Filter
-        if (selectedStatuses.length > 0) {
-          const hasMatchingStatus = groupItems.some(
-            (item: any) =>
-              item.extracted.status &&
-              selectedStatuses.includes(item.extracted.status),
-          );
-          if (!hasMatchingStatus) return false;
-        }
+        // Dynamic Filter Loop
+        const matchesAllFilters = filterConfigs.every((conf, index) => {
+          // Use 'id' from config as both the State Key and the Data Field Key
+          // Fallback to title-index for State Key if id is missing
+          const filterStateId = conf.id || `${conf.labelFilterTitle}-${index}`;
+          const selectedOptions = selectedFilters[filterStateId];
 
-        // Command Type Filter
-        if (selectedCommandTypes.length > 0) {
-          const hasMatchingCommand = groupItems.some(
-            (item: any) =>
-              item.extracted.commandType &&
-              selectedCommandTypes.includes(item.extracted.commandType),
-          );
-          if (!hasMatchingCommand) return false;
-        }
+          // If no options selected for this filter, skip (pass)
+          if (!selectedOptions || selectedOptions.length === 0) return true;
 
-        return true;
+          // Determine Data Field Key
+          // Prefer explicit 'id' from config.
+          // Fallback to index-based mapping for legacy JSON support without explicit 'id'
+          let fieldKey = conf.id;
+          if (!fieldKey) {
+            if (index === 0) fieldKey = 'status';
+            else if (index === 1) fieldKey = 'commandType';
+          }
+
+          // If we still don't know which field to check, we can't filter
+          if (!fieldKey) return true;
+
+          // Check if ANY item in the group has a matching property value
+          const hasMatch = groupItems.some((item: any) => {
+            const val = item.extracted?.[fieldKey!];
+            return val && selectedOptions.includes(val);
+          });
+
+          return hasMatch;
+        });
+
+        return matchesAllFilters;
       });
 
       // 3. Limit results per group
@@ -585,22 +499,25 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
     });
 
     return filtered;
-  }, [results, searchTerm, selectedStatuses, selectedCommandTypes, maxResults]);
+  }, [results, searchTerm, selectedFilters, maxResults, filterConfigs]);
 
   const hasResults = filteredResults && Object.keys(filteredResults).length > 0;
 
-  const handleStatusChange = (status: string) => {
-    setSelectedStatuses((prev) =>
-      prev.includes(status)
-        ? prev.filter((s) => s !== status)
-        : [...prev, status],
-    );
-  };
+  const handleFilterChange = (filterId: string, item: string) => {
+    setSelectedFilters((prev) => {
+      const next = { ...prev };
+      const current = next[filterId] || [];
 
-  const handleCommandTypeChange = (cmd: string) => {
-    setSelectedCommandTypes((prev) =>
-      prev.includes(cmd) ? prev.filter((c) => c !== cmd) : [...prev, cmd],
-    );
+      if (current.includes(item)) {
+        // Deselecting an item
+        next[filterId] = current.filter((i) => i !== item);
+      } else {
+        // Selecting an item
+        next[filterId] = [...current, item];
+      }
+
+      return next;
+    });
   };
 
   const handleIncrementMaxResults = () => {
@@ -629,6 +546,12 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
 
   const closePreview = () => {
     setPreviewItem(null);
+  };
+
+  const handleSaveSettings = () => {
+    setIsSettingsOpen(false);
+    // Reload config from LS
+    setConfigVersion((v) => v + 1);
   };
 
   return (
@@ -671,12 +594,12 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                       Збіг #{idx + 1}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <MetadataBadge
+                      <Badge
                         label="Статус"
                         value={item.extracted.status}
                         variant="blue"
                       />
-                      <MetadataBadge
+                      <Badge
                         label="Тип наказу"
                         value={item.extracted.commandType}
                         variant="purple"
@@ -690,9 +613,16 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
         )}
       </FormProcessDocumentSideOver>
 
-      {/* Toolbar */}
-      <div className="flex flex-col items-center justify-between p-4 space-y-3 md:flex-row md:space-y-0 md:space-x-4 border-b border-gray-200 dark:border-gray-700">
+      <FPDModalFilterSettings
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSaveSettings}
+      />
+
+      {/* Toolbar - Row 1: Search, Limit, Export */}
+      <div className="flex flex-col items-center justify-between p-4 space-y-3 md:flex-row md:space-y-0 md:space-x-4">
         <div className="w-full md:w-1/2 flex items-center space-x-2">
+          {/* Search Input */}
           <form
             className="flex items-center flex-1"
             onSubmit={(e) => e.preventDefault()}
@@ -724,6 +654,30 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
+                  onClick={() => setSearchTerm('')}
+                >
+                  <svg
+                    className="w-3 h-3"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 14 14"
+                  >
+                    <path
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                    />
+                  </svg>
+                  <span className="sr-only">Clear search</span>
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -788,172 +742,6 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
               </svg>
             </button>
           </div>
-          {/* Filter Dropdown (Statuses) */}
-          <div className="relative" ref={filterRef}>
-            <button
-              id="filterDropdownButton"
-              onClick={() => {
-                setIsFilterOpen(!isFilterOpen);
-                setIsActionsOpen(false);
-              }}
-              className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
-              type="button"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-                className="w-4 h-4 mr-2 text-gray-400"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Статус
-              <svg
-                className={`-mr-1 ml-1.5 w-5 h-5 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <path
-                  clipRule="evenodd"
-                  fillRule="evenodd"
-                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                />
-              </svg>
-              {selectedStatuses.length > 0 && (
-                <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
-                  {selectedStatuses.length}
-                </div>
-              )}
-            </button>
-            {isFilterOpen && (
-              <div
-                id="filterDropdown"
-                className="absolute right-0 z-10 w-64 p-3 mt-2 bg-white rounded-lg shadow-lg dark:bg-gray-700 max-h-96 overflow-y-auto"
-              >
-                <h6 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">
-                  Статуси
-                </h6>
-                <div className="mb-3">
-                  <input
-                    type="text"
-                    value={statusFilterText}
-                    onChange={(e) => setStatusFilterText(e.target.value)}
-                    placeholder="Фільтрувати..."
-                    className="block w-full p-2 text-xs text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:placeholder-gray-400 dark:text-white"
-                  />
-                </div>
-                <ul className="space-y-2 text-sm">
-                  {visibleStatuses.map((status) => (
-                    <li key={status} className="flex items-center">
-                      <input
-                        id={`filter-${status}`}
-                        type="checkbox"
-                        value={status}
-                        checked={selectedStatuses.includes(status)}
-                        onChange={() => handleStatusChange(status)}
-                        className="w-4 h-4 bg-gray-100 border-gray-300 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-700 focus:ring-2 dark:bg-gray-600 dark:border-gray-500"
-                      />
-                      <label
-                        htmlFor={`filter-${status}`}
-                        className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-                      >
-                        {status}
-                      </label>
-                    </li>
-                  ))}
-                  {visibleStatuses.length === 0 && (
-                    <li className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">
-                      Нічого не знайдено
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          {/* Actions Dropdown (Command Types) */}
-          <div className="relative" ref={actionsRef}>
-            <button
-              id="actionsDropdownButton"
-              onClick={() => {
-                setIsActionsOpen(!isActionsOpen);
-                setIsFilterOpen(false);
-              }}
-              className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
-              type="button"
-            >
-              <svg
-                className={`-ml-1 mr-1.5 w-5 h-5 transition-transform duration-200 ${isActionsOpen ? 'rotate-180' : ''}`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <path
-                  clipRule="evenodd"
-                  fillRule="evenodd"
-                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                />
-              </svg>
-              Тип наказу
-              {selectedCommandTypes.length > 0 && (
-                <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
-                  {selectedCommandTypes.length}
-                </div>
-              )}
-            </button>
-            {isActionsOpen && (
-              <div
-                id="actionsDropdown"
-                className="absolute right-0 z-10 w-64 p-3 mt-2 bg-white rounded-lg shadow-lg dark:bg-gray-700 max-h-96 overflow-y-auto"
-              >
-                <h6 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">
-                  Типи наказів
-                </h6>
-                <div className="mb-3">
-                  <input
-                    type="text"
-                    value={commandTypeFilterText}
-                    onChange={(e) => setCommandTypeFilterText(e.target.value)}
-                    placeholder="Фільтрувати..."
-                    className="block w-full p-2 text-xs text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:placeholder-gray-400 dark:text-white"
-                  />
-                </div>
-                <ul className="space-y-2 text-sm">
-                  {visibleCommandTypes.map((cmd) => (
-                    <li key={cmd} className="flex items-center">
-                      <input
-                        id={`action-${cmd}`}
-                        type="checkbox"
-                        value={cmd}
-                        checked={selectedCommandTypes.includes(cmd)}
-                        onChange={() => handleCommandTypeChange(cmd)}
-                        className="w-4 h-4 bg-gray-100 border-gray-300 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-700 focus:ring-2 dark:bg-gray-600 dark:border-gray-500"
-                      />
-                      <label
-                        htmlFor={`action-${cmd}`}
-                        className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-                      >
-                        {cmd}
-                      </label>
-                    </li>
-                  ))}
-                  {visibleCommandTypes.length === 0 && (
-                    <li className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">
-                      Нічого не знайдено
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-          </div>
 
           {/* Export Button */}
           <button
@@ -983,6 +771,102 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
         </div>
       </div>
 
+      {/* Divider */}
+      <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
+
+      {/* Toolbar - Row 2: Filters */}
+      <div className="flex items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20">
+        <div className="flex-grow" />
+
+        {filterConfigs.length === 0 ? (
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
+          >
+            <svg
+              className="mr-2 w-4 h-4 text-gray-400"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="2"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+              />
+            </svg>
+            Додайте фільтри
+          </button>
+        ) : (
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
+          >
+            <svg
+              className="w-4 h-4 text-gray-400"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="2"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+              />
+            </svg>
+          </button>
+        )}
+
+        {/* Dynamic Filters rendering */}
+        {filterConfigs.map((config, index) => {
+          // Extract unique options from rules
+          const uniqueOptions = Array.from(
+            new Set<string>(
+              config.filterRules
+                ?.map((r: any) => r.labelOption)
+                .filter(Boolean) || [],
+            ),
+          );
+
+          if (uniqueOptions.length === 0) return null;
+
+          // Use config.id as the stable key for state
+          // Fallback to title-index only if id is missing (though filtering won't work without id)
+          const filterId = config.id || `${config.labelFilterTitle}-${index}`;
+
+          return (
+            <FilterDropdown
+              key={filterId}
+              label={config.labelFilterTitle}
+              dropdownTitle={config.labelFilterDescription}
+              items={uniqueOptions.sort()}
+              selectedItems={selectedFilters[filterId] || []}
+              onItemChange={(item) => handleFilterChange(filterId, item)}
+              idPrefix={`filter-${filterId}`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Divider */}
+      <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
+
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-4">
         {!hasResults ? (
@@ -1010,124 +894,4 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
   );
 };
 
-const DirectoryTreeItem = ({
-  fsNestedItem,
-  selectedPaths,
-  onTogglePath,
-}: {
-  fsNestedItem: FileSystemItem;
-  selectedPaths: Set<string>;
-  onTogglePath: (path: string, checked: boolean) => void;
-}) => {
-  const [isExpanded, setIsExpanded] = React.useState(false);
-  const isSelected = selectedPaths.has(fsNestedItem.path);
-  const hasChildren =
-    fsNestedItem.fsNestedItems && fsNestedItem.fsNestedItems.length > 0;
-  const isDirectory = fsNestedItem.fsItemType === 'directory';
-
-  const handleToggleExpand = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsExpanded(!isExpanded);
-  };
-
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onTogglePath(fsNestedItem.path, e.target.checked);
-  };
-
-  const handleContentClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    onTogglePath(fsNestedItem.path, !isSelected);
-  };
-
-  return (
-    <div className="w-full">
-      <div className="flex items-center gap-x-0.5 w-full py-0.5">
-        {/* Toggle Button */}
-        <button
-          type="button"
-          className={`shrink-0 w-6 h-6 flex justify-center items-center hover:bg-gray-100 rounded-md focus:outline-none focus:bg-gray-100 disabled:opacity-50 disabled:pointer-events-none dark:hover:bg-gray-700 dark:focus:bg-gray-700 ${!hasChildren ? 'invisible' : ''}`}
-          onClick={handleToggleExpand}
-        >
-          <svg
-            className={`w-4 h-4 text-gray-800 dark:text-gray-200 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
-
-        {/* Content */}
-        <div className="grow flex items-center gap-x-2 px-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-          {/* Checkbox */}
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={handleCheckboxChange}
-            className="shrink-0 w-4 h-4 bg-gray-100 border-gray-300 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-          />
-
-          {/* Icon & Name */}
-          <div
-            className="flex items-center gap-x-2 cursor-pointer grow py-1"
-            onClick={handleContentClick}
-          >
-            <svg
-              className="shrink-0 w-4 h-4 text-gray-500 dark:text-gray-400"
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {isDirectory ? (
-                <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
-              ) : (
-                <>
-                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path>
-                  <path d="M14 2v4a2 2 0 0 0 2 2h4"></path>
-                </>
-              )}
-            </svg>
-            <span className="text-sm text-gray-800 dark:text-gray-200 select-none">
-              {fsNestedItem.name}{' '}
-              {(fsNestedItem.fsFileCount || 0) > 0 && (
-                <span className="text-xs text-gray-400">
-                  ({fsNestedItem.fsFileCount})
-                </span>
-              )}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Children */}
-      {hasChildren && isExpanded && (
-        <div className="pl-7 relative before:absolute before:top-0 before:left-3 before:w-0.5 before:-ml-px before:h-full before:bg-gray-100 dark:before:bg-gray-700">
-          {fsNestedItem.fsNestedItems?.map((child: FileSystemItem) => (
-            <DirectoryTreeItem
-              key={child.path}
-              fsNestedItem={child}
-              selectedPaths={selectedPaths}
-              onTogglePath={onTogglePath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export { DirectoryTreeItem, TableProcessedDocumentResults };
+export { TableProcessedDocumentResults };

@@ -1,12 +1,11 @@
 import React from 'react';
 
-import { Tabs } from '../../components';
+import { LoadingSpinner, Tabs } from '../../components';
 import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
 import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
 import { FormProcessDocumentTabItem } from './FormProcessDocumentTabItem/index';
-import { LoadingSpinner } from './documents-components';
 import { FormPageSectionProps } from './documents.types';
 import { useBatchProcessor } from './use-batch-processor';
 
