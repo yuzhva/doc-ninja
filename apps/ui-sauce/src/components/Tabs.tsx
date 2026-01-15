@@ -7,6 +7,7 @@ const TabsItem = ({
 }: {
   children: React.ReactNode;
   title: string;
+  isBetaFeature?: boolean;
 }) => {
   return <>{children}</>;
 };
@@ -24,7 +25,7 @@ const Tabs = ({ children }: { children: React.ReactNode }) => {
       <div className="text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700">
         <ul className="flex flex-wrap -mb-px">
           {tabs.map((tab, index) => {
-            const { title, disabled } = tab.props;
+            const { title, disabled, isBetaFeature } = tab.props;
             const isActive = index === activeTab;
 
             // Define CSS classes based on the tab's state
@@ -49,7 +50,14 @@ const Tabs = ({ children }: { children: React.ReactNode }) => {
                   disabled={disabled}
                   aria-current={isActive ? 'page' : undefined}
                 >
-                  {title}
+                  <div className="flex items-center gap-2">
+                    {title}
+                    {isBetaFeature && (
+                      <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">
+                        Beta
+                      </span>
+                    )}
+                  </div>
                 </button>
               </li>
             );

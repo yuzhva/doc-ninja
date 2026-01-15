@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router';
 
 const THEME_CURRENT_MODE__DEFAULT = 'dark';
 
@@ -57,7 +58,7 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
                   ></path>
                 </svg>
               </button>
-              <a className="flex items-center" href="/">
+              <Link className="flex items-center" to="/">
                 <img
                   alt=""
                   src="/static-assets/images/doc-ninja--logo.png"
@@ -66,7 +67,7 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
                 <span className="self-center whitespace-nowrap text-2xl font-semibold dark:text-white">
                   DocNinja
                 </span>
-              </a>
+              </Link>
               {/*
               <form className="ml-16 hidden md:block">
                 <label
@@ -346,7 +347,7 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
                                   viewBox="0 0 20 20"
                                   xmlns="http://www.w3.org/2000/svg"
                                 >
-                                  <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
+                                  <path d="M2 6a2 2 0 002-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path>
                                 </svg>
                               </div>
                             </div>
@@ -588,37 +589,7 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
                             width="1em"
                             xmlns="http://www.w3.org/2000/svg"
                           >
-                            <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"></path>
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
-                              clipRule="evenodd"
-                            ></path>
-                          </svg>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            Pricing
-                          </div>
-                        </a>
-                        <a
-                          href="#"
-                          className="block rounded-lg p-4 text-center hover:bg-gray-100 dark:hover:bg-gray-600"
-                        >
-                          <svg
-                            stroke="currentColor"
-                            fill="none"
-                            strokeWidth="0"
-                            viewBox="0 0 24 24"
-                            className="mx-auto mb-1 h-7 w-7 text-gray-500 dark:text-white"
-                            height="1em"
-                            width="1em"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"
-                            ></path>
+                            <path d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"></path>
                           </svg>
                           <div className="text-sm font-medium text-gray-900 dark:text-white">
                             Billing

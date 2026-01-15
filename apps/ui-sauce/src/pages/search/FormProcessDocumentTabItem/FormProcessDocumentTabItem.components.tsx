@@ -5,41 +5,25 @@ import {
   ButtonCopyToClipboard,
   FilterDropdown,
 } from '../../../components';
-import { FormProcessDocumentSideOver } from './FormProcessDocumentSideOver';
+import {
+  FormProcessDocumentSideOver,
+  HighlightedText,
+} from './FormProcessDocumentSideOver';
 import { FPDModalFilterSettings } from './components/FPDModalFilterSettings';
+import { FrontendInformationExtractor } from './frontend-information-extractor';
 
-// Helper component to highlight text safely without dangerous HTML
-const HighlightedText = ({
-  text,
-  highlight,
-}: {
-  text: string;
-  highlight: string;
-}) => {
-  if (!highlight || !text) return <>{text}</>;
+// Helper to calculate dynamic values including legacy dependencies
+const calculateDynamicValues = (item: any, filterConfigs: any[]) => {
+  const dynamicValues: Record<string, string | null> = {};
 
-  // Escape regex special characters to prevent errors
-  const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Split text by highlight term (capture group () keeps the delimiter in the result array)
-  const parts = text.split(new RegExp(`(${escapedHighlight})`, 'gi'));
+  filterConfigs.forEach((conf) => {
+    dynamicValues[conf.id] = FrontendInformationExtractor.determineValue(
+      item.extracted?.summary,
+      conf,
+    );
+  });
 
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === highlight.toLowerCase() ? (
-          <span
-            key={i}
-            className="bg-yellow-300 text-red-600 dark:bg-yellow-300 dark:text-red-600 font-semibold"
-            data-highlight="true"
-          >
-            {part}
-          </span>
-        ) : (
-          part
-        ),
-      )}
-    </>
-  );
+  return dynamicValues;
 };
 
 // Component for individual expandable row
@@ -49,28 +33,46 @@ const ProcessedResultRow = ({
   onToggleExpand,
   onOpenFile,
   onViewContent,
+  filterConfigs, // Add prop
 }: {
   result: any;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onOpenFile: (result: any) => void;
   onViewContent: (result: any) => void;
+  filterConfigs: any[]; // Add type
 }) => {
   // Aggregate data from items in the group
   const items = result.items || [result];
   const firstItem = items[0];
   const docName = result.docName || firstItem?.extracted?.foundInDocument;
   const filePath = result.search?.doc?.originalFilePath;
+  const documentNumber = firstItem?.extracted?.documentNumber;
 
-  // Collect unique statuses and command types
-  const statuses = Array.from(
-    new Set(items.map((i: any) => i.extracted.status).filter((s: any) => !!s)),
-  );
-  const commandTypes = Array.from(
-    new Set(
-      items.map((i: any) => i.extracted.commandType).filter((c: any) => !!c),
-    ),
-  );
+  // Pre-calculate dynamic values for each item in this group
+  // Returns: [ { item: item, dynamicValues: { [filterId]: string | null } }, ... ]
+  const enrichedItems = React.useMemo(() => {
+    return items.map((item: any) => {
+      const dynamicValues = calculateDynamicValues(item, filterConfigs);
+      return { item, dynamicValues };
+    });
+  }, [items, filterConfigs]);
+
+  // Aggregate unique values for the closed row view (e.g. show all statuses found in group)
+  const aggregatedValues = React.useMemo(() => {
+    const agg: Record<string, Set<string>> = {};
+    filterConfigs.forEach((conf) => {
+      agg[conf.id] = new Set();
+    });
+
+    enrichedItems.forEach(({ dynamicValues }) => {
+      Object.entries(dynamicValues).forEach(([id, val]) => {
+        if (val) agg[id]?.add(val as string);
+      });
+    });
+
+    return agg;
+  }, [enrichedItems, filterConfigs]);
 
   return (
     <React.Fragment>
@@ -138,48 +140,45 @@ const ProcessedResultRow = ({
           </div>
         </td>
 
-        <td className="px-6 py-4 whitespace-nowrap align-middle text-center">
-          {statuses.length > 0 ? (
-            <div className="flex flex-col gap-1 items-center">
-              {statuses.map((s: any, idx) => (
-                <Badge
-                  key={idx}
-                  label="Статус"
-                  value={s}
-                  variant="blue"
-                  hideLabel
-                />
-              ))}
-            </div>
-          ) : (
-            '---'
-          )}
+        {/* Document Number Column */}
+        <td className="px-6 py-4 whitespace-nowrap align-middle text-center text-sm text-gray-700 dark:text-gray-300 font-medium">
+          {documentNumber || '---'}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap align-middle text-center">
-          {commandTypes.length > 0 ? (
-            <div className="flex flex-col gap-1 items-center">
-              {commandTypes.map((c: any, idx) => (
-                <Badge
-                  key={idx}
-                  label="Тип наказу"
-                  value={c}
-                  variant="purple"
-                  hideLabel
-                />
-              ))}
-            </div>
-          ) : (
-            '---'
-          )}
-        </td>
+
+        {/* Dynamic Columns based on Filter Configs */}
+        {filterConfigs.map((conf, index) => {
+          const uniqueVals = Array.from(aggregatedValues[conf.id] || []);
+          return (
+            <td
+              key={conf.id || index}
+              className="px-6 py-4 whitespace-nowrap align-middle text-center"
+            >
+              {uniqueVals.length > 0 ? (
+                <div className="flex flex-col gap-1 items-center">
+                  {uniqueVals.map((val, idx) => (
+                    <Badge
+                      key={idx}
+                      label={conf.labelFilterTitle}
+                      value={val}
+                      variant="blue"
+                      hideLabel
+                    />
+                  ))}
+                </div>
+              ) : (
+                '---'
+              )}
+            </td>
+          );
+        })}
       </tr>
 
       {/* Expanded Content Row */}
       {isExpanded && (
         <tr className="bg-gray-50 dark:bg-gray-900/40 border-b dark:border-gray-700">
-          <td colSpan={4} className="px-6 py-4">
+          <td colSpan={3 + filterConfigs.length} className="px-6 py-4">
             <div className="pl-10 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
-              {items.map((item: any, idx: number) => (
+              {enrichedItems.map(({ item, dynamicValues }, idx: number) => (
                 <div
                   key={idx}
                   className={
@@ -191,21 +190,26 @@ const ProcessedResultRow = ({
                   <div className="flex flex-wrap items-center gap-3 mb-2">
                     {items.length > 1 && (
                       <>
-                        <span className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs font-bold">
-                          {idx + 1}
-                        </span>
+                        {enrichedItems.length > 1 && (
+                          <span className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs font-bold">
+                            {idx + 1}
+                          </span>
+                        )}
 
-                        <Badge
-                          label="Статус"
-                          value={item.extracted.status}
-                          variant="blue"
-                        />
-
-                        <Badge
-                          label="Тип наказу"
-                          value={item.extracted.commandType}
-                          variant="purple"
-                        />
+                        {/* Dynamic Badges for item */}
+                        {filterConfigs.map((conf) => {
+                          const val = dynamicValues[conf.id];
+                          if (!val) return null;
+                          return (
+                            <Badge
+                              key={conf.id}
+                              label={conf.labelFilterTitle}
+                              value={val}
+                              // variant="purple"
+                              variant="blue"
+                            />
+                          );
+                        })}
                       </>
                     )}
                   </div>
@@ -213,7 +217,7 @@ const ProcessedResultRow = ({
                   <div className="relative group">
                     <HighlightedText
                       text={item.extracted.summary}
-                      highlight={item.extracted.matchedText}
+                      highlights={[item.extracted.matchedText]}
                     />
                     <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <ButtonCopyToClipboard
@@ -235,11 +239,13 @@ const ProcessedResultRow = ({
 const ProcessedResultGroup = ({
   searchQuery,
   items,
-  onViewContent, // New prop
+  onViewContent,
+  filterConfigs, // Add prop
 }: {
   searchQuery: string;
   items: any[];
   onViewContent: (item: any) => void;
+  filterConfigs: any[]; // Add prop type
 }) => {
   const [isOpen, setIsOpen] = React.useState(true);
 
@@ -369,11 +375,17 @@ const ProcessedResultGroup = ({
               </th>
               <th className="px-6 py-3 whitespace-nowrap">Шлях</th>
               <th className="px-6 py-3 whitespace-nowrap w-px text-center">
-                Статус
+                Номер
               </th>
-              <th className="px-6 py-3 whitespace-nowrap w-px text-center">
-                Тип наказу
-              </th>
+              {/* Dynamic Headers */}
+              {filterConfigs.map((conf, idx) => (
+                <th
+                  key={conf.id || idx}
+                  className="px-6 py-3 whitespace-nowrap w-px text-center"
+                >
+                  {conf.labelFilterTitle}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
@@ -385,6 +397,7 @@ const ProcessedResultGroup = ({
                 onToggleExpand={() => handleToggleRow(index)}
                 onOpenFile={handleOpenFile}
                 onViewContent={onViewContent}
+                filterConfigs={filterConfigs} // Pass config
               />
             ))}
           </tbody>
@@ -429,7 +442,11 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
       console.warn('Failed to load filter config from storage', e);
     }
 
-    return config;
+    // Ensure IDs exist to prevent collisions
+    return config.map((c, i) => ({
+      ...c,
+      id: c.id || `${c.labelFilterTitle}-${i}`,
+    }));
   }, [configVersion]); // Re-run when version changes
 
   // Filtering logic
@@ -452,31 +469,20 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
         const groupItems = group.items || [group];
 
         // Dynamic Filter Loop
-        const matchesAllFilters = filterConfigs.every((conf, index) => {
+        const matchesAllFilters = filterConfigs.every((conf) => {
           // Use 'id' from config as both the State Key and the Data Field Key
-          // Fallback to title-index for State Key if id is missing
-          const filterStateId = conf.id || `${conf.labelFilterTitle}-${index}`;
+          const filterStateId = conf.id;
           const selectedOptions = selectedFilters[filterStateId];
 
           // If no options selected for this filter, skip (pass)
           if (!selectedOptions || selectedOptions.length === 0) return true;
 
-          // Determine Data Field Key
-          // Prefer explicit 'id' from config.
-          // Fallback to index-based mapping for legacy JSON support without explicit 'id'
-          let fieldKey = conf.id;
-          if (!fieldKey) {
-            if (index === 0) fieldKey = 'status';
-            else if (index === 1) fieldKey = 'commandType';
-          }
-
-          // If we still don't know which field to check, we can't filter
-          if (!fieldKey) return true;
-
           // Check if ANY item in the group has a matching property value
+          // Value is calculated dynamically on the frontend now using helper
           const hasMatch = groupItems.some((item: any) => {
-            const val = item.extracted?.[fieldKey!];
-            return val && selectedOptions.includes(val);
+            const vals = calculateDynamicValues(item, filterConfigs);
+            const dynamicVal = vals[conf.id];
+            return dynamicVal && selectedOptions.includes(dynamicVal);
           });
 
           return hasMatch;
@@ -548,6 +554,17 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
     setPreviewItem(null);
   };
 
+  // Preview needs to know about dynamic fields to render them
+  // We'll calculate them on the fly in the render below
+  const previewDynamicValues = React.useMemo(() => {
+    if (!previewItem || !filterConfigs) return [];
+    const items = previewItem.items || [previewItem];
+    return items.map((item: any) => {
+      const vals = calculateDynamicValues(item, filterConfigs);
+      return { item, vals };
+    });
+  }, [previewItem, filterConfigs]);
+
   const handleSaveSettings = () => {
     setIsSettingsOpen(false);
     // Reload config from LS
@@ -585,7 +602,7 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
 
               {/* Show Status/Type for each match if available */}
               <div className="mt-2 space-y-2">
-                {previewItem.items?.map((item: any, idx: number) => (
+                {previewDynamicValues.map(({ item, vals }, idx: number) => (
                   <div
                     key={idx}
                     className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-100 dark:border-gray-700"
@@ -594,16 +611,20 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                       Збіг #{idx + 1}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge
-                        label="Статус"
-                        value={item.extracted.status}
-                        variant="blue"
-                      />
-                      <Badge
-                        label="Тип наказу"
-                        value={item.extracted.commandType}
-                        variant="purple"
-                      />
+                      {filterConfigs.map((conf) => {
+                        const val = vals[conf.id];
+
+                        return (
+                          val && (
+                            <Badge
+                              key={conf.id}
+                              label={conf.labelFilterTitle}
+                              value={val}
+                              variant="blue"
+                            />
+                          )
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -884,6 +905,7 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                   searchQuery={searchQuery}
                   items={items}
                   onViewContent={handleViewContent}
+                  filterConfigs={filterConfigs} // Pass config
                 />
               ),
             )}
@@ -894,4 +916,4 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
   );
 };
 
-export { TableProcessedDocumentResults };
+export { calculateDynamicValues, TableProcessedDocumentResults };

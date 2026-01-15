@@ -7,7 +7,10 @@ import {
   ProcessingButton,
 } from '../../process/process-page.components';
 import type { FormPageSectionProps } from '../../process/process-page.types';
-import { TableProcessedDocumentResults } from './FormProcessDocumentTabItem.components';
+import {
+  TableProcessedDocumentResults,
+  calculateDynamicValues,
+} from './FormProcessDocumentTabItem.components';
 import type {
   GroupedProcessedResults,
   ProcessDocumentsApiResponse,
@@ -200,8 +203,8 @@ const FormProcessDocumentTabItem = ({
             body: JSON.stringify(payload),
           }).then((resAsJson: ProcessDocumentsApiResponse) => {
             if (resAsJson && resAsJson.extractedResults) {
-              // 1. Create a lookup map for search results by filename
-              // This allows us to link the extracted results with full file metadata
+              // 1. Create a lookup map for search results by originalFilePath (unique)
+              // This allows us to link the extracted results with full file metadata accurately
               const searchResultLookup = new Map<string, SearchResultItem>();
 
               // Handle nested structure: results is an array of SearchResultSet (one per query term)
@@ -209,11 +212,11 @@ const FormProcessDocumentTabItem = ({
                 for (const resultSet of resAsJson.results) {
                   if (resultSet.results && Array.isArray(resultSet.results)) {
                     for (const searchResult of resultSet.results) {
-                      if (searchResult.doc && searchResult.doc.fileName) {
-                        searchResultLookup.set(
-                          searchResult.doc.fileName,
-                          searchResult,
-                        );
+                      // Use originalFilePath as key if available
+                      const key = searchResult.doc?.originalFilePath;
+
+                      if (key) {
+                        searchResultLookup.set(key, searchResult);
                       }
                     }
                   }
@@ -221,24 +224,37 @@ const FormProcessDocumentTabItem = ({
               }
 
               const groupedResults = resAsJson.extractedResults.reduce(
-                (acc: GroupedProcessedResults, item) => {
+                (acc: GroupedProcessedResults, item: any) => {
                   const key = item.searchQuery;
                   if (!acc[key]) {
                     acc[key] = [];
                   }
 
                   // 2. Wrap in RichProcessedResultItem container
-                  // Find corresponding search result if available
+                  // Find corresponding search result if available using unique path
                   let searchResult: SearchResultItem | null = null;
-                  if (item.documentName) {
+
+                  // Use originalFilePath from BE (Added in update) as the primary identifier
+                  const docIdentifier = item.originalFilePath;
+
+                  if (docIdentifier) {
                     searchResult =
-                      searchResultLookup.get(item.documentName) || null;
+                      searchResultLookup.get(docIdentifier) || null;
+
+                    // Fallback try: if docIdentifier was just a name, but map is keyed by path?
+                    // Or if item.originalFilePath is missing, we only have name. Map keys might be paths.
+                    // This mismatch is handled if BE provides item.originalFilePath matching searchResult.doc.originalFilePath.
                   }
 
-                  // Group by documentName to show single row per document with multiple matches
-                  const existingDocGroup = acc[key].find(
-                    (g: any) => g.docName === item.documentName,
-                  );
+                  // Group by docIdentifier (unique path) to squash duplicates correctly
+                  // Check existing group by the unique identifier we derived
+                  const existingDocGroup = acc[key].find((g: any) => {
+                    // Check against the group's unique ID we store (we'll start storing it)
+                    // Or check against stored search result path
+                    const groupPath =
+                      g.uniqueId || g.search?.doc?.originalFilePath;
+                    return groupPath === docIdentifier;
+                  });
 
                   const newItem = {
                     extracted: item,
@@ -249,7 +265,8 @@ const FormProcessDocumentTabItem = ({
                     (existingDocGroup as any).items.push(newItem);
                   } else {
                     acc[key].push({
-                      docName: item.documentName || 'Unknown',
+                      docName: item.foundInDocument || 'Unknown', // Display name
+                      uniqueId: docIdentifier, // Store unique ID for grouping check
                       items: [newItem],
                       // Use first result as the main search ref for file path/metadata
                       search: searchResult,
@@ -281,18 +298,93 @@ const FormProcessDocumentTabItem = ({
     async (filteredResults: any) => {
       // Flatten the grouped structure back to individual extracted items for the backend
       const flattenedGroups = Object.values(filteredResults).flat();
-      const filteredResultsPayload = flattenedGroups.flatMap((group: any) => {
-        // Unpack from the grouped wrapper structure ({ extracted, search }) back to flat extracted results
-        if (group.items && Array.isArray(group.items)) {
-          return group.items.map((item: any) => item.extracted);
+
+      // 1. Load Filter Configs from localStorage for dynamic columns
+      let filterConfigs: any[] = [];
+      try {
+        const saved = localStorage.getItem('docNinja_filterConfig');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) filterConfigs = parsed;
         }
-        // Fallback if structure is already flat
-        return [group];
+        // Ensure IDs exist to prevent collisions, matching logic in components
+        filterConfigs = filterConfigs.map((c, i) => ({
+          ...c,
+          id: c.id || `${c.labelFilterTitle}-${i}`,
+        }));
+      } catch (e) {
+        console.warn('Failed to load filter config for export', e);
+      }
+
+      // 2. Define Columns (Standard + Dynamic)
+      const standardCols = [
+        { header: 'Input Name', key: 'inputName', options: { wch: 25 } },
+        {
+          header: 'Found In Document',
+          key: 'foundInDocument',
+          options: { wch: 25 },
+        },
+        {
+          header: 'Found Declension',
+          key: 'foundDeclension',
+          options: { wch: 25 },
+        },
+        { header: 'Summary', key: 'summary', options: { wch: 80 } },
+        {
+          header: 'Document Number',
+          key: 'documentNumber',
+          options: { wch: 15 },
+        },
+        { header: 'Document Day', key: 'actionDate', options: { wch: 15 } },
+      ];
+
+      const dynamicCols = filterConfigs.map((conf) => ({
+        header: conf.labelFilterTitle,
+        key: conf.id,
+        options: { wch: 25 },
+      }));
+
+      const allColumns = [...standardCols, ...dynamicCols];
+
+      // 3. Process Rows: Map standard fields & Calculate dynamic fields
+      const processedRows = flattenedGroups.flatMap((group: any) => {
+        // Unpack from the grouped wrapper structure
+        const items =
+          group.items && Array.isArray(group.items) ? group.items : [group];
+
+        return items.map((item: any) => {
+          const extracted = item.extracted || item;
+
+          // Map standard fields matching BE Excel structure
+          const row: any = {
+            inputName: extracted.searchQuery,
+            foundInDocument: extracted.foundInDocument,
+            foundDeclension: extracted.matchedText,
+            summary: extracted.summary,
+            documentNumber: extracted.documentNumber,
+            actionDate: extracted.actionDate,
+          };
+
+          // Calculate dynamic fields using shared helper
+          // The helper expects { extracted: ... } structure for consistency
+          const dynamicValues = calculateDynamicValues(
+            { extracted },
+            filterConfigs,
+          );
+
+          return { ...row, ...dynamicValues };
+        });
       });
+
+      // Prepare unified payload for export
+      const exportPayload = {
+        columns: allColumns,
+        rows: processedRows,
+      };
 
       // Use FormData to send large payloads as a file
       const formData = new FormData();
-      const jsonBlob = new Blob([JSON.stringify(filteredResultsPayload)], {
+      const jsonBlob = new Blob([JSON.stringify(exportPayload)], {
         type: 'application/json',
       });
       formData.append('file', jsonBlob, 'data.json');

@@ -230,7 +230,7 @@ const ProcessPage = () => {
             isProcessing={isProcessing}
           />
         </Tabs.Item>
-        <Tabs.Item title="Конвертувати Документи в Текст">
+        <Tabs.Item title="Конвертувати Документи в Текст" isBetaFeature>
           <FormConvertDocToTextTabItem
             onSelectFile={filePicker.selectFile}
             onSelectSourceDirectory={sourceDir.selectDirectory}

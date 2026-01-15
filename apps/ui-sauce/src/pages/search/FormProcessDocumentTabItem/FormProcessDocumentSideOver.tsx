@@ -2,54 +2,34 @@ import React from 'react';
 
 import { fetchRequest } from '../../../utils';
 
-interface FormProcessDocumentSideOverProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  textFilePath?: string;
-  highlightPhrases?: string[]; // Changed from highlightPhrase to highlightPhrases
-  children: React.ReactNode;
-}
-
 // Helper to highlight text inside the large file content
-const TextWithHighlights = React.memo(
-  ({ text, highlights }: { text: string; highlights?: string[] }) => {
+// Optimized version that supports multiple phrases
+export const HighlightedText = React.memo(
+  ({ text, highlights = [] }: { text: string; highlights?: string[] }) => {
     if (!text) return null;
 
-    // Filter out empty strings and duplicates
-    const uniqueHighlights = Array.from(
-      new Set(highlights?.filter(Boolean) || []),
-    );
+    const validHighlights = highlights?.filter(Boolean) || [];
+    if (validHighlights.length === 0) return <>{text}</>;
 
-    if (uniqueHighlights.length === 0) return <>{text}</>;
+    // Sort by length desc, Escape regex, Join
+    const pattern = Array.from(new Set(validHighlights))
+      .sort((a, b) => b.length - a.length)
+      .map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|');
 
-    // Sort by length (descending) to ensure longer phrases are matched first
-    const sortedHighlights = uniqueHighlights.sort(
-      (a, b) => b.length - a.length,
-    );
+    if (!pattern) return <>{text}</>;
 
-    // Escape regex special characters
-    const escapedHighlights = sortedHighlights.map((h) =>
-      h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-    );
-
-    // Create combined pattern: (phrase1|phrase2|phrase3)
-    const pattern = `(${escapedHighlights.join('|')})`;
-
-    // Split by highlight term (capture group keeps delimiter)
-    const parts = text.split(new RegExp(pattern, 'gi'));
-
-    // Create a set for O(1) lookup of lowercase tokens
-    const highlightSet = new Set(uniqueHighlights.map((h) => h.toLowerCase()));
+    const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
 
     return (
       <>
         {parts.map((part, i) =>
-          // Check if the current part matches any of our highlight phrases (case-insensitive)
-          highlightSet.has(part.toLowerCase()) ? (
+          // Check if part matches pattern (case insensitive)
+          // Using a simple regex test on the part to confirm it's a highlight
+          new RegExp(`^(${pattern})$`, 'i').test(part) ? (
             <span
               key={i}
-              className="bg-yellow-300 text-red-600 dark:bg-yellow-300 dark:text-red-600 font-semibold"
+              className="bg-yellow-300 text-red-600 dark:bg-yellow-200 dark:text-red-500 font-semibold"
               data-highlight="true"
             >
               {part}
@@ -62,6 +42,15 @@ const TextWithHighlights = React.memo(
     );
   },
 );
+
+interface FormProcessDocumentSideOverProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  textFilePath?: string;
+  highlightPhrases?: string[]; // Changed from highlightPhrase to highlightPhrases
+  children: React.ReactNode;
+}
 
 const FormProcessDocumentSideOver = ({
   isOpen,
@@ -344,8 +333,8 @@ const FormProcessDocumentSideOver = ({
                     {fileError}
                   </div>
                 ) : (
-                  <pre className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 text-xs sm:text-sm font-mono text-gray-800 dark:text-gray-200 overflow-x-auto whitespace-pre-wrap break-words">
-                    <TextWithHighlights
+                  <pre className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 text-xs sm:text-sm font-mono text-gray-800 dark:text-gray-200 overflow-x-auto whitespace-pre-wrap break-words">
+                    <HighlightedText
                       text={fileContent || ''}
                       highlights={highlightPhrases}
                     />

@@ -7,32 +7,7 @@ import {
   DocumentIntelligenceService,
   ExcelReportGenerator,
 } from '../../features/document-intelligence-service/index.mjs';
-import { InformationExtractor } from '../../nlp/information-extractor.mjs';
-
-const mapExtractedResultsToReportRows = (results: any[]) => {
-  return results.map((row: any) => {
-    // If it looks like ExtractedInfo (has searchQuery), map it
-    if ('searchQuery' in row) {
-      return {
-        inputName: row.searchQuery,
-        foundInDocument: row.foundInDocument,
-        documentDate: row.documentDate,
-        foundDeclension: row.matchedText,
-        sectionTitle: row.sectionTitle,
-        content: row.content,
-        actionDateContent: row.actionDateContent,
-        reason: row.reason,
-        summary: row.summary,
-        actionDate: row.actionDate,
-        status: row.status,
-        commandType: row.commandType,
-        confidence: row.confidence || '',
-      };
-    }
-    // Otherwise assume it's already in report format
-    return row;
-  });
-};
+import { InformationExtractor } from '../../features/document-intelligence-service/information-extractor.mjs';
 
 const postProcessDocuments = async (req: Request, res: Response) => {
   try {
@@ -63,7 +38,6 @@ const postProcessDocuments = async (req: Request, res: Response) => {
     const documentIntelligenceService = new DocumentIntelligenceService(
       req.body.sourcePath,
     );
-    const excelReportGenerator = new ExcelReportGenerator();
 
     const searchResults = await documentIntelligenceService.searchDocuments(
       queries,
@@ -73,32 +47,12 @@ const postProcessDocuments = async (req: Request, res: Response) => {
     const extractedResults =
       await InformationExtractor.extractSearchResults(searchResults);
 
-    // Generate Excel report
-    const reportRows = mapExtractedResultsToReportRows(extractedResults);
-
-    // Generate report
-    const { reportBuffer, reportFilename } =
-      await excelReportGenerator.generateReport(
-        reportRows,
-        req.body.outputFileName,
-      );
-
-    const processedFiles = [
-      {
-        name: reportFilename,
-        content: reportBuffer.toString('base64'),
-        relativePath: reportFilename,
-        originalPath: reportFilename,
-      },
-    ];
-
     res.status(StatusCodes.OK).json({
       batchIndex: 1,
       totalBatches: 1,
-      processedFiles,
       failedFiles: [],
       summary: {
-        processed: processedFiles.length,
+        processed: 1,
         failed: 0,
       },
       results: searchResults,
@@ -122,17 +76,18 @@ const postGenerateFilteredSpreadsheet = async (req: Request, res: Response) => {
       return res.status(StatusCodes.BAD_REQUEST).json({
         error: {
           code: 'NO_FILE',
-          message: 'File upload required (filteredResults).',
+          message:
+            'File upload required (filteredResults with columns and rows).',
         },
       });
     }
 
     const buffer = req.file.buffer;
     const content = buffer.toString('utf-8');
-    let inputRows;
+    let parsedContent;
 
     try {
-      inputRows = JSON.parse(content);
+      parsedContent = JSON.parse(content);
     } catch (e) {
       return res.status(StatusCodes.BAD_REQUEST).json({
         error: {
@@ -142,22 +97,38 @@ const postGenerateFilteredSpreadsheet = async (req: Request, res: Response) => {
       });
     }
 
-    if (!Array.isArray(inputRows)) {
+    const { columns, rows } = parsedContent;
+
+    if (!Array.isArray(rows)) {
       return res.status(StatusCodes.BAD_REQUEST).json({
         error: {
           code: 'INVALID_DATA',
-          message: 'Expected an array of rows.',
+          message: 'Expected "rows" as an array in the JSON file.',
+        },
+      });
+    }
+
+    if (!Array.isArray(columns) || columns.length === 0) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'MISSING_COLUMNS',
+          message: 'Expected "columns" as a non-empty array in the JSON file.',
         },
       });
     }
 
     // Map incoming extracted results to report rows format if needed
-    const reportRows = mapExtractedResultsToReportRows(inputRows);
+    // The FE is expected to send rows matching the column keys (searchQuery, matchedText, etc.)
+    const reportRows = rows;
 
     const excelReportGenerator = new ExcelReportGenerator();
 
     const { reportBuffer, reportFilename } =
-      await excelReportGenerator.generateReport(reportRows);
+      await excelReportGenerator.generateReport(
+        reportRows,
+        columns,
+        req.body.outputFileName,
+      );
 
     const processedFiles = [
       {

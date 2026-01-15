@@ -35,27 +35,15 @@ interface SearchResultSet {
 
 // Represents an extracted information item (found in 'extractedResults')
 interface ExtractedResultItem {
-  // Core extracted fields
-  name: string;
-  documentName?: string;
-  declension: string;
-  content: string | null;
-  sectionTitle: string | null;
-  reason: string | null;
-  documentDate: string | null;
-  actionDateContent: string | null;
-  actionDate: string | null;
-  context: string | null;
-  summary: string | null;
-  status: string | null;
-  commandType: string | null;
-
-  // Frontend/UI helper fields
+  // Core extracted fields matched with BE ExtractedInfo
   searchQuery: string;
-  foundInDocument?: string;
-  matchedText?: string;
+  foundInDocument: string;
+  matchedText: string;
+  actionDate: string | null;
+  summary: string | null;
 
-  // Note: doc and originalFilePath removed from here as we use RichProcessedResultItem container
+  // Metadata
+  position?: number;
 }
 
 // Container that holds both the NLP extraction and the raw search metadata
