@@ -2,3 +2,5 @@
 @custom-variant dark (&:where(.dark, .dark *));
 @import 'tailwindcss';
 @import 'flowbite/src/themes/default';
+
+@custom-variant hover (&:hover);
