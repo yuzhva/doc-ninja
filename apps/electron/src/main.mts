@@ -28,14 +28,14 @@ const createWindow = () => {
 
   // Step-2: Use nativeImage for more reliable cross-platform results,
   // or a direct path can sometimes work depending on the setup
-  const iconPath = path.join(__dirname, '../images/icons/png/1024x1024.png');
+  const iconPath = path.join(__dirname, '../images/icons/1024x1024.png');
   const customIcon = nativeImage.createFromPath(iconPath);
 
   // Step-3: Create the browser window with the custom icon
   const win = new BrowserWindow({
     width: workAreaSize.width * 0.75,
     height: workAreaSize.height * 0.75,
-    title: 'DocNinja',
+    title: `DocNinja v${electronApp.getVersion()}`,
     icon: customIcon,
     webPreferences: {
       // Use the constant provided by Electron Forge to load the compiled preload script

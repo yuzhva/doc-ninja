@@ -32,13 +32,20 @@ if (fs.existsSync(beSource)) copyDir(beSource, beDest);
 module.exports = {
   packagerConfig: {
     asar: true,
+    // Sets the icon for the app executable.
+    // Omit the extension; Forge looks for .ico on Windows and .icns on macOS.
+    // Make sure 'apps/electron/images/icons/icon.ico' exists!
+    icon: path.join(__dirname, 'images/icons/icon'),
     extraResource: [distDir],
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      config: {},
+      config: {
+        // Sets the icon for the Setup/Installer executable
+        setupIcon: path.join(__dirname, 'images/icons/icon.ico'),
+      },
     },
     {
       name: '@electron-forge/maker-zip',
