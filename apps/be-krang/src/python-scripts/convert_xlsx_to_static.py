@@ -49,6 +49,22 @@ def cleanup_workbook(wb):
         ws.sheet_view.topLeftCell = 'A1'
         ws.sheet_view.selection = [Selection(activeCell='A1', sqref='A1')]
 
+def convert_tables_to_standard(ws):
+    """
+    !IMPORTANT - the styles of tables which are having Power Query connection - are NOT preserved
+    Convert Power Query tables (queryTable) to standard tables within a worksheet.
+    This simulates 'Unlink from Data Source' to preserve visual styles while removing bindings.
+    """
+    if hasattr(ws, 'tables'):
+        for table in ws.tables.values():
+            # Remove 'queryTable' type to make it a standard table
+            if hasattr(table, 'tableType') and table.tableType == 'queryTable':
+                table.tableType = None
+
+            # Remove connection bindings references
+            if hasattr(table, 'connectionId'):
+                table.connectionId = None
+
 def convert_to_static(input_path, output_path):
     print(f"Loading workbook from {input_path}...")
 
@@ -66,6 +82,9 @@ def convert_to_static(input_path, output_path):
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         ws_values = wb_values[sheet_name]
+
+        # Fix: Convert Power Query tables to standard tables to preserve styles
+        convert_tables_to_standard(ws)
 
         # Iterate through all cells in the sheet
         for row in ws.iter_rows():
