@@ -8,7 +8,7 @@ import {
   screen,
   shell,
 } from 'electron';
-import * as fs from 'fs';
+import fs from 'fs';
 import path from 'path';
 import request from 'supertest';
 import { FileSystemService } from 'toolkit--local/browser';
@@ -39,7 +39,7 @@ const createWindow = () => {
     icon: customIcon,
     webPreferences: {
       // Use the constant provided by Electron Forge to load the compiled preload script
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
@@ -84,7 +84,7 @@ electronApp.whenReady().then(async () => {
     'api-request',
     async (event, { method, path, body, electronAPIMeta }) => {
       // Use supertest to make an "in-memory" request to your Express app
-      const req = request(expressApp)[method.toLowerCase()](path);
+      const req = (request(expressApp) as any)[method.toLowerCase()](path);
 
       /**
        * !IMPORTANT: body is serialized by {serializeElectronIPCBody} in Front-End application

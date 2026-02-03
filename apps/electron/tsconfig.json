@@ -1,7 +1,8 @@
 {
-  "extends": ["@mainset/dev-stack-fe/tsconfig--bundler"]
-  // "compilerOptions": {
-  //   "allowImportingTsExtensions": true,
-  //   "noEmit": true
-  // }
+  "extends": ["@mainset/dev-stack-fe/tsconfig--bundler"],
+  "compilerOptions": {
+    "outDir": "./dist"
+    // "allowImportingTsExtensions": true,
+    // "noEmit": true
+  }
 }
