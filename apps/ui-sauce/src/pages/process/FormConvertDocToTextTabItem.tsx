@@ -21,6 +21,8 @@ const FormConvertDocToTextTabItem = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: FormPageSectionProps) => {
+  const [subFolderPath, setSubFolderPath] = React.useState('doc-to-text');
+
   const postConvertDocToText = React.useCallback<
     Parameters<typeof initSubmitHandler>[0]
   >(
@@ -103,7 +105,8 @@ const FormConvertDocToTextTabItem = ({
                 name="subfolderPath"
                 className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
                 placeholder="doc-to-text"
-                defaultValue="doc-to-text"
+                value={subFolderPath}
+                onChange={(e) => setSubFolderPath(e.target.value)}
                 type="text"
               />
             </div>
@@ -120,7 +123,7 @@ const FormConvertDocToTextTabItem = ({
                 : 'Конвертувати Документи в Текст'}
             </ProcessingButton>
             <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              💡 Конвертовані файли будуть збережені в папці "doc-to-text"
+              💡 Конвертовані файли будуть збережені в папці "{subFolderPath}"
               всередині вибраної папки.
             </div>
           </div>

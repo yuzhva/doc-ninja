@@ -32,13 +32,19 @@ const FormChunkSpreadsheetTabItem = ({
     additionalSheets: [
       {
         id: Date.now(),
-        sheetIndex: 8,
+        sheetIndex: 3,
+        headerRows: 3,
+        filterColumnPosition: 15,
+      },
+      {
+        id: Date.now(),
+        sheetIndex: 9,
         headerRows: 3,
         filterColumnPosition: 19,
       },
       {
         id: Date.now() + 1,
-        sheetIndex: 9,
+        sheetIndex: 10,
         headerRows: 2,
         filterColumnPosition: 6,
       },

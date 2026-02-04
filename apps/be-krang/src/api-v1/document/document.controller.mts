@@ -46,6 +46,7 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
     const fileName = Buffer.from(req.file.originalname, 'latin1').toString(
       'utf8',
     );
+    const filenameSuffix = req.body.filenameSuffix ?? ' - static';
 
     console.log(
       `✅ Processing uploaded file for static conversion: ${fileName} (${buffer.length} bytes)`,
@@ -81,11 +82,11 @@ const postConvertSpreadsheetToStatic = async (req: Request, res: Response) => {
       // Read the converted file
       const convertedBuffer = await fs.readFile(outputFilePath);
 
-      // Add " - static" before the extension - preserve original filename encoding
+      // Add suffix before the extension - preserve original filename encoding
       const originalFileExt = path.extname(fileName);
       const nameWithoutExt = fileName.slice(0, -originalFileExt.length);
       const staticFileExt = '.xlsm';
-      const staticFileName = `${nameWithoutExt} - static${staticFileExt}`;
+      const staticFileName = `${nameWithoutExt}${filenameSuffix}${staticFileExt}`;
 
       processedFiles.push({
         name: staticFileName,

@@ -20,6 +20,19 @@ const FormConvertSpreadsheetToStatic = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: FormPageSectionProps) => {
+  const [fileNameSuffix, setFileNameSuffix] = React.useState('_без_формул');
+
+  const previewFileName = React.useMemo(() => {
+    const originalName = selectedFile?.structure?.name;
+
+    if (!originalName) return;
+
+    const originalNameParts = originalName.split('.');
+
+    // Backend enforces .xlsm extension for static files
+    return `${originalNameParts.slice(0, -1).join('.')}${fileNameSuffix}.${originalNameParts[originalNameParts.length - 1]}`;
+  }, [selectedFile, fileNameSuffix]);
+
   const postConvertSpreadsheetToStatic = React.useCallback<
     Parameters<typeof initSubmitHandler>[0]
   >(
@@ -42,6 +55,10 @@ const FormConvertSpreadsheetToStatic = ({
           const formData = new FormData();
           // Use file.name directly to preserve encoding
           formData.append('file', file.contentAsBlob, file.name);
+
+          if (formDataJSON.filenameSuffix) {
+            formData.append('filenameSuffix', formDataJSON.filenameSuffix);
+          }
 
           console.log(
             '📤 Uploading file for static conversion via multipart:',
@@ -94,6 +111,24 @@ const FormConvertSpreadsheetToStatic = ({
                 icon="folder"
               />
             </div>
+
+            <div className="sm:col-span-2">
+              <label
+                htmlFor="filenameSuffix"
+                className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+              >
+                Суфікс назви файлу
+              </label>
+              <input
+                id="filenameSuffix"
+                name="filenameSuffix"
+                className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                placeholder="_без_формул"
+                value={fileNameSuffix}
+                onChange={(e) => setFileNameSuffix(e.target.value)}
+                type="text"
+              />
+            </div>
           </div>
 
           <div className="mt-8">
@@ -104,10 +139,12 @@ const FormConvertSpreadsheetToStatic = ({
             >
               {isProcessing ? 'Конвертую...' : 'Конвертувати в Статику'}
             </ProcessingButton>
-            <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              💡 Результат буде збережено у папці "static-spreadsheet" всередині
-              вибраної папки.
-            </div>
+            {previewFileName && (
+              <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                💡 Результат буде збережено до файлу з назвою "{previewFileName}
+                " всередині обраної папки.
+              </div>
+            )}
           </div>
         </form>
       </div>
