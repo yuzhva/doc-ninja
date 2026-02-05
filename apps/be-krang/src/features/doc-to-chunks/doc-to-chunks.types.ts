@@ -14,6 +14,7 @@ interface SliceOptions {
     headerRows?: number;
     maxColumnsToInclude?: number;
   }>;
+  isSanitizeEnabled?: boolean;
 }
 
 interface ChunkFile {

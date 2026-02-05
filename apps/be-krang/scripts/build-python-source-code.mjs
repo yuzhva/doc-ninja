@@ -51,7 +51,11 @@ execSync(`"${pipCmd}" install pyinstaller openpyxl`, {
 });
 
 console.log('🔨 Compiling Python scripts...');
-const scripts = ['convert_xlsx_to_static', 'slice_xlsx_for_chunks'];
+const scripts = [
+  'convert_xlsx_to_static',
+  'slice_xlsx_for_chunks',
+  'sanitize_xlsx',
+];
 
 for (const script of scripts) {
   console.log(`Building ${script}...`);

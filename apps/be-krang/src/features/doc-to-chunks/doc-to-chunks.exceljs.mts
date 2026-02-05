@@ -1,5 +1,9 @@
 import ExcelJS from 'exceljs';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
+import { executePythonScript } from '../../python-scripts/python-executor.mjs';
 import {
   createChunkNameExtractor,
   createSheetWithData,
@@ -11,6 +15,41 @@ import {
 } from './doc-to-chunks.exceljs.utils.mjs';
 import type { ChunkFile, SliceOptions } from './doc-to-chunks.types.ts';
 
+const sanitizeBuffer = async (inputBuffer: Buffer): Promise<Buffer> => {
+  const tempDir = os.tmpdir();
+  const timestamp = Date.now();
+  const runId = Math.random().toString(36).substring(7);
+  const inputPath = path.join(
+    tempDir,
+    `sanitize_in_${timestamp}_${runId}.xlsx`,
+  );
+  const outputPath = path.join(
+    tempDir,
+    `sanitize_out_${timestamp}_${runId}.xlsx`,
+  );
+
+  try {
+    await fs.writeFile(inputPath, inputBuffer);
+
+    await executePythonScript('sanitize_xlsx', [inputPath, outputPath], {
+      // Suppress standard logs unless there's an error to keep console clean
+      onLog: () => {},
+      onError: (str) => console.warn(`Sanitization Warning: ${str}`),
+    });
+
+    // Read the sanitized output
+    return await fs.readFile(outputPath);
+  } catch (err) {
+    throw new Error(
+      `Sanitization process failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    // Cleanup temp files
+    await fs.unlink(inputPath).catch(() => {});
+    await fs.unlink(outputPath).catch(() => {});
+  }
+};
+
 const sliceDocumentForChunks = async ({
   buffer, // Use buffer instead of file path
   sheetToChunkPosition = 1,
@@ -21,6 +60,7 @@ const sliceDocumentForChunks = async ({
   chunkNamePattern,
   includeHiddenSheets = false,
   additionalSheets = [],
+  isSanitizeEnabled = true, // Default to true
 }: SliceOptions): Promise<ChunkFile[]> => {
   const startTime = Date.now();
 
@@ -28,8 +68,24 @@ const sliceDocumentForChunks = async ({
     console.log(`🚀 Starting to slice Excel document from buffer`);
     console.log(`⏱️ Started at: ${new Date().toLocaleTimeString()}`);
 
+    let workBuffer = buffer as Buffer;
+
+    if (isSanitizeEnabled) {
+      console.log('🧹 Sanitizing Excel buffer before processing...');
+      try {
+        const sanitized = await sanitizeBuffer(workBuffer);
+        workBuffer = sanitized;
+        console.log('✅ Buffer sanitized successfully.');
+      } catch (error) {
+        console.warn(
+          '⚠️ Sanitization failed, proceeding with original buffer:',
+          error,
+        );
+      }
+    }
+
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as any); // Load from buffer instead of file
+    await workbook.xlsx.load(workBuffer as any); // Load from buffer instead of file
 
     const loadTime = Date.now() - startTime;
     console.log(`📖 Document loaded in: ${loadTime}ms`);
