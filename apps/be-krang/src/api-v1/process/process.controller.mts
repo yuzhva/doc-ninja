@@ -31,7 +31,7 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       pageSize: pageSize === 'ALL' ? pageSize : Number(pageSize) || 10,
       sortOrder,
       searchScopedPaths: req.body.searchScopedPaths,
-      fuzzyPhrase: req.body.fuzzyPhrase || false,
+      isTypoToleranceEnabled: req.body.isTypoToleranceEnabled,
     };
 
     // Use DocumentIntelligenceService for search

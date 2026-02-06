@@ -28,15 +28,14 @@ export class SnippetGenerator {
   generateHighlights(
     docId: string,
     doc: DocumentIndex,
-    searchTokens: string[],
-    uniqueQueryTokens: string[],
+    originalPhraseOrStemmedTokens: string[],
     isPhrase: boolean,
-    fuzzy: boolean,
+    isTypoToleranceEnabled: boolean,
   ): HighlightInfo[] {
     const start = Date.now();
     const highlights: HighlightInfo[] = [];
 
-    if (isPhrase && fuzzy) {
+    if (isPhrase && isTypoToleranceEnabled) {
       // Use cached lowercased vocab
       let lowerVocab = this.lowerVocabCache.get(docId);
       if (!lowerVocab) {
@@ -50,7 +49,7 @@ export class SnippetGenerator {
       >();
 
       lowerVocab.forEach((vocabTermLower, index) => {
-        for (const queryToken of searchTokens) {
+        for (const queryToken of originalPhraseOrStemmedTokens) {
           const distance = levenshtein(vocabTermLower, queryToken);
           if (distance <= 2) {
             const confidence =
@@ -91,7 +90,7 @@ export class SnippetGenerator {
       }
 
       const matchingVocabIndices = new Set<number>();
-      const queryTokenSet = new Set(uniqueQueryTokens);
+      const queryTokenSet = new Set(originalPhraseOrStemmedTokens);
 
       stemmedVocab.forEach((docTokenStem, index) => {
         if (queryTokenSet.has(docTokenStem)) {
@@ -104,7 +103,7 @@ export class SnippetGenerator {
           if (matchingVocabIndices.has(p[0])) {
             const docTokenTerm = doc.vocab[p[0]];
             const docTokenStem = stemmedVocab![p[0]];
-            const queryToken = uniqueQueryTokens.find(
+            const queryToken = originalPhraseOrStemmedTokens.find(
               (t) => t === docTokenStem,
             );
 
@@ -113,7 +112,7 @@ export class SnippetGenerator {
               originalWord: docTokenTerm,
               charStart: p[1],
               charEnd: p[2],
-              confidence: fuzzy
+              confidence: isTypoToleranceEnabled
                 ? calculateMatchConfidence(
                     queryToken || docTokenStem,
                     docTokenStem,
@@ -140,11 +139,10 @@ export class SnippetGenerator {
    */
   generateSnippets(
     doc: DocumentIndex,
-    uniqueQueryTokens: string[],
+    originalPhraseOrStemmedTokens: string[],
     invertedIndex: Map<string, InvertedIndexEntry[]>,
     isPhrase: boolean,
-    fuzzy: boolean,
-    searchTokens: string[],
+    isTypoToleranceEnabled: boolean,
     matchPositions: number[][] | undefined,
     contextBefore: number,
     contextAfter: number,
@@ -153,10 +151,10 @@ export class SnippetGenerator {
     let snippets: SnippetInfo[] = [];
 
     if (isPhrase) {
-      if (fuzzy) {
+      if (isTypoToleranceEnabled) {
         snippets = this.extractFuzzyPhraseSnippets(
           doc,
-          searchTokens,
+          originalPhraseOrStemmedTokens,
           matchPositions,
           contextBefore,
           contextAfter,
@@ -164,7 +162,7 @@ export class SnippetGenerator {
       } else {
         snippets = this.extractPhraseSnippets(
           doc,
-          searchTokens,
+          originalPhraseOrStemmedTokens,
           contextBefore,
           contextAfter,
         );
@@ -172,7 +170,7 @@ export class SnippetGenerator {
     } else {
       snippets = this.extractTokenSnippets(
         doc,
-        uniqueQueryTokens,
+        originalPhraseOrStemmedTokens,
         invertedIndex,
         contextBefore,
         contextAfter,
@@ -190,7 +188,7 @@ export class SnippetGenerator {
 
   private extractFuzzyPhraseSnippets(
     doc: DocumentIndex,
-    queryTokens: string[],
+    originalPhraseOrStemmedTokens: string[],
     sequences: number[][] | undefined,
     contextBefore: number,
     contextAfter: number,
@@ -200,7 +198,8 @@ export class SnippetGenerator {
     const snippets: SnippetInfo[] = [];
 
     for (const sequencePositions of sequences) {
-      if (sequencePositions.length !== queryTokens.length) continue;
+      if (sequencePositions.length !== originalPhraseOrStemmedTokens.length)
+        continue;
 
       const sequence = sequencePositions.map((pos) =>
         getDocumentToken(doc, pos),
@@ -210,7 +209,7 @@ export class SnippetGenerator {
       const snippet = this.createSnippetFromSequence(
         doc,
         sequence as ProcessedSearchToken[],
-        queryTokens,
+        originalPhraseOrStemmedTokens,
         'fuzzy-phrase',
         contextBefore,
         contextAfter,
@@ -223,12 +222,12 @@ export class SnippetGenerator {
 
   private extractPhraseSnippets(
     doc: DocumentIndex,
-    searchTokens: string[],
+    originalPhraseOrStemmedTokens: string[],
     contextBefore: number,
     contextAfter: number,
   ): SnippetInfo[] {
     const snippets: SnippetInfo[] = [];
-    const phraseLength = searchTokens.length;
+    const phraseLength = originalPhraseOrStemmedTokens.length;
     if (phraseLength === 0) return [];
 
     for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
@@ -239,7 +238,8 @@ export class SnippetGenerator {
         const token = getDocumentToken(doc, i + j);
         if (
           !token ||
-          this.textProcessor.stemWord(token.term) !== searchTokens[j]
+          this.textProcessor.stemWord(token.term) !==
+            originalPhraseOrStemmedTokens[j]
         ) {
           isMatch = false;
           break;
@@ -251,7 +251,7 @@ export class SnippetGenerator {
         const snippet = this.createSnippetFromSequence(
           doc,
           sequence,
-          searchTokens,
+          originalPhraseOrStemmedTokens,
           'exact-phrase',
           contextBefore,
           contextAfter,
@@ -266,7 +266,7 @@ export class SnippetGenerator {
 
   private extractTokenSnippets(
     doc: DocumentIndex,
-    uniqueQueryTokens: string[],
+    uniqueScoringTokens: string[],
     invertedIndex: Map<string, InvertedIndexEntry[]>,
     contextBefore: number,
     contextAfter: number,
@@ -278,7 +278,7 @@ export class SnippetGenerator {
     doc.positions.forEach((p, tokenIndex) => {
       const docTokenTerm = doc.vocab[p[0]];
       const docTokenStem = this.textProcessor.stemWord(docTokenTerm);
-      if (uniqueQueryTokens.includes(docTokenStem)) {
+      if (uniqueScoringTokens.includes(docTokenStem)) {
         matchedTokenIndices.add(tokenIndex);
       }
     });
@@ -288,7 +288,7 @@ export class SnippetGenerator {
       if (!docToken) return;
 
       const docTokenStem = this.textProcessor.stemWord(docToken.term);
-      const queryToken = uniqueQueryTokens.find((qt) => qt === docTokenStem);
+      const queryToken = uniqueScoringTokens.find((qt) => qt === docTokenStem);
       if (!queryToken) return;
 
       const snippetBounds = this.findSentenceBoundariesForSnippet(
@@ -342,7 +342,7 @@ export class SnippetGenerator {
   private createSnippetFromSequence(
     doc: DocumentIndex,
     sequence: ProcessedSearchToken[],
-    queryTokens: string[],
+    originalPhraseOrStemmedTokens: string[],
     matchType: 'exact-phrase' | 'fuzzy-phrase',
     contextBefore: number,
     contextAfter: number,
@@ -364,7 +364,7 @@ export class SnippetGenerator {
     const snippetText = tokensForSnippet.join(' ');
 
     const termsToHighlight = sequence.map((match, index) => ({
-      term: queryTokens[index],
+      term: originalPhraseOrStemmedTokens[index],
       originalWord: match.term,
     }));
 
@@ -374,7 +374,7 @@ export class SnippetGenerator {
     );
 
     const snippetHighlights = sequence.map((match, index) => ({
-      term: queryTokens[index],
+      term: originalPhraseOrStemmedTokens[index],
       originalWord: match.term,
       tokenIndex: match.position,
       charStart: match.charStart,
@@ -384,12 +384,12 @@ export class SnippetGenerator {
     let confidence = 1.0;
     if (matchType === 'fuzzy-phrase') {
       const totalDistance = sequence.reduce((sum, match, index) => {
-        const queryToken = queryTokens[index];
+        const queryToken = originalPhraseOrStemmedTokens[index];
         return sum + levenshtein(match.term.toLowerCase(), queryToken);
       }, 0);
       confidence = Math.max(
         0.3,
-        1.0 - totalDistance / (queryTokens.length * 3),
+        1.0 - totalDistance / (originalPhraseOrStemmedTokens.length * 3),
       );
     }
 

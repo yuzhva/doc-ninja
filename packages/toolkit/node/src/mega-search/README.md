@@ -80,8 +80,8 @@ results.results.forEach((result) => {
 // Advanced search with all options
 const results = await megaSearch.search('документ', {
   topN: 50, // Search through top 50 results
-  fuzzy: true, // Enable fuzzy matching
-  fuzzyThreshold: 1, // Allow 1 character difference
+  isTypoToleranceEnabled: true, // Enable fuzzy matching
+  maxTypoDistance: 1, // Allow 1 character difference
   snippetsLimit: 5, // Show up to 5 snippets per result
   page: 1, // First page
   pageSize: 10, // 10 results per page
@@ -198,8 +198,8 @@ Main search method with full feature support.
 ```typescript
 {
   topN?: number;                    // Max results to process (default: 50)
-  fuzzy?: boolean;                  // Enable fuzzy matching (default: true)
-  fuzzyThreshold?: number;          // Levenshtein threshold (default: 1)
+  isTypoToleranceEnabled?: boolean;                  // Enable fuzzy matching (default: true)
+  maxTypoDistance?: number;          // Levenshtein threshold (default: 1)
   snippetsLimit?: number | 'ALL';   // Snippets per result (default: 3)
   page?: number;                    // Page number (default: 1)
   pageSize?: number;                // Results per page (default: 10)

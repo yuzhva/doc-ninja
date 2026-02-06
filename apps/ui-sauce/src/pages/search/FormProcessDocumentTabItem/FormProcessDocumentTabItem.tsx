@@ -183,7 +183,7 @@ const FormProcessDocumentTabItem = ({
           directoryData?.structure?.path ||
           '',
         searchScopedPaths: Array.from(selectedPaths),
-        fuzzyPhrase: allowFuzzyMatch,
+        isTypoToleranceEnabled: allowFuzzyMatch,
       };
 
       return executeBatch(

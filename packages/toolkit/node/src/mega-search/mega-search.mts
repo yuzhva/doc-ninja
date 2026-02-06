@@ -31,10 +31,9 @@ class MegaSearch {
   private queryCache = new Map<
     string,
     {
-      queryTokens: string[];
-      originalTokens: string[];
-      uniqueQueryTokens: string[];
-      // searchTokens removed as it was redundant
+      originalPhraseTokens: string[]; // Exact words (for strict phrase)
+      stemmedTokens: string[]; // Stemmed words (for fuzzy matching)
+      uniqueScoringTokens: string[]; // Deduplicated stemmed (for scoring)
       isPhrase: boolean;
       timestamp: number;
     }
@@ -230,16 +229,14 @@ class MegaSearch {
     const searchStartTime = Date.now();
     logger.info(`🔍 [START] Search request: "${query}"`);
 
-    // Options are now fully typed via SearchOptions interface
     const {
-      topN = 50,
-      fuzzy = true,
-      fuzzyThreshold = 1,
+      isTypoToleranceEnabled = true,
+      maxTypoDistance = 1,
+      isPhraseProximityEnabled = false,
+      maxWordsInPhraseDistance = 0,
       snippetsLimit = 3,
       page = 1,
       pageSize = 10,
-      fuzzyPhrase = false,
-      fuzzyPhraseMaxDistance = 2,
       sortBy = 'relevance',
       sortOrder = 'desc',
       filenameDatePattern,
@@ -276,38 +273,36 @@ class MegaSearch {
 
     try {
       // CREATE cache key for tokenization part
-      const tokenizationCacheKey = `${query}|${fuzzyPhrase}`;
+      const tokenizationCacheKey = `${query}|${isTypoToleranceEnabled}`;
 
       // CHECK query cache first
       let queryData = this.getFromQueryCache(tokenizationCacheKey);
 
       if (!queryData) {
         const tokenizationStartTime = Date.now();
-        // Phrase search: detect if query is wrapped in quotes OR fuzzyPhrase is enabled
+        // Phrase search: detect if query is wrapped in quotes OR isPhraseProximityEnabled is enabled
         const phraseMatch = query.match(/^"(.*)"$/);
-        const isPhrase = !!phraseMatch || fuzzyPhrase;
+        const isPhrase = !!phraseMatch || isPhraseProximityEnabled;
         const phrase = phraseMatch
           ? phraseMatch[1]
-          : fuzzyPhrase
+          : isPhraseProximityEnabled
             ? query
             : null;
 
         // Tokenize the query
         const rawTokens = this.textProcessor.tokenize(phrase || query);
 
-        // For fuzzy phrase, we need both stemmed and original tokens
-        const queryTokens = rawTokens.map((t) =>
+        // Three token variants for different purposes:
+        const originalPhraseTokens = rawTokens.map((t) => t.term.toLowerCase()); // Exact words
+        const stemmedTokens = rawTokens.map((t) =>
           this.textProcessor.stemWord(t.term),
-        );
-        const originalTokens = rawTokens.map((t) => t.term.toLowerCase());
-
-        // Use appropriate tokens based on search type
-        const uniqueQueryTokens = Array.from(new Set(queryTokens));
+        ); // Stemmed
+        const uniqueScoringTokens = Array.from(new Set(stemmedTokens)); // Deduplicated
 
         queryData = {
-          queryTokens,
-          originalTokens,
-          uniqueQueryTokens,
+          originalPhraseTokens, // For strict phrase matching (preserves exact spelling)
+          stemmedTokens, // For fuzzy phrase matching (allows word variations)
+          uniqueScoringTokens, // For BM25/TF-IDF scoring (deduplicated)
           isPhrase,
           timestamp: Date.now(),
         };
@@ -317,11 +312,6 @@ class MegaSearch {
         logger.debug(
           `Tokenization completed in ${Date.now() - tokenizationStartTime}ms`,
         );
-      }
-
-      if (queryData.uniqueQueryTokens.length === 0) {
-        logger.info(`No valid tokens found in query: "${query}"`);
-        return this.createEmptyResult(page, pageSize);
       }
 
       // Get index data safely
@@ -347,44 +337,52 @@ class MegaSearch {
       // STAGE 3: Store match positions to pass to snippet generator
       const phraseMatches = new Map<string, number[][]>();
 
+      // !IMPORTANT: respect the fuzzy search across strict and fuzzy phrase matching.
+      const tokensToUse = isTypoToleranceEnabled
+        ? queryData.stemmedTokens // Fuzzy: allow word variations
+        : queryData.originalPhraseTokens; // Strict: exact spelling only
+
+      // ✅ CHECK: Now that tokensToUse is defined, validate it
+      if (tokensToUse.length === 0) {
+        logger.info(`No valid tokens found in query: "${query}"`);
+        return this.createEmptyResult(page, pageSize);
+      }
+
       if (queryData.isPhrase) {
         const phraseFilterStartTime = Date.now();
 
-        if (fuzzyPhrase) {
+        if (isPhraseProximityEnabled) {
           // STAGE 2: Index-based fuzzy phrase search
           const matches = this.phraseMatcher.findDocsWithFuzzyPhrase(
-            queryData.originalTokens,
-            { fuzzyThreshold, maxDistance: fuzzyPhraseMaxDistance },
+            tokensToUse, // Use appropriate tokens based on typo tolerance
+            { maxTypoDistance, maxWordsInPhraseDistance },
             invertedIndex,
             stemDictionary,
-            docCache, // ✅ PASS docCache for verification
+            docCache,
           );
+
           filteredDocIds = Array.from(matches.keys());
           matches.forEach((value, key) => {
             phraseMatches.set(key, value);
             docMatchCounts.set(key, value.length); // ✅ Track phrase match counts
           });
         } else {
-          // Use a much faster token-based check instead of string matching.
           const candidateDocIds = this.phraseMatcher.getCandidateDocsForPhrase(
-            queryData.queryTokens, // ✅ FIXED: Use stemmed tokens
+            tokensToUse,
             invertedIndex,
           );
           filteredDocIds = candidateDocIds.filter((docId) => {
             const doc = docCache.get(docId);
             if (!doc) return false;
 
-            // ✅ Use countExactPhrase to get accurate match count
-            const count = this.phraseMatcher.countExactPhrase(
-              doc,
-              queryData.queryTokens, // Stemmed tokens
-            );
+            const count = this.phraseMatcher.countExactPhrase(doc, tokensToUse);
 
             if (count > 0) {
               docMatchCounts.set(docId, count);
+              // ✅ REMOVED: Don't boost here, score is still 0
               // ✅ RELEVANCE BOOST: Apply a score boost for exact phrase matches.
-              const currentScore = docScores.get(docId) || 0;
-              docScores.set(docId, currentScore * 1.5); // 50% score boost
+              // const currentScore = docScores.get(docId) || 0;
+              // docScores.set(docId, currentScore * 1.5);
               return true;
             }
             return false;
@@ -407,13 +405,12 @@ class MegaSearch {
         );
 
         // STAGE 2: Score only the documents that passed the phrase filter
-        // const scoringStartTime = Date.now(); // Removed local var to use shared scoringStart
         for (const docId of filteredDocIds) {
           let score = 0;
           const doc = docCache.get(docId);
           if (!doc) continue;
 
-          for (const term of queryData.uniqueQueryTokens) {
+          for (const term of queryData.uniqueScoringTokens) {
             const tf = doc.termFrequency.get(term) || 0;
             if (tf === 0) continue;
 
@@ -432,15 +429,25 @@ class MegaSearch {
               score += this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
             }
           }
+
+          // ✅ FIX: Apply phrase match boost AFTER scoring
+          // Exact phrase matches get higher boost than fuzzy proximity matches
+          if (isTypoToleranceEnabled) {
+            score *= 1.2; // 20% boost for fuzzy phrase matches
+          } else {
+            score *= 1.5; // 50% boost for exact phrase matches
+          }
+
           docScores.set(docId, score);
         }
-        // logger.debug( ... ); // Moved logging to after if/else block
       } else {
         // Original logic for non-phrase search
-        // const scoringStartTime = Date.now(); // Removed local var to use shared scoringStart
-        for (const term of queryData.uniqueQueryTokens) {
+        // ✅ FIX: Use deduplicated version of tokensToUse to respect isTypoToleranceEnabled
+        const uniqueTokensToUse = Array.from(new Set(tokensToUse));
+
+        for (const term of uniqueTokensToUse) {
           let candidateTerms: string[] = [term];
-          if (fuzzy) {
+          if (isTypoToleranceEnabled) {
             // STAGE 1: Use stemDictionary for blazing-fast candidate lookup
             const candidates = stemDictionary.get(term);
             if (candidates) {
@@ -451,7 +458,7 @@ class MegaSearch {
               // Fallback for terms not in dictionary (e.g., misspellings)
               candidateTerms = Array.from(invertedIndex.keys()).filter(
                 (idxTerm: string) =>
-                  levenshtein(term, idxTerm) <= fuzzyThreshold,
+                  levenshtein(term, idxTerm) <= maxTypoDistance,
               );
             }
           }
@@ -607,10 +614,9 @@ class MegaSearch {
             score,
             docCache,
             invertedIndex,
-            queryData.uniqueQueryTokens,
-            fuzzy,
+            tokensToUse, // ✅ Tokens for matching and snippets
+            isTypoToleranceEnabled,
             queryData.isPhrase,
-            fuzzyPhrase ? queryData.originalTokens : queryData.queryTokens,
             snippetsLimit,
             phraseMatches.get(docId),
             includeHighlights,
@@ -718,12 +724,11 @@ class MegaSearch {
     score: number,
     docCache: Map<string, DocumentIndex>,
     invertedIndex: Map<string, InvertedIndexEntry[]>,
-    uniqueQueryTokens: string[],
-    fuzzy: boolean,
+    originalPhraseOrStemmedTokens: string[],
+    isTypoToleranceEnabled: boolean,
     isPhrase: boolean,
-    searchTokens: string[],
     snippetsLimit: number | 'ALL',
-    matchPositions?: number[][],
+    phraseMatchPositions?: number[][], // Phrase match positions from findDocsWithFuzzyPhrase
     includeHighlights: boolean = false,
     snippetContextBefore: number = 0,
     snippetContextAfter: number = 50,
@@ -745,22 +750,20 @@ class MegaSearch {
           highlights = this.snippetGenerator.generateHighlights(
             docId,
             doc,
-            searchTokens,
-            uniqueQueryTokens,
+            originalPhraseOrStemmedTokens,
             isPhrase,
-            fuzzy,
+            isTypoToleranceEnabled,
           );
         }
 
         // ENHANCED: Extract rich snippets with position data
         snippets = this.snippetGenerator.generateSnippets(
           doc,
-          uniqueQueryTokens,
+          originalPhraseOrStemmedTokens,
           invertedIndex,
           isPhrase,
-          fuzzy,
-          searchTokens,
-          matchPositions,
+          isTypoToleranceEnabled,
+          phraseMatchPositions,
           snippetContextBefore,
           snippetContextAfter,
         );
@@ -797,7 +800,7 @@ class MegaSearch {
 
   async testDocumentParsing(): Promise<void> {
     logger.info('Testing document parsing...');
-    const startTime = Date.now();
+    const overallStartTime = Date.now(); // ✅ Renamed to avoid shadowing
 
     const files = await this.fileIndexer.discoverFiles();
     logger.info(`Found ${files.length} files to test`);
@@ -813,13 +816,13 @@ class MegaSearch {
           logger.info(`Text cache path: ${file.textFilePath}`);
         }
 
-        const startTime = Date.now();
+        const extractionStartTime = Date.now(); // ✅ Renamed for clarity
         // Use FileIndexer to get text - this uses the cached .txt if available
         // This ensures we are testing against the actual content used for indexing
         const text = await this.fileIndexer.extractTextFromFile(
           file.originalFilePath,
         );
-        const extractionTime = Date.now() - startTime;
+        const extractionTime = Date.now() - extractionStartTime;
 
         logger.info(
           `Extracted ${text.length} characters in ${extractionTime}ms`,
@@ -880,7 +883,7 @@ class MegaSearch {
 
     logger.info(`\n${'='.repeat(50)}`);
     logger.info(
-      `Document parsing test completed in ${Date.now() - startTime}ms`,
+      `Document parsing test completed in ${Date.now() - overallStartTime}ms`,
     );
   }
 

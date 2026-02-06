@@ -9,9 +9,9 @@ export class PhraseMatcher {
   /**
    * Efficiently count exact phrase occurrences
    */
-  countExactPhrase(doc: DocumentIndex, queryTokens: string[]): number {
+  countExactPhrase(doc: DocumentIndex, originalPhraseTokens: string[]): number {
     let count = 0;
-    const phraseLength = queryTokens.length;
+    const phraseLength = originalPhraseTokens.length;
     if (phraseLength === 0) return 0;
 
     for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
@@ -20,7 +20,7 @@ export class PhraseMatcher {
         const docToken = getDocumentToken(doc, i + j);
         if (
           !docToken ||
-          this.textProcessor.stemWord(docToken.term) !== queryTokens[j]
+          this.textProcessor.stemWord(docToken.term) !== originalPhraseTokens[j]
         ) {
           match = false;
           break;
@@ -38,12 +38,12 @@ export class PhraseMatcher {
    * of documents containing each term.
    */
   getCandidateDocsForPhrase(
-    queryTokens: string[],
+    stemmedTokens: string[],
     invertedIndex: Map<string, InvertedIndexEntry[]>,
   ): string[] {
-    if (queryTokens.length === 0) return [];
+    if (stemmedTokens.length === 0) return [];
 
-    const docSets = queryTokens.map((token) => {
+    const docSets = stemmedTokens.map((token) => {
       const postings = invertedIndex.get(token) || [];
       return new Set(postings.map((p) => p.documentId));
     });
@@ -64,16 +64,16 @@ export class PhraseMatcher {
    * Index-based fuzzy phrase search.
    */
   findDocsWithFuzzyPhrase(
-    queryTokens: string[],
-    options: { fuzzyThreshold: number; maxDistance: number },
+    stemmedTokens: string[],
+    options: { maxTypoDistance: number; maxWordsInPhraseDistance: number },
     invertedIndex: Map<string, InvertedIndexEntry[]>,
     stemDictionary: Map<string, string[]>,
     docCache: Map<string, DocumentIndex>,
   ): Map<string, number[][]> {
-    if (queryTokens.length === 0) return new Map();
+    if (stemmedTokens.length === 0) return new Map();
 
     // 1. Find all fuzzy matching terms for each query token
-    const termCandidatesPerQueryToken = queryTokens.map((queryToken) => {
+    const termCandidatesPerQueryToken = stemmedTokens.map((queryToken) => {
       const stem = this.textProcessor.stemWord(queryToken);
 
       const candidates: string[] = [];
@@ -81,7 +81,7 @@ export class PhraseMatcher {
       // Scan stem dictionary for matches (fuzzy or prefix)
       // This handles declensions where stemmer produces different stems (e.g. "фін" vs "фінів")
       for (const dictStem of stemDictionary.keys()) {
-        if (this.isStemMatch(stem, dictStem, options.fuzzyThreshold)) {
+        if (this.isStemMatch(stem, dictStem, options.maxTypoDistance)) {
           const words = stemDictionary.get(dictStem);
           if (words) candidates.push(...words);
         }
@@ -145,7 +145,7 @@ export class PhraseMatcher {
 
       const sequences = this.findSequencesInPositions(
         matchesByToken,
-        options.maxDistance,
+        options.maxWordsInPhraseDistance,
       );
       if (sequences.length > 0) {
         finalDocs.set(docId, sequences);
@@ -180,7 +180,7 @@ export class PhraseMatcher {
 
   private findSequencesInPositions(
     matchesByToken: number[][],
-    maxDistance: number,
+    maxWordsInPhraseDistance: number,
   ): number[][] {
     if (matchesByToken.some((m) => m.length === 0)) {
       return [];
@@ -200,7 +200,7 @@ export class PhraseMatcher {
 
       for (const nextPos of nextTokenPositions) {
         const distance = nextPos - lastPosition;
-        if (distance > 0 && distance <= maxDistance) {
+        if (distance > 0 && distance <= maxWordsInPhraseDistance) {
           const newPaths = findPaths(tokenIndex + 1, [...currentPath, nextPos]);
           paths = paths.concat(newPaths);
         }

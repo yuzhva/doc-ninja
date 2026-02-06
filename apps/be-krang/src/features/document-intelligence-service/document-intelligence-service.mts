@@ -55,9 +55,9 @@ class DocumentIntelligenceService {
     for (const query of queries) {
       try {
         const searchResult = await megaSearch.search(query, {
-          fuzzyPhrase: true,
-          fuzzyThreshold: 1,
-          fuzzyPhraseMaxDistance: 1,
+          maxTypoDistance: 1,
+          isPhraseProximityEnabled: true,
+          maxWordsInPhraseDistance: 2,
           snippetsLimit: 'ALL',
           sortBy: 'date',
           ...options, // Merge passed options, overriding defaults if provided

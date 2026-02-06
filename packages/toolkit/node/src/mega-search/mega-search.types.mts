@@ -6,17 +6,36 @@ type SearchOptions = {
   topN?: number;
 
   /**
-   * Enable fuzzy matching for individual terms (default: true).
-   * Allows finding "apple" when searching for "aple".
+   * Enable typo tolerance for individual words (default: true).
+   * Example: "apple" matches "apply" with maxTypoDistance=1
    */
-  fuzzy?: boolean;
+  isTypoToleranceEnabled?: boolean;
 
   /**
-   * Max Levenshtein distance for fuzzy matching (default: 1).
-   * 1 means one character difference (insertion, deletion, substitution).
+   * Max character edits allowed per word (default: 1).
+   * 1 = one character difference (insertion, deletion, substitution)
+   * Example: "apple" matches "apply" (1 substitution: e→y)
+   * Example: "search" matches "serach" (1 transposition)
    * Increase to 2 for longer words or more typos.
    */
-  fuzzyThreshold?: number;
+  maxTypoDistance?: number;
+
+  // Word-level phrase proximity
+  /**
+   * Enable proximity matching within phrase searches (default: false).
+   * Only applies when query is wrapped in quotes: "rich car"
+   * Example: "rich car" matches "rich expensive car" with maxWordsInPhraseDistance=1
+   */
+  isPhraseProximityEnabled?: boolean;
+
+  /**
+   * Max words allowed between phrase terms (default: 0 for strict adjacency).
+   * 0 = Words must be adjacent: "rich car" → "rich car" only
+   * 1 = Allow 1 word gap: "rich car" → "rich expensive car"
+   * 2 = Allow 2 word gap: "rich car" → "rich very expensive car"
+   * Example: "san francisco" matches "san jose to francisco" with maxWordsInPhraseDistance=2
+   */
+  maxWordsInPhraseDistance?: number;
 
   /**
    * Number of snippets to generate per document (default: 3).
@@ -33,21 +52,6 @@ type SearchOptions = {
    * Number of results per page (default: 10).
    */
   pageSize?: number | 'ALL';
-
-  /**
-   * Enable fuzzy matching *within* phrase searches (default: false).
-   * Essential for finding "richi cars" when searching "rich car".
-   * If false, phrases require exact word matches (modulo stemming).
-   */
-  fuzzyPhrase?: boolean;
-
-  /**
-   * Max distance between words in a fuzzy phrase (default: 2).
-   * 1 = Strict adjacency (words must be next to each other).
-   * 2 = Allows 1 word in between (e.g. "richi [middle] cars").
-   * To preserve strict order like "Word1 Word2", set this to 1.
-   */
-  fuzzyPhraseMaxDistance?: number;
 
   /**
    * Sort results by 'relevance' (default) or 'date' (from filename).
