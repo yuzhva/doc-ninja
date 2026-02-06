@@ -5,6 +5,8 @@ import {
   app as electronApp,
   ipcMain,
   nativeImage,
+  net,
+  protocol,
   screen,
   shell,
 } from 'electron';
@@ -17,6 +19,19 @@ import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Register scheme to support standard web APIs and absolute paths
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
 // Hold the express app instance
 let expressApp: any;
 
@@ -28,7 +43,7 @@ const createWindow = () => {
 
   // Step-2: Use nativeImage for more reliable cross-platform results,
   // or a direct path can sometimes work depending on the setup
-  const iconPath = path.join(__dirname, '../images/icons/1024x1024.png');
+  const iconPath = path.join(__dirname, '../../images/icons/1024x1024.png');
   const customIcon = nativeImage.createFromPath(iconPath);
 
   // Step-3: Create the browser window with the custom icon
@@ -43,25 +58,28 @@ const createWindow = () => {
     },
   });
 
-  // Resolve the absolute path to the React build's index.html
-  // For development (when files are in the workspace)
-  let reactIndexPath = path.resolve(
-    __dirname,
-    '../../ui-sauce/dist/public/server.html',
-  );
-
-  // For production (when files are packaged with the app)
-  if (electronApp.isPackaged) {
-    reactIndexPath = path.join(
-      process.resourcesPath,
-      'dist/ui-sauce/public/server.html',
-    );
-  }
-
-  win.loadFile(reactIndexPath);
+  // Load via custom protocol to ensure absolute paths (like /static-assets) work correctly
+  win.loadURL('app://doc-ninja/server.html');
 };
 
 electronApp.whenReady().then(async () => {
+  // Define where the web app files are located
+  let webappRoot: string;
+  if (electronApp.isPackaged) {
+    webappRoot = path.join(process.resourcesPath, 'dist/ui-sauce/public');
+  } else {
+    webappRoot = path.resolve(__dirname, '../../../ui-sauce/dist/public');
+  }
+
+  // Handle requests to app:// protocol
+  protocol.handle('app', (req) => {
+    const url = new URL(req.url);
+    // Remove leading slash to join correctly
+    const pathname = decodeURIComponent(url.pathname.replace(/^\//, ''));
+    const fullPath = path.join(webappRoot, pathname);
+    return net.fetch(pathToFileURL(fullPath).toString());
+  });
+
   // Dynamically load the backend app
   let backendPath: string;
   if (electronApp.isPackaged) {
@@ -72,7 +90,10 @@ electronApp.whenReady().then(async () => {
     );
   } else {
     // Development: use workspace files
-    backendPath = path.resolve(__dirname, '../../be-krang/dist/cjs/index.cjs');
+    backendPath = path.resolve(
+      __dirname,
+      '../../../be-krang/dist/cjs/index.cjs',
+    );
   }
 
   // Use dynamic import to load the module
