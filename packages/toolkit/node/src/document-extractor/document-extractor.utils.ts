@@ -1,15 +1,11 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'fs';
+import path from 'path';
 import { promisify } from 'util';
 
-interface DocumentInput {
-  filePath?: string;
-  fileBuffer?: Buffer;
-  fileName?: string;
-}
+import type { DocumentExtractorInput } from './document-extractor.types.ts';
 
 // Helper to get extension for checks
-function getExtension(input: DocumentInput): string {
+function getExtension(input: DocumentExtractorInput): string {
   if (input.fileName) {
     return path.extname(input.fileName).toLowerCase();
   }
@@ -20,7 +16,10 @@ function getExtension(input: DocumentInput): string {
 }
 
 // Helper to ensure we have a buffer
-async function getBufferFromInput(input: DocumentInput): Promise<Buffer> {
+async function getBufferFromInput(
+  input: DocumentExtractorInput,
+  supportedBinaryExtensions: string[],
+): Promise<Buffer> {
   let buffer: Buffer;
   if (input.fileBuffer) {
     buffer = input.fileBuffer;
@@ -33,7 +32,7 @@ async function getBufferFromInput(input: DocumentInput): Promise<Buffer> {
   // Auto-detect and decode Base64 content for binary formats
   // This fixes issues where files are uploaded as Base64 strings inside Blobs
   const ext = getExtension(input);
-  if ((ext === '.docx' || ext === '.doc') && buffer.length > 4) {
+  if (supportedBinaryExtensions.includes(ext) && buffer.length > 4) {
     const header = buffer.subarray(0, 4).toString();
     // DOCX/ZIP starts with 'PK..' -> Base64 'UEsD'
     // DOC/OLE starts with D0CF11E0 -> Base64 '0M8R'
@@ -53,5 +52,3 @@ async function getBufferFromInput(input: DocumentInput): Promise<Buffer> {
 }
 
 export { getBufferFromInput, getExtension };
-
-export type { DocumentInput };

@@ -1,6 +1,7 @@
 import path from 'path';
 import * as v8 from 'v8';
 
+import { SUPPORTED_EXTENSIONS } from '../document-extractor/index.mjs';
 import { BM25Scorer } from './bm25-scorer.mjs';
 import { FileIndexer } from './file-indexer/index.mjs';
 import { levenshtein } from './fuzzy.mjs';
@@ -908,7 +909,7 @@ class MegaSearch {
 // Default configuration for Ukrainian document search
 const defaultConfig: SearchConfig = {
   rootDirectory: './documents',
-  extensions: ['.doc', '.docx', '.txt'],
+  extensions: SUPPORTED_EXTENSIONS,
   maxFileSize: 50 * 1024 * 1024, // 50MB
   concurrency: 4,
   ukrainianStemming: true,

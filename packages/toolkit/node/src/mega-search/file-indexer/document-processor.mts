@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 
-import { DocumentExtractor } from '../document-parser/index.mjs';
+import { DocumentExtractor } from '../../document-extractor/index.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
