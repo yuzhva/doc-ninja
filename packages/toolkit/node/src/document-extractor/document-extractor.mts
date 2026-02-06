@@ -12,6 +12,7 @@ import {
   DocParserViaLib,
   DocxParser,
   DocxParserViaLib,
+  PdfParserViaLib,
   TextParser,
 } from './parsers/index.mjs';
 
@@ -21,11 +22,16 @@ interface DocumentExtractorOptions {
 
 // TODO: refactor mega-search to dynamically support complete set of all parsers extensions, and remove hardcoded extensions {const defaultConfig: SearchConfig}
 const SUPPORTED_EXTENSIONS = [
+  // doc parser
   '.doc',
   '.dot',
+  // docx parser
   '.docx',
   '.docm',
   '.dotx',
+  // pdf parser
+  '.pdf',
+  // text parser
   '.txt',
   '.md',
   '.csv',
@@ -41,7 +47,7 @@ class DocumentExtractor {
   private parsers: DocumentExtractorParserParams[];
 
   constructor(options: DocumentExtractorOptions = {}) {
-    this.parsers = [new TextParser()];
+    this.parsers = [new TextParser(), new PdfParserViaLib()];
 
     // Default to using library parsers (true)
     const useLibrary = options.useLibraryParsers !== false;
