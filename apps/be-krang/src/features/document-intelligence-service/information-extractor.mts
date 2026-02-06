@@ -18,51 +18,20 @@ type ExtractedInfo = ExtractionInput & {
   summary: string | null;
 };
 
+type FindResult = {
+  match: string | null;
+  before: string;
+  after: string;
+};
+
 class InformationExtractor {
-  private static convertUkrainianDateToDMY(dateString: string): string | null {
-    const monthMap: { [key: string]: string } = {
-      січня: '01',
-      лютого: '02',
-      березня: '03',
-      квітня: '04',
-      травня: '05',
-      червня: '06',
-      липня: '07',
-      серпня: '08',
-      вересня: '09',
-      жовтня: '10',
-      листопада: '11',
-      грудня: '12',
-    };
-
-    // Clean up content: replace non-breaking spaces, multiple spaces
-    const cleanDate = dateString.replace(/\s+/g, ' ').trim();
-    const parts = cleanDate.split(' ');
-
-    if (parts.length !== 3) {
-      return null;
-    }
-
-    const day = parts[0].padStart(2, '0');
-    // Provide safe access to avoid runtime error if month is not in map
-    const monthRaw = parts[1]?.toLowerCase();
-    const month = monthMap[monthRaw];
-    const year = parts[2];
-
-    if (!month) {
-      return null;
-    }
-
-    return `${day}.${month}.${year}`;
-  }
-
   /**
    * Finds the document date from the header.
    * Expects DD.MM.YYYY format usually found in the first few paragraphs.
    */
-  private static findActionDate(content: string | null): string | null {
+  private static findActionDate(content: string | null): FindResult {
     if (!content) {
-      return null;
+      return { match: null, before: '', after: '' };
     }
 
     // Scan first 1000 characters to capture the header
@@ -73,16 +42,27 @@ class InformationExtractor {
     const dateRegex = /(\d{2}\.\d{2}\.\d{4})/;
     const match = headerContext.match(dateRegex);
 
-    return match ? match[1] : null;
+    if (match && typeof match.index === 'number') {
+      const matchVal = match[1];
+      const start = match.index;
+      const end = start + match[0].length;
+      return {
+        match: matchVal,
+        before: content.substring(0, start),
+        after: content.substring(end),
+      };
+    }
+
+    return { match: null, before: content, after: '' };
   }
 
   /**
    * Finds the document number from the header.
    * Expects format like "№280" or "№ 318".
    */
-  private static findDocumentNumber(content: string | null): string | null {
+  private static findDocumentNumber(content: string | null): FindResult {
     if (!content) {
-      return null;
+      return { match: null, before: '', after: '' };
     }
 
     // Scan first 1000 characters to capture the header
@@ -94,7 +74,18 @@ class InformationExtractor {
     const numberRegex = /(№\s*\S+)/;
     const match = headerContext.match(numberRegex);
 
-    return match ? match[1] : null;
+    if (match && typeof match.index === 'number') {
+      const matchVal = match[1];
+      const start = match.index;
+      const end = start + match[0].length;
+      return {
+        match: matchVal,
+        before: content.substring(0, start),
+        after: content.substring(end),
+      };
+    }
+
+    return { match: null, before: content, after: '' };
   }
 
   /**
@@ -170,42 +161,15 @@ class InformationExtractor {
   }
 
   /**
-   * Retrieves the immediate next block of text from 'contentAfter' to be used as context.
-   * Useful when metadata (Reason, Date) is separated from the list item by a newline.
-   * Returns null if the next block appears to be a separate numbered item.
-   */
-  private static getNextContextBlock(contentAfter: string): string | null {
-    // skip leading newlines/whitespace to find start of text
-    const matchStart = contentAfter.search(/\S/);
-    if (matchStart === -1) return null;
-
-    const contentStart = contentAfter.substring(matchStart);
-    let endIndex = contentStart.indexOf('\n\n');
-    if (endIndex === -1) endIndex = contentStart.length;
-
-    const cleanBlock = contentStart.substring(0, endIndex).trim();
-
-    if (!cleanBlock) return null;
-
-    // Heuristic: If the next block starts with a number (e.g. "34. "),
-    // it is likely a new, separate list item, not a metadata extension for the current one.
-    if (/^\d+\.\s/.test(cleanBlock)) {
-      return null;
-    }
-
-    return cleanBlock;
-  }
-
-  /**
    * Refines the paragraph block by splitting on numbered lists or semicolons
    * to isolate the specific item relevant to the match.
    * Returns partitioned content: the selected item, text before it, and text after it.
    */
-  private static getParagraphContent(
+  private static findParagraphContent(
     paragraphBlock: string,
     relativePosition: number,
   ): {
-    selected: string;
+    match: string;
     before: string;
     after: string;
   } {
@@ -223,13 +187,23 @@ class InformationExtractor {
 
     // 2. Numbered Items
     const numberRegex = /(?:^|\s)(\d+\.)\s/g;
-    let match;
-    while ((match = numberRegex.exec(roughBlock)) !== null) {
-      const fullMatchStart = match.index;
+    let matchedBlock;
+    while ((matchedBlock = numberRegex.exec(roughBlock)) !== null) {
+      const fullMatchStart = matchedBlock.index;
       const numberStart = roughBlock[fullMatchStart].match(/\s/)
         ? fullMatchStart + 1
         : fullMatchStart;
       splitPoints.push(numberStart);
+    }
+
+    // 3. Newlines (Implicit line-based items)
+    // Treats the start of the line containing the match as the item start.
+    // This handles compacted lists where items are separated only by newlines.
+    let nlPos = roughBlock.indexOf('\n');
+    while (nlPos !== -1) {
+      // separator is the character *after* the newline
+      splitPoints.push(nlPos + 1);
+      nlPos = roughBlock.indexOf('\n', nlPos + 1);
     }
 
     splitPoints.push(0);
@@ -254,17 +228,22 @@ class InformationExtractor {
     }
 
     if (refinedStart >= refinedEnd) {
-      return { selected: '', before: '', after: '' };
+      return { match: '', before: '', after: '' };
     }
 
     const selected = roughBlock.substring(refinedStart, refinedEnd);
     const before = roughBlock.substring(0, refinedStart);
     const after = roughBlock.substring(refinedEnd);
 
-    // Normalize whitespace in the selected part
-    const cleanSelected = selected.replace(/\s+/g, ' ').trim();
+    // Normalize whitespace but preserve newlines to support regex anchors
+    // 1. Collapse horizontal whitespace (space, tab) to single space
+    // 2. Collapse vertical whitespace (newlines) to single newline, trimming around line breaks
+    const cleanSelected = selected
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\s*\n\s*/g, '\n')
+      .trim();
 
-    return { selected: cleanSelected, before, after };
+    return { match: cleanSelected, before, after };
   }
 
   /**
@@ -274,14 +253,14 @@ class InformationExtractor {
   private static findNearestTitle(
     contentBefore: string,
     currentSection: string,
-  ): string | null {
+  ): FindResult {
     // Regex for "1.", "1.1.", "2.3" at start of line
     // Also handles typos like "1.1.." (multiple dots at end)
     const numberedListRegex = /^\d+(\.\d+)*\.+\s+/;
 
     // 1. If the current section itself starts with a number, it's likely the title/item itself.
     if (numberedListRegex.test(currentSection)) {
-      return null;
+      return { match: null, before: contentBefore, after: '' };
     }
 
     // Split by newlines (handling varied spacing)
@@ -336,21 +315,21 @@ class InformationExtractor {
     }
 
     if (titleParts.length > 0) {
-      return titleParts.reverse().join('\n\n');
+      return {
+        match: titleParts.reverse().join('\n\n'),
+        before: contentBefore, // Partitioning not implemented for composite titles
+        after: '',
+      };
     }
 
-    return null;
+    return { match: null, before: contentBefore, after: '' };
   }
 
   /**
    * Finds the "Підстава" (reason) block and its position within a given text.
    * Returns partitioned result.
    */
-  private static findReason(text: string): {
-    match: string | null;
-    before: string;
-    after: string;
-  } {
+  private static findReason(text: string): FindResult {
     const reasonKeyword = 'Підстава:';
     const reasonIndex = text.lastIndexOf(reasonKeyword);
 
@@ -373,20 +352,28 @@ class InformationExtractor {
    * Finds the relevant action period/duration within a block of text.
    * Returns partitioned result.
    */
-  private static findActionPeriod(sectionContent: string): {
-    match: string | null;
-    before: string;
-    after: string;
-  } {
+  private static findActionPeriod(sectionContent: string): FindResult {
+    // Regex enforces:
+    // 1. Start of line or string ((?:^|[\r\n]))
+    // 2. Optional whitespace \s*
+    // 3. Capital З (only) - removing 'i' flag
+    // 4. Date pattern
     const actionDateRegex =
-      /З\s+\d{1,2}(?:\s+по\s+\d{1,2})?\s+[а-яіїєґ]+\s+\d{4}/gi;
+      /(?:^|[\r\n])\s*(З\s+\d{1,2}(?:\s+по\s+\d{1,2})?\s+[а-яА-ЯіїєґІЇЄҐ]+\s+\d{4})/g;
+
     // Find the last match in the section
     const matches = [...sectionContent.matchAll(actionDateRegex)];
 
     if (matches.length > 0) {
       const lastMatch = matches[matches.length - 1];
       if (lastMatch.index !== undefined) {
-        const start = lastMatch.index;
+        // lastMatch[1] contains the captured date string starting with 'З'
+        const dateGroup = lastMatch[1];
+
+        // Calculate where the 'З' actually starts within the full match to exclude leading newlines
+        const matchRelativeOffset = lastMatch[0].lastIndexOf(dateGroup);
+        const start = lastMatch.index + matchRelativeOffset;
+
         // Take text from match start to end of sentence or string
         let contentChunk = sectionContent.substring(start);
         const sentenceEnd = contentChunk.indexOf('.');
@@ -396,15 +383,21 @@ class InformationExtractor {
         const rawActionStr = contentChunk.substring(0, endRelative);
         const cleanActionStr = rawActionStr.replace(/\s+/g, ' ').trim();
 
+        // Perform sanitization on the 'before' content here (destructive)
+        const beforeRaw = sectionContent.substring(0, start).trim();
+        const beforeClean = beforeRaw.replace(/[.,;]+$/, '');
+
         return {
           match: cleanActionStr,
-          before: sectionContent.substring(0, start),
+          before: beforeClean,
           after: sectionContent.substring(start + endRelative),
         };
       }
     }
 
-    return { match: null, before: sectionContent, after: '' };
+    // If no action period found, return the whole content as 'after'
+    // so subsequent extractors (like findReason) can process it.
+    return { match: null, before: '', after: sectionContent };
   }
 
   private static generateSummary(
@@ -440,78 +433,105 @@ class InformationExtractor {
     } = this.getParagraphBlock(content, position);
 
     // 2. Determine Action Date & Doc Number
-    const actionDate = this.findActionDate(contentBefore);
-    const documentNumber = this.findDocumentNumber(contentBefore);
+    const actionDateRes = this.findActionDate(contentBefore);
+    const actionDate = actionDateRes.match;
 
-    // 3. Isolate Specific Item
+    const documentNumberRes = this.findDocumentNumber(contentBefore);
+    const documentNumber = documentNumberRes.match;
+
+    // 3. Isolate Specific Item (Raw)
     const relativePosition = position - blockStartIndex;
-    const itemSplit = this.getParagraphContent(
+    const {
+      match: paragraphCompleteContent,
+      after: paragraphCompleteContentAfter,
+    } = this.findParagraphContent(paragraphBlock, relativePosition);
+
+    // console.log({ paragraphCompleteContent, paragraphCompleteContentAfter });
+
+    const fullScope = [paragraphCompleteContent, paragraphCompleteContentAfter]
+      .join('\n')
+      .trim();
+
+    // A. Find Reason (from the END of the full scope)
+    const { match: reason, before: contentBeforeReason } =
+      this.findReason(fullScope);
+    // console.log({ contentBeforeReason, reason });
+
+    // B. Find Action Period (from the END of what's before the reason)
+    const { match: actionPeriod, before: contentBeforeActionPeriod } =
+      this.findActionPeriod(contentBeforeReason);
+
+    // C. The remainder is the sanitized item CONTENT.
+    // However, we must be careful: `contentBeforeActionPeriod` might include text from
+    // previous list items if we combined too much.
+    // BUT! Since we started with `paragraphCompleteContent` (our item) and appended footers,
+    // the "content before" should mostly be our item... unless our item was short and `findActionPeriod` matched something way earlier.
+
+    // Safer approach for Sanitized Content:
+    // Take the original `paragraphCompleteContent`.
+    // Remove the found `reason` if it was inside it.
+    // Remove the found `actionPeriod` if it was inside it.
+
+    let sanitizedContent = paragraphCompleteContent;
+
+    if (reason && sanitizedContent.includes(reason)) {
+      sanitizedContent = sanitizedContent.replace(reason, '').trim();
+    }
+
+    if (actionPeriod && sanitizedContent.includes(actionPeriod)) {
+      sanitizedContent = sanitizedContent.replace(actionPeriod, '').trim();
+    }
+
+    // console.log({ actionPeriod, sanitizedContent });
+
+    // 6. Identify Section Title
+    const sectionTitleRes = this.findNearestTitle(
+      contentBefore,
       paragraphBlock,
-      relativePosition,
     );
-    let refinedContent = itemSplit.selected;
+    const sectionTitle = sectionTitleRes.match;
 
-    // 4. Extract Metadata
-    // Strategy: Look in 'item.after' first (safest), then 'nextContextBlock'.
-    // Finally check 'item.selected' (inline metadata) and strip if found.
-
-    const contextForSearch = [
-      itemSplit.after,
-      this.getNextContextBlock(contentAfter) ?? '',
-    ].join('\n');
-
-    // -- Action Period --
-    let actionPeriodRes = this.findActionPeriod(contextForSearch);
-    if (!actionPeriodRes.match) {
-      // Fallback: Check inline
-      const inlineRes = this.findActionPeriod(refinedContent);
-      if (inlineRes.match) {
-        actionPeriodRes = inlineRes;
-        // Can optionally strip action period from content, but usually better to keep context
-      }
-    }
-    const actionPeriod = actionPeriodRes.match;
-
-    // -- Reason --
-    let reasonRes = this.findReason(contextForSearch);
-    if (!reasonRes.match) {
-      // Fallback: Check inline
-      const inlineRes = this.findReason(refinedContent);
-      if (inlineRes.match) {
-        reasonRes = inlineRes;
-        // Strip inline reason from content to avoid duplication in summary
-        refinedContent = inlineRes.before.replace(/\s+/g, ' ').trim();
-      }
-    }
-    const reason = reasonRes.match;
-
-    // 5. Identify Section Title
-    const sectionTitle = this.findNearestTitle(contentBefore, paragraphBlock);
-
-    // 6. Generate Summary
+    // 7. Generate Summary
     const summary = this.generateSummary(
       sectionTitle,
-      refinedContent,
+      sanitizedContent,
       actionPeriod,
       reason,
     );
 
     // Extract exact matched text from source if possible
     let matchedText = match.matchedText;
-    if (typeof position === 'number' && position >= 0 && match.matchedText) {
-      const length = match.matchedText.length;
-      if (position + length <= content.length) {
-        matchedText = content.substring(position, position + length);
-      }
-    }
 
     return {
       ...match, // Inherit input fields
-      matchedText, // Update with exact text from content if found
       actionDate,
       documentNumber,
       summary,
+      matchedText,
     };
+  }
+
+  // Define getNextContextBlock helper again since we need it for context extension
+  private static getNextContextBlock(contentAfter: string): string | null {
+    // skip leading newlines/whitespace to find start of text
+    const matchStart = contentAfter.search(/\S/);
+    if (matchStart === -1) return null;
+
+    const contentStart = contentAfter.substring(matchStart);
+    let endIndex = contentStart.indexOf('\n\n');
+    if (endIndex === -1) endIndex = contentStart.length;
+
+    const cleanBlock = contentStart.substring(0, endIndex).trim();
+
+    if (!cleanBlock) return null;
+
+    // Heuristic: If the next block starts with a number (e.g. "34. "),
+    // it is likely a new, separate list item, not a metadata extension for the current one.
+    if (/^\d+\.\s/.test(cleanBlock)) {
+      return null;
+    }
+
+    return cleanBlock;
   }
 
   static async extractSearchResults(
