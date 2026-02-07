@@ -8,7 +8,6 @@ import {
 import type { FormPageSectionProps } from './process-page.types';
 
 const FormConvertDocToTextTabItem = ({
-  // handleFileSelect,
   onSelectSourceDirectory,
   onSelectOutputDirectory,
   executeBatch,
@@ -16,7 +15,6 @@ const FormConvertDocToTextTabItem = ({
   sourceDirectory,
   outputDirectory,
   selectedFile,
-  // selectedFileHandle,
   progress,
   isFileSystemAccessSupported,
   isProcessing,
@@ -30,7 +28,7 @@ const FormConvertDocToTextTabItem = ({
       return executeBatch(
         {
           formDataJSON,
-          processedDir: selectedFile!,
+          processedDir: sourceDirectory!,
           destinationHandle: outputDirectory?.browserFSAPIhandle!,
           validationMessage:
             'Please select both source and output folders first.',

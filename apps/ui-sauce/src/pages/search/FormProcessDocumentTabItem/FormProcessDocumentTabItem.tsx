@@ -19,7 +19,6 @@ import type {
 import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
 
 const FormProcessDocumentTabItem = ({
-  // handleFileSelect,
   onSelectSourceDirectory,
   // onSelectOutputDirectory,
   executeBatch,

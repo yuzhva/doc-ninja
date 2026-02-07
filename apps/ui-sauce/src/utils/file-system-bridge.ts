@@ -55,11 +55,50 @@ class FileSystemBridge {
    * Helper to reconstruct a FileSystemItem object from the raw DTO received from Electron.
    * This attaches the behavior (getFileContent) which cannot be passed via IPC.
    */
-  private static hydrateFileSystemItem(item: FileSystemItem) {
+  private static hydrateElectronFileSystemItem(item: FileSystemItem) {
     return {
       ...item,
       getFileContent: () => {
         return window.electronAPI!.readFile(item.path);
+      },
+    };
+  }
+
+  /**
+   * Hydrates a browser file item by attaching a getFileContent that traverses
+   * from the root dirHandle down to the specific file to read it.
+   */
+  private static hydrateBrowserFileSystemItem(
+    item: FileSystemItem,
+    rootHandle: FileSystemDirectoryHandle,
+  ) {
+    return {
+      ...item,
+      getFileContent: async () => {
+        // Split path into segments using standard separator
+        // We filter out empty segments and current directory indicators
+        const segments = item.path.split('/').filter((p) => p && p !== '.');
+
+        // If the path includes the root directory name at the start (common in scan results),
+        // we skip it because 'rootHandle' is already that directory.
+        const traversalPath =
+          segments.length > 0 && segments[0] === rootHandle.name
+            ? segments.slice(1)
+            : segments;
+
+        let currentHandle = rootHandle;
+
+        // Traverse sub-directories
+        for (let i = 0; i < traversalPath.length - 1; i++) {
+          currentHandle = await currentHandle.getDirectoryHandle(
+            traversalPath[i],
+          );
+        }
+
+        // Get the specific file handle and reading the file
+        const fileName = traversalPath[traversalPath.length - 1];
+        const fileHandle = await currentHandle.getFileHandle(fileName);
+        return await fileHandle.getFile();
       },
     };
   }
@@ -126,7 +165,9 @@ class FileSystemBridge {
         if (!dirResult) return null;
 
         // Hydrate files with getFileContent
-        const scannedFiles = dirResult.files.map(this.hydrateFileSystemItem);
+        const scannedFiles = dirResult.files.map(
+          this.hydrateElectronFileSystemItem,
+        );
 
         const result = await FileSystemService.processDirectory(scannedFiles, {
           rootDirectoryName: dirResult.name,
@@ -143,7 +184,12 @@ class FileSystemBridge {
           await window.showDirectoryPicker(options);
         if (!dirHandle) return null;
 
-        const scannedFiles = await FileScannerBrowser.scanFiles(dirHandle);
+        const rawScannedFiles = await FileScannerBrowser.scanFiles(dirHandle);
+
+        // Map over scanned files to attach the live file reading logic using the directory handle
+        const scannedFiles = rawScannedFiles.map((file) =>
+          this.hydrateBrowserFileSystemItem(file, dirHandle),
+        );
 
         const result = await FileSystemService.processDirectory(scannedFiles, {
           rootDirectoryName: dirHandle.name,

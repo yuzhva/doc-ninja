@@ -15,7 +15,6 @@ const DocumentRoute = expressRouter
     uploadMultiple,
     ApiV1DocumentController.postDocumentToText,
   )
-  .post('/convert/text-to-index', ApiV1DocumentController.postTextToIndex)
   .post(
     '/convert/spreadsheet-to-static',
     uploadSingle,

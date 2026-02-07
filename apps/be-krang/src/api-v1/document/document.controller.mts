@@ -168,11 +168,16 @@ const postDocumentToText = async (req: Request, res: Response) => {
     if (structure) collectPaths(structure);
 
     // Map files using the lookup map
-    const filesToProcess = (req.files as Express.Multer.File[]).map((f) => ({
-      name: f.originalname,
-      path: filePaths.get(f.originalname) || f.originalname,
-      buffer: f.buffer,
-    }));
+    const filesToProcess = (req.files as Express.Multer.File[]).map((f) => {
+      // Fix encoding just like in other endpoints to handle Ukrainian characters correctly
+      const name = Buffer.from(f.originalname, 'latin1').toString('utf8');
+
+      return {
+        name,
+        path: filePaths.get(name) || name,
+        buffer: f.buffer,
+      };
+    });
 
     console.log(
       `Processing batch ${batchIndex}/${totalBatches} with ${filesToProcess.length} files`,
@@ -218,74 +223,6 @@ const postDocumentToText = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Document to text error:', error);
-
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: ReasonPhrases.INTERNAL_SERVER_ERROR,
-      },
-    });
-  }
-};
-
-const postTextToIndex = async (req: Request, res: Response) => {
-  try {
-    const { batchIndex, totalBatches, files }: BatchRequest = req.body;
-
-    console.log(
-      `Processing text-to-index batch ${batchIndex}/${totalBatches} with ${files.length} files`,
-    );
-
-    const processedFiles = [];
-    const failedFiles = [];
-
-    for (const fileData of files) {
-      try {
-        // Convert base64 content back to text (for text files, base64 is just encoded text)
-        const textContent = Buffer.from(fileData.content, 'base64').toString(
-          'utf-8',
-        );
-
-        // Build index for this text file (simplified - just add metadata and structure)
-        const indexData = {
-          originalFile: fileData.name,
-          path: fileData.path,
-          size: fileData.size,
-          modifiedAt: fileData.modifiedAt,
-          wordCount: textContent.split(/\s+/).length,
-          charCount: textContent.length,
-          content: textContent,
-          indexed: true,
-          indexedAt: new Date().toISOString(),
-        };
-
-        processedFiles.push({
-          name: replaceExtension(fileData.name, '.json'),
-          content: JSON.stringify(indexData, null, 2),
-          relativePath: replaceExtension(fileData.path, '.json'),
-          originalPath: fileData.path,
-        });
-      } catch (error: Error | any) {
-        failedFiles.push({
-          fileName: fileData.name,
-          path: fileData.path,
-          error: error.message,
-        });
-      }
-    }
-
-    res.status(StatusCodes.OK).json({
-      batchIndex,
-      totalBatches,
-      processedFiles,
-      failedFiles,
-      summary: {
-        processed: processedFiles.length,
-        failed: failedFiles.length,
-      },
-    });
-  } catch (error) {
-    console.error('Text to index error:', error);
 
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
       error: {
@@ -394,5 +331,4 @@ export {
   postConvertSpreadsheetToStatic,
   postDocumentToSlice,
   postDocumentToText,
-  postTextToIndex,
 };
