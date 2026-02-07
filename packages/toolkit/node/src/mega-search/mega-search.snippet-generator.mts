@@ -151,27 +151,20 @@ export class SnippetGenerator {
     let snippets: SnippetInfo[] = [];
 
     if (isPhrase) {
-      if (isTypoToleranceEnabled) {
-        snippets = this.extractFuzzyPhraseSnippets(
-          doc,
-          originalPhraseOrStemmedTokens,
-          matchPositions,
-          contextBefore,
-          contextAfter,
-        );
-      } else {
-        snippets = this.extractPhraseSnippets(
-          doc,
-          originalPhraseOrStemmedTokens,
-          contextBefore,
-          contextAfter,
-        );
-      }
+      // matchPositions already contains the correct matches from PhraseMatcher
+      snippets = this.extractPhraseSnippetsFromPositions(
+        doc,
+        originalPhraseOrStemmedTokens,
+        matchPositions,
+        isTypoToleranceEnabled,
+        contextBefore,
+        contextAfter,
+      );
     } else {
       snippets = this.extractTokenSnippets(
         doc,
         originalPhraseOrStemmedTokens,
-        invertedIndex,
+        isTypoToleranceEnabled,
         contextBefore,
         contextAfter,
       );
@@ -186,10 +179,15 @@ export class SnippetGenerator {
     return snippets;
   }
 
-  private extractFuzzyPhraseSnippets(
+  /**
+   * ✅ UNIFIED: Extract phrase snippets from pre-computed match positions
+   * Works for both strict and fuzzy phrase search
+   */
+  private extractPhraseSnippetsFromPositions(
     doc: DocumentIndex,
     originalPhraseOrStemmedTokens: string[],
     sequences: number[][] | undefined,
+    isTypoToleranceEnabled: boolean,
     contextBefore: number,
     contextAfter: number,
   ): SnippetInfo[] {
@@ -206,59 +204,19 @@ export class SnippetGenerator {
       );
       if (sequence.some((token) => token === null)) continue;
 
+      const matchType = isTypoToleranceEnabled
+        ? 'fuzzy-phrase'
+        : 'exact-phrase';
+
       const snippet = this.createSnippetFromSequence(
         doc,
         sequence as ProcessedSearchToken[],
         originalPhraseOrStemmedTokens,
-        'fuzzy-phrase',
+        matchType,
         contextBefore,
         contextAfter,
       );
-      snippets.push(snippet);
-    }
-
-    return this.removeDuplicateSnippets(snippets);
-  }
-
-  private extractPhraseSnippets(
-    doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    contextBefore: number,
-    contextAfter: number,
-  ): SnippetInfo[] {
-    const snippets: SnippetInfo[] = [];
-    const phraseLength = originalPhraseOrStemmedTokens.length;
-    if (phraseLength === 0) return [];
-
-    for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
-      let isMatch = true;
-      const sequence: ProcessedSearchToken[] = [];
-
-      for (let j = 0; j < phraseLength; j++) {
-        const token = getDocumentToken(doc, i + j);
-        if (
-          !token ||
-          this.textProcessor.stemWord(token.term) !==
-            originalPhraseOrStemmedTokens[j]
-        ) {
-          isMatch = false;
-          break;
-        }
-        sequence.push(token);
-      }
-
-      if (isMatch) {
-        const snippet = this.createSnippetFromSequence(
-          doc,
-          sequence,
-          originalPhraseOrStemmedTokens,
-          'exact-phrase',
-          contextBefore,
-          contextAfter,
-        );
-        snippets.push(snippet);
-        i += phraseLength - 1;
-      }
+      if (snippet) snippets.push(snippet);
     }
 
     return this.removeDuplicateSnippets(snippets);
@@ -266,8 +224,8 @@ export class SnippetGenerator {
 
   private extractTokenSnippets(
     doc: DocumentIndex,
-    uniqueScoringTokens: string[],
-    invertedIndex: Map<string, InvertedIndexEntry[]>,
+    originalPhraseOrStemmedTokens: string[],
+    isTypoToleranceEnabled: boolean,
     contextBefore: number,
     contextAfter: number,
   ): SnippetInfo[] {
@@ -277,8 +235,10 @@ export class SnippetGenerator {
 
     doc.positions.forEach((p, tokenIndex) => {
       const docTokenTerm = doc.vocab[p[0]];
-      const docTokenStem = this.textProcessor.stemWord(docTokenTerm);
-      if (uniqueScoringTokens.includes(docTokenStem)) {
+      const docTokenToCompare = isTypoToleranceEnabled
+        ? this.textProcessor.stemWord(docTokenTerm)
+        : docTokenTerm.toLowerCase();
+      if (originalPhraseOrStemmedTokens.includes(docTokenToCompare)) {
         matchedTokenIndices.add(tokenIndex);
       }
     });
@@ -287,8 +247,12 @@ export class SnippetGenerator {
       const docToken = getDocumentToken(doc, tokenIndex);
       if (!docToken) return;
 
-      const docTokenStem = this.textProcessor.stemWord(docToken.term);
-      const queryToken = uniqueScoringTokens.find((qt) => qt === docTokenStem);
+      const docTokenToCompare = isTypoToleranceEnabled
+        ? this.textProcessor.stemWord(docToken.term)
+        : docToken.term.toLowerCase();
+      const queryToken = originalPhraseOrStemmedTokens.find(
+        (qt) => qt === docTokenToCompare,
+      );
       if (!queryToken) return;
 
       const snippetBounds = this.findSentenceBoundariesForSnippet(
@@ -313,7 +277,9 @@ export class SnippetGenerator {
         [{ term: queryToken, originalWord: docToken.term }],
       );
 
-      const confidence = calculateMatchConfidence(queryToken, docTokenStem);
+      const confidence = isTypoToleranceEnabled
+        ? calculateMatchConfidence(queryToken, docTokenToCompare)
+        : 1.0;
 
       snippets.push({
         context: highlightedText + '...',
@@ -346,7 +312,13 @@ export class SnippetGenerator {
     matchType: 'exact-phrase' | 'fuzzy-phrase',
     contextBefore: number,
     contextAfter: number,
-  ): SnippetInfo {
+  ): SnippetInfo | null {
+    if (
+      !this.isValidMatch(sequence, originalPhraseOrStemmedTokens, matchType)
+    ) {
+      return null;
+    }
+
     const matchStartPos = sequence[0].position;
     const matchEndPos = sequence[sequence.length - 1].position;
 
@@ -381,17 +353,11 @@ export class SnippetGenerator {
       charEnd: match.charEnd,
     }));
 
-    let confidence = 1.0;
-    if (matchType === 'fuzzy-phrase') {
-      const totalDistance = sequence.reduce((sum, match, index) => {
-        const queryToken = originalPhraseOrStemmedTokens[index];
-        return sum + levenshtein(match.term.toLowerCase(), queryToken);
-      }, 0);
-      confidence = Math.max(
-        0.3,
-        1.0 - totalDistance / (originalPhraseOrStemmedTokens.length * 3),
-      );
-    }
+    const confidence = this.calculateSequenceConfidence(
+      sequence,
+      originalPhraseOrStemmedTokens,
+      matchType,
+    );
 
     const matchedText = sequence.map((s) => s.term).join(' ');
 
@@ -406,6 +372,37 @@ export class SnippetGenerator {
       confidence,
       highlights: snippetHighlights,
     };
+  }
+
+  private isValidMatch(
+    sequence: ProcessedSearchToken[],
+    queryTokens: string[],
+    matchType: 'exact-phrase' | 'fuzzy-phrase',
+  ): boolean {
+    if (matchType === 'exact-phrase') {
+      return sequence.every((token, index) => {
+        const queryToken = queryTokens[index];
+        return token.term.toLowerCase() === queryToken.toLowerCase();
+      });
+    }
+    return true;
+  }
+
+  private calculateSequenceConfidence(
+    sequence: ProcessedSearchToken[],
+    queryTokens: string[],
+    matchType: 'exact-phrase' | 'fuzzy-phrase',
+  ): number {
+    if (matchType === 'exact-phrase') {
+      return 1.0;
+    }
+
+    const totalDistance = sequence.reduce((sum, match, index) => {
+      const queryToken = queryTokens[index];
+      return sum + levenshtein(match.term.toLowerCase(), queryToken);
+    }, 0);
+
+    return Math.max(0.3, 1.0 - totalDistance / (queryTokens.length * 3));
   }
 
   private findSentenceBoundariesForSnippet(

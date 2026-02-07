@@ -72,8 +72,6 @@ interface SearchConfig {
   indexPath?: string;
   /** The number of concurrent workers to use for parallel processing tasks. */
   concurrency: number;
-  /** Whether to enable Ukrainian language stemming. */
-  ukrainianStemming: boolean;
   /** The root directory for all cache files. Defaults to '.cache' inside rootDirectory. */
   cacheRoot?: string;
   /** The subdirectory within cacheRoot for storing extracted text files. Defaults to 'txt'. */

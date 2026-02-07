@@ -577,7 +577,6 @@ const FormProcessDocumentTabItem = ({
                     </ProcessingButton>
 
                     {/* Fuzzy Phrase Toggle */}
-                    {/*}
                     <div className="flex items-center h-10">
                       <label className="inline-flex items-center cursor-pointer">
                         <input
@@ -593,7 +592,6 @@ const FormProcessDocumentTabItem = ({
                         </span>
                       </label>
                     </div>
-                    */}
                   </div>
                 </div>
               </div>

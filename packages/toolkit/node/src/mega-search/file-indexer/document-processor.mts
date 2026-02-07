@@ -263,9 +263,8 @@ class DocumentProcessor {
 
         let stemmedTerm = stemCache.get(token.normalized);
         if (stemmedTerm === undefined) {
-          stemmedTerm = this.config.ukrainianStemming
-            ? this.textProcessor.stemWord(token.normalized)
-            : token.normalized;
+          // REVIEW: the {isTypoToleranceEnabled} been used before
+          stemmedTerm = this.textProcessor.stemWord(token.normalized);
           stemCache.set(token.normalized, stemmedTerm);
         }
 

@@ -46,7 +46,6 @@ import { createMegaSearch } from './mega-search';
 const megaSearch = await createMegaSearch({
   rootDirectory: './documents',
   extensions: ['.doc', '.docx', '.txt'],
-  ukrainianStemming: true,
   useBM25: true
 });
 ```
@@ -134,9 +133,6 @@ const megaSearch = await createMegaSearch({
   rootDirectory: './documents',
   extensions: ['.doc', '.docx', '.txt'],
   maxFileSize: 50 * 1024 * 1024, // 50MB limit
-
-  // Language processing
-  ukrainianStemming: true,
 
   // BM25 scoring (advanced users)
   useBM25: true,

@@ -67,9 +67,8 @@ export class IndexBuilder {
               continue;
             }
 
-            const stemmedTerm = this.config.ukrainianStemming
-              ? this.textProcessor.stemWord(normalized)
-              : normalized;
+            // REVIEW: the {isTypoToleranceEnabled} been used before
+            const stemmedTerm = this.textProcessor.stemWord(normalized);
 
             vocabStemMap[v] = stemmedTerm;
 

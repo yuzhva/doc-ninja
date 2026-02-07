@@ -81,9 +81,6 @@ class MegaSearch {
     logger.info('Initializing Mega Search system...');
     logger.info(`Root directory: ${this.config.rootDirectory}`);
     logger.debug(`Supported extensions: ${this.config.extensions.join(', ')}`);
-    logger.debug(
-      `Ukrainian stemming: ${this.config.ukrainianStemming ? 'enabled' : 'disabled'}`,
-    );
     logger.info(
       `Scoring method: ${this.config.useBM25 !== false ? this.bm25Scorer.getScoringMethod() : 'TF-IDF'}`,
     );
@@ -375,7 +372,10 @@ class MegaSearch {
             const doc = docCache.get(docId);
             if (!doc) return false;
 
-            const count = this.phraseMatcher.countExactPhrase(doc, tokensToUse);
+            const count = this.phraseMatcher.countExactPhrase(
+              doc,
+              queryData.originalPhraseTokens,
+            );
 
             if (count > 0) {
               docMatchCounts.set(docId, count);
@@ -849,15 +849,6 @@ class MegaSearch {
             const uniqueTokens = new Set(tokens.map((t) => t.term));
             logger.info(`Unique tokens: ${uniqueTokens.size}`);
 
-            if (this.config.ukrainianStemming) {
-              const stemmedSample = tokens
-                .slice(0, 5)
-                .map(
-                  (t) => `${t.term} -> ${this.textProcessor.stemWord(t.term)}`,
-                );
-              logger.info(`Stemming sample: ${stemmedSample.join(', ')}`);
-            }
-
             const ukrainianTokens = tokens.filter((t) =>
               /[а-яїієґ]/.test(t.term),
             );
@@ -915,7 +906,6 @@ const defaultConfig: SearchConfig = {
   extensions: SUPPORTED_EXTENSIONS,
   maxFileSize: 50 * 1024 * 1024, // 50MB
   concurrency: 4,
-  ukrainianStemming: true,
 
   // BM25 scoring parameters (best practice values)
   useBM25: true,
