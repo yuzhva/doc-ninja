@@ -7,7 +7,9 @@
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "make:mac-intel": "electron-forge make --platform=darwin --arch=x64",
+    "make:mac-universal": "electron-forge make --platform=darwin --arch=universal"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
