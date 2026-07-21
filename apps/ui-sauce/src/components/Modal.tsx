@@ -7,6 +7,7 @@ const Modal = ({
   footer,
   children,
   maxWidthClassName = 'max-w-4xl',
+  bodyClassName = 'p-4 space-y-4 md:p-6',
 }: {
   title: string;
   isOpen: boolean;
@@ -14,6 +15,7 @@ const Modal = ({
   footer?: React.ReactNode;
   children: React.ReactNode;
   maxWidthClassName?: string;
+  bodyClassName?: string;
 }) => {
   if (!isOpen) return null;
 
@@ -55,7 +57,9 @@ const Modal = ({
             </button>
           </div>
           {/* Modal body */}
-          <div className="p-4 space-y-4 md:p-6 text-gray-600 dark:text-gray-400 overflow-y-auto">
+          <div
+            className={`${bodyClassName} text-gray-600 dark:text-gray-400 overflow-y-auto`}
+          >
             {children}
           </div>
           {/* Modal footer */}
