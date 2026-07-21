@@ -609,7 +609,7 @@ class MegaSearch {
       for (let i = 0; i < rawResults.length; i++) {
         const [docId, score] = rawResults[i];
         paginatedResults.push(
-          this.processSearchResult(
+          await this.processSearchResult(
             docId,
             score,
             docCache,
@@ -719,7 +719,7 @@ class MegaSearch {
   /**
    * Process individual search result with proper error handling
    */
-  private processSearchResult(
+  private async processSearchResult(
     docId: string,
     score: number,
     docCache: Map<string, DocumentIndex>,
@@ -732,12 +732,12 @@ class MegaSearch {
     includeHighlights: boolean = false,
     snippetContextBefore: number = 0,
     snippetContextAfter: number = 50,
-  ): {
+  ): Promise<{
     doc: any;
     score: number;
     snippets: SnippetInfo[];
     highlights: HighlightInfo[];
-  } {
+  }> {
     const start = Date.now(); // PERF
     const doc = docCache.get(docId);
     let snippets: SnippetInfo[] = [];
@@ -757,7 +757,7 @@ class MegaSearch {
         }
 
         // ENHANCED: Extract rich snippets with position data
-        snippets = this.snippetGenerator.generateSnippets(
+        snippets = await this.snippetGenerator.generateSnippets(
           doc,
           originalPhraseOrStemmedTokens,
           invertedIndex,

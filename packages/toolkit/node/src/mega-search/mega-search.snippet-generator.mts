@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+
 import { levenshtein } from './fuzzy.mjs';
 import { LRUCache } from './lru-cache.mjs';
 import type { HighlightInfo, SnippetInfo } from './mega-search.types.mjs';
@@ -19,8 +21,167 @@ export class SnippetGenerator {
   // Caches for document vocabularies to avoid re-processing
   private stemmedVocabCache = new LRUCache<string, string[]>(200);
   private lowerVocabCache = new LRUCache<string, string[]>(200);
+  // Cache for raw (pre-normalization) document text, keyed by docId.
+  // Smaller cap than the token caches since full text is heavier per entry.
+  private rawTextCache = new LRUCache<string, string>(50);
 
   constructor(private textProcessor: UkrainianTextProcessor) {}
+
+  /**
+   * Read the original raw document text (as written to disk pre-normalization),
+   * for use cases where the normalized `doc.vocab` tokens (lowercased, stripped
+   * of apostrophes/punctuation, stop words removed) are not suitable — e.g.
+   * rendering snippet context or highlighting exact substrings.
+   * Returns null if no text cache path is available or the read fails, so
+   * callers can fall back to vocab-reconstructed text.
+   */
+  private async getRawText(doc: DocumentIndex): Promise<string | null> {
+    const cacheKey = doc.metadata.originalFilePath;
+    const cached = this.rawTextCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const textFilePath = doc.metadata.textFilePath;
+    if (!textFilePath) return null;
+
+    try {
+      const text = await fs.promises.readFile(textFilePath, 'utf8');
+      this.rawTextCache.set(cacheKey, text);
+      return text;
+    } catch (error) {
+      logger.warn(
+        `Failed to read raw text for ${doc.metadata.fileName} at ${textFilePath}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the display text for a token-index range [start, end) within a
+   * snippet. Prefers an exact slice of the raw (pre-normalization) document
+   * text via char offsets — preserving original casing, apostrophes, stop
+   * words, and punctuation. Falls back to joining normalized `doc.vocab`
+   * tokens only if the raw text cache is unavailable (e.g. missing/unreadable
+   * textFilePath), which reproduces the previous (lossy) behavior.
+   *
+   * `rawCharStart` is the absolute offset in the raw document where `text`
+   * begins — callers use it to translate a match's absolute charStart/charEnd
+   * into an offset relative to `text` for highlighting. It's `null` when the
+   * vocab-join fallback was used, since those offsets aren't meaningful.
+   */
+  private async getSnippetText(
+    doc: DocumentIndex,
+    snippetBounds: { start: number; end: number },
+  ): Promise<{ text: string; rawCharStart: number | null }> {
+    const boundTokens = doc.positions.slice(
+      snippetBounds.start,
+      snippetBounds.end,
+    );
+    if (boundTokens.length === 0) return { text: '', rawCharStart: null };
+
+    const rawText = await this.getRawText(doc);
+    if (rawText !== null) {
+      const charStart = boundTokens[0][1];
+      const charEnd = boundTokens[boundTokens.length - 1][2];
+      return {
+        text: rawText.slice(charStart, charEnd),
+        rawCharStart: charStart,
+      };
+    }
+
+    return {
+      text: boundTokens.map((p) => doc.vocab[p[0]]).join(' '),
+      rawCharStart: null,
+    };
+  }
+
+  /**
+   * Slice the exact raw substring for a [charStart, charEnd) match span —
+   * preserving original casing/apostrophes/punctuation, unlike rejoining
+   * normalized `ProcessedSearchToken.term` values. Falls back to `fallback`
+   * (the previous normalized-join behavior) if raw text is unavailable.
+   */
+  private async getRawSubstring(
+    doc: DocumentIndex,
+    charStart: number,
+    charEnd: number,
+    fallback: string,
+  ): Promise<string> {
+    const rawText = await this.getRawText(doc);
+    if (rawText !== null) {
+      return rawText.slice(charStart, charEnd);
+    }
+    return fallback;
+  }
+
+  /**
+   * Wrap each [start, end) span in `<b>` tags by direct index splicing —
+   * no pattern matching involved, so it can't highlight the wrong
+   * occurrence of a term and isn't affected by casing/apostrophe/punctuation
+   * differences between the query term and the matched text. Spans are
+   * clamped to `text`'s bounds and processed right-to-left so earlier
+   * offsets never shift; spans that overlap an already-wrapped span are
+   * dropped rather than risk malformed/nested tags.
+   */
+  private spliceHighlightSpans(
+    text: string,
+    spans: Array<{ start: number; end: number }>,
+  ): string {
+    const validSpans = spans
+      .map((s) => ({
+        start: Math.max(0, Math.min(s.start, text.length)),
+        end: Math.max(0, Math.min(s.end, text.length)),
+      }))
+      .filter((s) => s.end > s.start)
+      .sort((a, b) => b.start - a.start);
+
+    let result = text;
+    let rightBoundary = text.length + 1;
+    for (const span of validSpans) {
+      if (span.end > rightBoundary) continue;
+      result =
+        result.slice(0, span.start) +
+        '<b>' +
+        result.slice(span.start, span.end) +
+        '</b>' +
+        result.slice(span.end);
+      rightBoundary = span.start;
+    }
+    return result;
+  }
+
+  /**
+   * Highlight a snippet's matched term(s) within `text`. When `rawCharStart`
+   * is known (i.e. `text` is a raw-text slice), translates each span's
+   * absolute document offsets into offsets relative to `text` and splices
+   * `<b>` tags in directly — exact by construction. Falls back to the older
+   * regex-based `highlightTermsInSnippet` only when raw offsets aren't
+   * available (vocab-join fallback path).
+   */
+  private highlightSnippet(
+    text: string,
+    rawCharStart: number | null,
+    spans: Array<{ charStart?: number; charEnd?: number }>,
+    fallbackTerms: Array<{ term: string; originalWord: string }>,
+  ): string {
+    if (rawCharStart !== null) {
+      const relativeSpans = spans
+        .filter(
+          (s): s is { charStart: number; charEnd: number } =>
+            typeof s.charStart === 'number' && typeof s.charEnd === 'number',
+        )
+        .map((s) => ({
+          start: s.charStart - rawCharStart,
+          end: s.charEnd - rawCharStart,
+        }));
+
+      if (relativeSpans.length > 0) {
+        return this.spliceHighlightSpans(text, relativeSpans);
+      }
+    }
+
+    return this.highlightTermsInSnippet(text, fallbackTerms).text;
+  }
 
   /**
    * Generate all highlights for a document.
@@ -137,7 +298,7 @@ export class SnippetGenerator {
   /**
    * Main entry point for snippet generation.
    */
-  generateSnippets(
+  async generateSnippets(
     doc: DocumentIndex,
     originalPhraseOrStemmedTokens: string[],
     invertedIndex: Map<string, InvertedIndexEntry[]>,
@@ -146,13 +307,13 @@ export class SnippetGenerator {
     matchPositions: number[][] | undefined,
     contextBefore: number,
     contextAfter: number,
-  ): SnippetInfo[] {
+  ): Promise<SnippetInfo[]> {
     const start = Date.now();
     let snippets: SnippetInfo[] = [];
 
     if (isPhrase) {
       // matchPositions already contains the correct matches from PhraseMatcher
-      snippets = this.extractPhraseSnippetsFromPositions(
+      snippets = await this.extractPhraseSnippetsFromPositions(
         doc,
         originalPhraseOrStemmedTokens,
         matchPositions,
@@ -161,7 +322,7 @@ export class SnippetGenerator {
         contextAfter,
       );
     } else {
-      snippets = this.extractTokenSnippets(
+      snippets = await this.extractTokenSnippets(
         doc,
         originalPhraseOrStemmedTokens,
         isTypoToleranceEnabled,
@@ -183,14 +344,14 @@ export class SnippetGenerator {
    * ✅ UNIFIED: Extract phrase snippets from pre-computed match positions
    * Works for both strict and fuzzy phrase search
    */
-  private extractPhraseSnippetsFromPositions(
+  private async extractPhraseSnippetsFromPositions(
     doc: DocumentIndex,
     originalPhraseOrStemmedTokens: string[],
     sequences: number[][] | undefined,
     isTypoToleranceEnabled: boolean,
     contextBefore: number,
     contextAfter: number,
-  ): SnippetInfo[] {
+  ): Promise<SnippetInfo[]> {
     if (!sequences || sequences.length === 0) return [];
 
     const snippets: SnippetInfo[] = [];
@@ -208,7 +369,7 @@ export class SnippetGenerator {
         ? 'fuzzy-phrase'
         : 'exact-phrase';
 
-      const snippet = this.createSnippetFromSequence(
+      const snippet = await this.createSnippetFromSequence(
         doc,
         sequence as ProcessedSearchToken[],
         originalPhraseOrStemmedTokens,
@@ -222,13 +383,13 @@ export class SnippetGenerator {
     return this.removeDuplicateSnippets(snippets);
   }
 
-  private extractTokenSnippets(
+  private async extractTokenSnippets(
     doc: DocumentIndex,
     originalPhraseOrStemmedTokens: string[],
     isTypoToleranceEnabled: boolean,
     contextBefore: number,
     contextAfter: number,
-  ): SnippetInfo[] {
+  ): Promise<SnippetInfo[]> {
     const snippets: SnippetInfo[] = [];
     const processedBounds = new Set<string>();
     const matchedTokenIndices = new Set<number>();
@@ -243,9 +404,9 @@ export class SnippetGenerator {
       }
     });
 
-    matchedTokenIndices.forEach((tokenIndex) => {
+    for (const tokenIndex of matchedTokenIndices) {
       const docToken = getDocumentToken(doc, tokenIndex);
-      if (!docToken) return;
+      if (!docToken) continue;
 
       const docTokenToCompare = isTypoToleranceEnabled
         ? this.textProcessor.stemWord(docToken.term)
@@ -253,9 +414,9 @@ export class SnippetGenerator {
       const queryToken = originalPhraseOrStemmedTokens.find(
         (qt) => qt === docTokenToCompare,
       );
-      if (!queryToken) return;
+      if (!queryToken) continue;
 
-      const snippetBounds = this.findSentenceBoundariesForSnippet(
+      const snippetBounds = await this.findSentenceBoundariesForSnippet(
         doc,
         tokenIndex,
         tokenIndex,
@@ -264,16 +425,18 @@ export class SnippetGenerator {
       );
 
       const boundsKey = `${snippetBounds.start}-${snippetBounds.end}`;
-      if (processedBounds.has(boundsKey)) return;
+      if (processedBounds.has(boundsKey)) continue;
       processedBounds.add(boundsKey);
 
-      const tokensForSnippet = doc.positions
-        .slice(snippetBounds.start, snippetBounds.end)
-        .map((p) => doc.vocab[p[0]]);
-      const snippetText = tokensForSnippet.join(' ');
+      const { text: snippetText, rawCharStart } = await this.getSnippetText(
+        doc,
+        snippetBounds,
+      );
 
-      const { text: highlightedText } = this.highlightTermsInSnippet(
+      const highlightedText = this.highlightSnippet(
         snippetText,
+        rawCharStart,
+        [{ charStart: docToken.charStart, charEnd: docToken.charEnd }],
         [{ term: queryToken, originalWord: docToken.term }],
       );
 
@@ -281,9 +444,16 @@ export class SnippetGenerator {
         ? calculateMatchConfidence(queryToken, docTokenToCompare)
         : 1.0;
 
+      const matchedText = await this.getRawSubstring(
+        doc,
+        docToken.charStart,
+        docToken.charEnd,
+        docToken.term,
+      );
+
       snippets.push({
         context: highlightedText + '...',
-        match: docToken.term,
+        match: matchedText,
         matchStartTokenIndex: tokenIndex,
         matchEndTokenIndex: tokenIndex,
         matchCharStart: docToken.charStart,
@@ -300,19 +470,19 @@ export class SnippetGenerator {
           },
         ],
       });
-    });
+    }
 
     return this.removeDuplicateSnippets(snippets);
   }
 
-  private createSnippetFromSequence(
+  private async createSnippetFromSequence(
     doc: DocumentIndex,
     sequence: ProcessedSearchToken[],
     originalPhraseOrStemmedTokens: string[],
     matchType: 'exact-phrase' | 'fuzzy-phrase',
     contextBefore: number,
     contextAfter: number,
-  ): SnippetInfo | null {
+  ): Promise<SnippetInfo | null> {
     if (
       !this.isValidMatch(sequence, originalPhraseOrStemmedTokens, matchType)
     ) {
@@ -322,7 +492,7 @@ export class SnippetGenerator {
     const matchStartPos = sequence[0].position;
     const matchEndPos = sequence[sequence.length - 1].position;
 
-    const snippetBounds = this.findSentenceBoundariesForSnippet(
+    const snippetBounds = await this.findSentenceBoundariesForSnippet(
       doc,
       matchStartPos,
       matchEndPos,
@@ -330,18 +500,23 @@ export class SnippetGenerator {
       contextAfter,
     );
 
-    const tokensForSnippet = doc.positions
-      .slice(snippetBounds.start, snippetBounds.end)
-      .map((p) => doc.vocab[p[0]]);
-    const snippetText = tokensForSnippet.join(' ');
+    const { text: snippetText, rawCharStart } = await this.getSnippetText(
+      doc,
+      snippetBounds,
+    );
 
     const termsToHighlight = sequence.map((match, index) => ({
       term: originalPhraseOrStemmedTokens[index],
       originalWord: match.term,
     }));
 
-    const { text: highlightedText } = this.highlightTermsInSnippet(
+    const highlightedText = this.highlightSnippet(
       snippetText,
+      rawCharStart,
+      sequence.map((match) => ({
+        charStart: match.charStart,
+        charEnd: match.charEnd,
+      })),
       termsToHighlight,
     );
 
@@ -359,7 +534,12 @@ export class SnippetGenerator {
       matchType,
     );
 
-    const matchedText = sequence.map((s) => s.term).join(' ');
+    const matchedText = await this.getRawSubstring(
+      doc,
+      sequence[0].charStart,
+      sequence[sequence.length - 1].charEnd,
+      sequence.map((s) => s.term).join(' '),
+    );
 
     return {
       context: highlightedText + '...',
@@ -405,27 +585,37 @@ export class SnippetGenerator {
     return Math.max(0.3, 1.0 - totalDistance / (queryTokens.length * 3));
   }
 
-  private findSentenceBoundariesForSnippet(
+  private async findSentenceBoundariesForSnippet(
     doc: DocumentIndex,
     matchStartPos: number,
     matchEndPos: number,
     contextBefore: number,
     contextAfter: number,
-  ): { start: number; end: number } {
-    const isBoundaryToken = (
-      tokenIndex: number,
-      direction: 'forward' | 'backward',
-    ): boolean => {
-      const token = doc.vocab[doc.positions[tokenIndex][0]];
-      if (/[.!?]$/.test(token) || ['?', '!', ';', '.'].includes(token)) {
-        return true;
+  ): Promise<{ start: number; end: number }> {
+    // Punctuation is never tokenized as its own vocab entry (the tokenizer's
+    // character class only captures letters/apostrophes/hyphens — see
+    // UkrainianTextProcessor.tokenize), so a sentence terminator always lands
+    // in the raw text immediately after the preceding word token's charEnd,
+    // never as a vocab token of its own. Checking raw text here is what makes
+    // boundary detection actually work, vs. the previous vocab-token check
+    // (which could never match and always fell through to the fixed window).
+    const rawText = await this.getRawText(doc);
+
+    const isBoundaryToken = (tokenIndex: number): boolean => {
+      if (rawText !== null) {
+        const charEnd = doc.positions[tokenIndex][2];
+        return charEnd < rawText.length && '.!?;'.includes(rawText[charEnd]);
       }
-      return false;
+
+      // Degraded fallback when raw text is unavailable: preserves the old
+      // (effectively dead) behavior rather than failing outright.
+      const token = doc.vocab[doc.positions[tokenIndex][0]];
+      return /[.!?;]$/.test(token) || ['?', '!', ';', '.'].includes(token);
     };
 
     let sentenceStart = Math.max(0, matchStartPos - contextBefore);
     for (let i = matchStartPos - 1; i >= sentenceStart; i--) {
-      if (isBoundaryToken(i, 'backward')) {
+      if (isBoundaryToken(i)) {
         sentenceStart = i + 1;
         break;
       }
@@ -436,13 +626,8 @@ export class SnippetGenerator {
       matchEndPos + contextAfter,
     );
     for (let i = matchEndPos + 1; i < sentenceEnd; i++) {
-      if (isBoundaryToken(i, 'forward')) {
-        const token = doc.vocab[doc.positions[i][0]];
-        if (/[.!?]$/.test(token) || ['?', '!', ';', '.'].includes(token)) {
-          sentenceEnd = i + 1;
-        } else {
-          sentenceEnd = i;
-        }
+      if (isBoundaryToken(i)) {
+        sentenceEnd = i + 1;
         break;
       }
     }
