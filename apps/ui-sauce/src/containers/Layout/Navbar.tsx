@@ -1,16 +1,25 @@
 import React from 'react';
 import { Link } from 'react-router';
 
+import { Checkbox, Modal } from '../../components';
+
 const THEME_CURRENT_MODE__DEFAULT = 'dark';
 
 interface NavbarProps {
   onBtnToggleSidebarClick: () => void;
+  isSidebarVisible: boolean;
+  onSidebarVisibleChange: (isSidebarVisible: boolean) => void;
 }
 
-const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
+const Navbar = ({
+  onBtnToggleSidebarClick,
+  isSidebarVisible,
+  onSidebarVisibleChange,
+}: NavbarProps) => {
   const [themeCurrentMode, setThemeCurrentMode] = React.useState(
     THEME_CURRENT_MODE__DEFAULT,
   );
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
 
   const handleThemeModeSwitch = React.useCallback(() => {
     setThemeCurrentMode((prevMode) => {
@@ -36,28 +45,30 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
         <div className="w-full p-3 lg:px-5 lg:pl-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <button
-                className="mr-3 cursor-pointer rounded p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white lg:inline"
-                onClick={onBtnToggleSidebarClick}
-              >
-                <span className="sr-only">Toggle sidebar</span>
-                <svg
-                  stroke="currentColor"
-                  fill="currentColor"
-                  strokeWidth="0"
-                  viewBox="0 0 20 20"
-                  className="h-6 w-6"
-                  height="1em"
-                  width="1em"
-                  xmlns="http://www.w3.org/2000/svg"
+              {isSidebarVisible && (
+                <button
+                  className="mr-3 cursor-pointer rounded p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white lg:inline"
+                  onClick={onBtnToggleSidebarClick}
                 >
-                  <path
-                    fillRule="evenodd"
-                    d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
-                    clipRule="evenodd"
-                  ></path>
-                </svg>
-              </button>
+                  <span className="sr-only">Toggle sidebar</span>
+                  <svg
+                    stroke="currentColor"
+                    fill="currentColor"
+                    strokeWidth="0"
+                    viewBox="0 0 20 20"
+                    className="h-6 w-6"
+                    height="1em"
+                    width="1em"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                      clipRule="evenodd"
+                    ></path>
+                  </svg>
+                </button>
+              )}
               <Link className="flex items-center" to="/">
                 <img
                   alt=""
@@ -626,6 +637,30 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
                 */}
                 <button
                   className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700"
+                  data-testid="settings-open"
+                  type="button"
+                  aria-label="Налаштування"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                >
+                  <svg
+                    stroke="currentColor"
+                    fill="currentColor"
+                    strokeWidth="0"
+                    viewBox="0 0 20 20"
+                    className="h-5 w-5"
+                    height="1em"
+                    width="1em"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                      clipRule="evenodd"
+                    ></path>
+                  </svg>
+                </button>
+                <button
+                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700"
                   data-testid="dark-theme-toggle"
                   type="button"
                   aria-label="Toggle dark mode"
@@ -734,6 +769,19 @@ const Navbar = ({ onBtnToggleSidebarClick }: NavbarProps) => {
           </div>
         </div>
       </div>
+
+      <Modal
+        title="Налаштування"
+        isOpen={isSettingsModalOpen}
+        onBtnCloseClick={() => setIsSettingsModalOpen(false)}
+      >
+        <Checkbox
+          theme="toggle"
+          checked={isSidebarVisible}
+          onChange={onSidebarVisibleChange}
+          label='Відображати "Утиліти для документів"'
+        />
+      </Modal>
     </nav>
   );
 };
