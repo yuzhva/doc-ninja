@@ -20,8 +20,14 @@ const FormChunkSpreadsheetTabItem = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: FormPageSectionProps) => {
+  // Monotonic counter for additional sheet ids — Date.now() can return the
+  // same value across two synchronous calls, which previously caused rows
+  // to share an id and edits to leak between them.
+  const nextRowId = React.useRef(0);
+  const createRowId = () => nextRowId.current++;
+
   // State for form data matching API format
-  const [formState, setFormState] = React.useState({
+  const [formState, setFormState] = React.useState(() => ({
     sheetToChunkPosition: 2,
     headerRows: 5,
     splitColumnPosition: 11,
@@ -31,25 +37,25 @@ const FormChunkSpreadsheetTabItem = ({
     isFasterLessStyledChunkerUsed: true,
     additionalSheets: [
       {
-        id: Date.now(),
+        id: createRowId(),
         sheetIndex: 3,
-        headerRows: 3,
+        headerRows: 2,
         filterColumnPosition: 15,
       },
       {
-        id: Date.now(),
+        id: createRowId(),
         sheetIndex: 9,
         headerRows: 3,
         filterColumnPosition: 19,
       },
       {
-        id: Date.now() + 1,
+        id: createRowId(),
         sheetIndex: 10,
         headerRows: 2,
         filterColumnPosition: 6,
       },
     ],
-  });
+  }));
 
   // Add new additional sheet function
   const addNewRow = () => {
@@ -58,7 +64,7 @@ const FormChunkSpreadsheetTabItem = ({
       additionalSheets: [
         ...prev.additionalSheets,
         {
-          id: Date.now(),
+          id: createRowId(),
           sheetIndex: 0,
           headerRows: 0,
           filterColumnPosition: 0,
