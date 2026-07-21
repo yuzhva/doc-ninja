@@ -90,7 +90,11 @@ const sliceDocumentForChunks = async ({
     const loadTime = Date.now() - startTime;
     console.log(`📖 Document loaded in: ${loadTime}ms`);
 
-    const worksheet = workbook.worksheets[sheetToChunkPosition - 1];
+    const worksheet: ExcelJS.Worksheet = getSheetByConfig(
+      workbook,
+      { sheetIndex: sheetToChunkPosition },
+      includeHiddenSheets,
+    );
     if (!worksheet) {
       throw new Error(
         `Sheet number "${sheetToChunkPosition}" not found in the workbook.`,
