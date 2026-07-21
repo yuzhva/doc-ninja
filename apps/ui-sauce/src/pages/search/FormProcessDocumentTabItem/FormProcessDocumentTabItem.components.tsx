@@ -76,9 +76,9 @@ const ProcessedResultRow = ({
 
   return (
     <React.Fragment>
-      <tr className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-        <td className="px-6 py-4 whitespace-nowrap align-middle">
-          <div className="flex items-center gap-3">
+      <tr className="group bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <td className="sticky left-0 z-10 bg-white dark:bg-gray-800 group-hover:bg-gray-100 dark:group-hover:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#374151] transition-colors whitespace-nowrap align-middle">
+          <div className="flex items-center gap-3 mx-6 my-4">
             {/* Collapse/Expand Toggle */}
             <button
               type="button"
@@ -176,8 +176,8 @@ const ProcessedResultRow = ({
       {/* Expanded Content Row */}
       {isExpanded && (
         <tr className="bg-gray-50 dark:bg-gray-900/40 border-b dark:border-gray-700">
-          <td colSpan={3 + filterConfigs.length} className="px-6 py-4">
-            <div className="pl-10 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
+          <td colSpan={3 + filterConfigs.length}>
+            <div className="sticky left-0 z-10 w-[100cqw] bg-gray-50 dark:bg-gray-900/40 py-4 pl-10 pr-6 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
               {enrichedItems.map(({ item, dynamicValues }, idx: number) => (
                 <div
                   key={idx}
@@ -314,7 +314,7 @@ const ProcessedResultGroup = ({
   };
 
   return (
-    <div className="relative overflow-x-auto shadow-md sm:rounded-lg border border-gray-200 dark:border-gray-700">
+    <div className="relative overflow-hidden shadow-md sm:rounded-lg border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between bg-gray-50 px-6 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
         <h3 className="text-sm font-bold uppercase text-gray-700 dark:text-gray-200 flex items-center gap-2">
           <span>Результати для:</span>
@@ -343,65 +343,67 @@ const ProcessedResultGroup = ({
         </button>
       </div>
       {isOpen && (
-        <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400 min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
-            <tr>
-              <th className="px-6 py-3 whitespace-nowrap">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleToggleAll}
-                    className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors focus:outline-none"
-                    title={areAllExpanded ? 'Згорнути всі' : 'Розгорнути всі'}
-                  >
-                    <svg
-                      className={`w-4 h-4 transition-transform duration-200 ${
-                        areAllExpanded ? 'rotate-0' : '-rotate-90'
-                      }`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+        <div className="overflow-x-auto @container">
+          <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400 min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+            <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
+              <tr>
+                <th className="sticky left-0 z-20 bg-gray-100 dark:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#4b5563] px-6 py-3 whitespace-nowrap">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleToggleAll}
+                      className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors focus:outline-none"
+                      title={areAllExpanded ? 'Згорнути всі' : 'Розгорнути всі'}
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </button>
-                  Документ
-                </div>
-              </th>
-              <th className="px-6 py-3 whitespace-nowrap">Шлях</th>
-              <th className="px-6 py-3 whitespace-nowrap w-px text-center">
-                Номер
-              </th>
-              {/* Dynamic Headers */}
-              {filterConfigs.map((conf, idx) => (
-                <th
-                  key={conf.id || idx}
-                  className="px-6 py-3 whitespace-nowrap w-px text-center"
-                >
-                  {conf.labelFilterTitle}
+                      <svg
+                        className={`w-4 h-4 transition-transform duration-200 ${
+                          areAllExpanded ? 'rotate-0' : '-rotate-90'
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </button>
+                    Документ
+                  </div>
                 </th>
+                <th className="px-6 py-3 whitespace-nowrap">Шлях</th>
+                <th className="px-6 py-3 whitespace-nowrap w-px text-center">
+                  Номер
+                </th>
+                {/* Dynamic Headers */}
+                {filterConfigs.map((conf, idx) => (
+                  <th
+                    key={conf.id || idx}
+                    className="px-6 py-3 whitespace-nowrap w-px text-center"
+                  >
+                    {conf.labelFilterTitle}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+              {items.map((result, index) => (
+                <ProcessedResultRow
+                  key={index}
+                  result={result}
+                  isExpanded={expandedRows.has(index)}
+                  onToggleExpand={() => handleToggleRow(index)}
+                  onOpenFile={handleOpenFile}
+                  onViewContent={onViewContent}
+                  filterConfigs={filterConfigs} // Pass config
+                />
               ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-            {items.map((result, index) => (
-              <ProcessedResultRow
-                key={index}
-                result={result}
-                isExpanded={expandedRows.has(index)}
-                onToggleExpand={() => handleToggleRow(index)}
-                onOpenFile={handleOpenFile}
-                onViewContent={onViewContent}
-                filterConfigs={filterConfigs} // Pass config
-              />
-            ))}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
