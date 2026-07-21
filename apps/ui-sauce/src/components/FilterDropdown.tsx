@@ -104,7 +104,7 @@ const FilterDropdown = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 z-10 w-64 p-3 mt-2 bg-white rounded-lg shadow-lg dark:bg-gray-700 max-h-96 overflow-y-auto">
+        <div className="absolute right-0 z-30 w-64 p-3 mt-2 bg-white rounded-lg shadow-lg dark:bg-gray-700 max-h-96 overflow-y-auto">
           <div className="mb-3 flex items-center justify-between">
             <h6 className="text-sm font-medium text-gray-900 dark:text-white">
               {dropdownTitle || label}
