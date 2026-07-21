@@ -699,6 +699,11 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                   <span className="sr-only">Clear search</span>
                 </button>
               )}
+              {searchTerm && (
+                <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
+                  1
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -762,6 +767,11 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                 />
               </svg>
             </button>
+            {maxResults !== '' && (
+              <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
+                1
+              </div>
+            )}
           </div>
 
           {/* Export Button */}
