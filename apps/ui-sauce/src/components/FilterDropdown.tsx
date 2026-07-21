@@ -56,6 +56,10 @@ const FilterDropdown = ({
     );
   }, [items, filterText]);
 
+  const handleClearAll = () => {
+    selectedItems.forEach((item) => onItemChange(item));
+  };
+
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -101,9 +105,20 @@ const FilterDropdown = ({
 
       {isOpen && (
         <div className="absolute right-0 z-10 w-64 p-3 mt-2 bg-white rounded-lg shadow-lg dark:bg-gray-700 max-h-96 overflow-y-auto">
-          <h6 className="mb-3 text-sm font-medium text-gray-900 dark:text-white">
-            {dropdownTitle || label}
-          </h6>
+          <div className="mb-3 flex items-center justify-between">
+            <h6 className="text-sm font-medium text-gray-900 dark:text-white">
+              {dropdownTitle || label}
+            </h6>
+            {selectedItems.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-500 cursor-pointer"
+              >
+                Очистити
+              </button>
+            )}
+          </div>
           <div className="mb-3">
             <input
               type="text"
