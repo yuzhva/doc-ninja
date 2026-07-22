@@ -15,9 +15,11 @@ import path from 'path';
 import request from 'supertest';
 import { FileSystemService } from 'toolkit--local/browser';
 import { FileScannerNode } from 'toolkit--local/node';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { pathToFileURL } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// electron-forge's Vite plugin always bundles the main process to CommonJS,
+// so Node provides `__dirname` natively at runtime.
+declare const __dirname: string;
 
 // Register scheme to support standard web APIs and absolute paths
 protocol.registerSchemesAsPrivileged([
