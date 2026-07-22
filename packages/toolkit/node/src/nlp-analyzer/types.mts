@@ -194,6 +194,18 @@ type PostProcessor = (
   context?: PostProcessingContext,
 ) => AnalysisResult | Promise<AnalysisResult>;
 
+/**
+ * A loaded, callable Hugging Face pipeline instance, for code paths that
+ * don't know their task at compile time (custom processor registry, the
+ * base processor extended by custom processors). `@huggingface/transformers`
+ * doesn't re-export its generic `Pipeline` base class from the package root
+ * — only concrete per-task subclasses (`TokenClassificationPipeline`,
+ * `TextClassificationPipeline`, `SummarizationPipeline`, etc.) are exported.
+ * Processors that know their task statically should use the concrete class
+ * instead of this type, since it gives real argument/return typing.
+ */
+type LoadedPipeline = (...args: any[]) => Promise<any>;
+
 export type {
   AdaptiveLearningResult,
   AdaptiveTextAnalyzer,
@@ -207,6 +219,7 @@ export type {
   EntityResult,
   LearningContext,
   LearningOpportunity,
+  LoadedPipeline,
   ModelConfig,
   PostProcessingContext,
   PostProcessor,

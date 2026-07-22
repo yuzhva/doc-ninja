@@ -1,6 +1,4 @@
-import { Pipeline } from '@huggingface/transformers';
-
-import { AnalysisConfig, DocumentChunk } from '../../types.mjs';
+import { AnalysisConfig, DocumentChunk, LoadedPipeline } from '../../types.mjs';
 import { BaseProcessor } from '../base-processor.mjs';
 
 interface LegalAnalysisResult {
@@ -17,11 +15,7 @@ interface LegalAnalysisResult {
   legal_concepts: Array<{
     concept: string;
     category:
-      | 'contract'
-      | 'tort'
-      | 'criminal'
-      | 'constitutional'
-      | 'administrative';
+      'contract' | 'tort' | 'criminal' | 'constitutional' | 'administrative';
     confidence: number;
   }>;
   key_dates: Array<{
@@ -105,7 +99,7 @@ class LegalDocumentProcessor extends BaseProcessor {
     ],
   };
 
-  constructor(model?: Pipeline, config?: any) {
+  constructor(model?: LoadedPipeline, config?: any) {
     super(model, config);
   }
 
@@ -321,22 +315,14 @@ class LegalDocumentProcessor extends BaseProcessor {
     Array<{
       concept: string;
       category:
-        | 'contract'
-        | 'tort'
-        | 'criminal'
-        | 'constitutional'
-        | 'administrative';
+        'contract' | 'tort' | 'criminal' | 'constitutional' | 'administrative';
       confidence: number;
     }>
   > {
     const concepts: Array<{
       concept: string;
       category:
-        | 'contract'
-        | 'tort'
-        | 'criminal'
-        | 'constitutional'
-        | 'administrative';
+        'contract' | 'tort' | 'criminal' | 'constitutional' | 'administrative';
       confidence: number;
     }> = [];
 

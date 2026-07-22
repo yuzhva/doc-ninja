@@ -1,7 +1,6 @@
-import { Pipeline } from '@huggingface/transformers';
 import { EventEmitter } from 'events';
 
-import { AnalysisConfig, DocumentChunk } from '../types.mjs';
+import { AnalysisConfig, DocumentChunk, LoadedPipeline } from '../types.mjs';
 
 interface TaskProcessor {
   process(chunks: DocumentChunk[], config: AnalysisConfig): Promise<any>;
@@ -9,7 +8,7 @@ interface TaskProcessor {
 }
 
 abstract class BaseProcessor extends EventEmitter implements TaskProcessor {
-  protected model?: Pipeline;
+  protected model?: LoadedPipeline;
   protected config: Record<string, any> = {};
   protected stats = {
     processedChunks: 0,
@@ -17,7 +16,7 @@ abstract class BaseProcessor extends EventEmitter implements TaskProcessor {
     errors: 0,
   };
 
-  constructor(model?: Pipeline, config?: Record<string, any>) {
+  constructor(model?: LoadedPipeline, config?: Record<string, any>) {
     super();
     this.model = model;
     this.config = config || {};

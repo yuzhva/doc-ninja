@@ -1,8 +1,7 @@
 import type { PipelineType } from '@huggingface/transformers';
-import { Pipeline } from '@huggingface/transformers';
 
 import { TaskProcessor } from '../managers/model-manager.mjs';
-import { AnalysisTask } from '../types.mjs';
+import { AnalysisTask, LoadedPipeline } from '../types.mjs';
 
 interface ProcessorDefinition {
   name: string;
@@ -11,7 +10,7 @@ interface ProcessorDefinition {
   requiresModel: boolean;
   defaultModelId?: string;
   defaultTaskType?: PipelineType;
-  processorClass: new (model?: Pipeline, config?: any) => TaskProcessor;
+  processorClass: new (model?: LoadedPipeline, config?: any) => TaskProcessor;
 }
 
 class CustomProcessorRegistry {
@@ -61,7 +60,7 @@ class CustomProcessorRegistry {
    */
   createProcessor(
     name: string,
-    model?: Pipeline,
+    model?: LoadedPipeline,
     config?: any,
   ): TaskProcessor | undefined {
     const definition = this.processors.get(name);

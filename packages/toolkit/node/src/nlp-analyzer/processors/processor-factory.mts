@@ -1,6 +1,10 @@
-import { Pipeline } from '@huggingface/transformers';
+import type {
+  SummarizationPipeline,
+  TextClassificationPipeline,
+  TokenClassificationPipeline,
+} from '@huggingface/transformers';
 
-import { AnalysisTask, ModelConfig } from '../types.mjs';
+import { AnalysisTask, LoadedPipeline, ModelConfig } from '../types.mjs';
 import { TaskProcessor } from './base-processor.mjs';
 import { ClassificationProcessor } from './classification-processor.mjs';
 import { CustomProcessorRegistry } from './custom-processor-registry.mjs';
@@ -14,7 +18,7 @@ class ProcessorFactory {
 
   createProcessor(
     task: AnalysisTask,
-    model?: Pipeline,
+    model?: LoadedPipeline,
     config?: ModelConfig,
   ): TaskProcessor {
     // Try custom processors first
@@ -35,22 +39,27 @@ class ProcessorFactory {
 
   private createBuiltInProcessor(
     task: AnalysisTask,
-    model?: Pipeline,
+    model?: LoadedPipeline,
     config?: ModelConfig,
   ): TaskProcessor {
     if (!model && this.requiresModel(task)) {
       throw new Error(`Model required for task: ${task}`);
     }
 
+    // Each built-in task loads a specific, statically-known pipeline type
+    // (see ModelManager.loadModel), so the loosely-typed `model` here is
+    // narrowed to the concrete class each processor actually expects.
     switch (task) {
       case 'sentiment':
-        return new SentimentProcessor(model!);
+        return new SentimentProcessor(model! as TextClassificationPipeline);
       case 'entities':
-        return new EntityProcessor(model!);
+        return new EntityProcessor(model! as TokenClassificationPipeline);
       case 'classification':
-        return new ClassificationProcessor(model!);
+        return new ClassificationProcessor(
+          model! as TextClassificationPipeline,
+        );
       case 'summary':
-        return new SummaryProcessor(model!);
+        return new SummaryProcessor(model! as SummarizationPipeline);
       case 'keywords':
         return new KeywordsProcessor();
       case 'readability':
