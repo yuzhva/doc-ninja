@@ -12,7 +12,7 @@ import {
   DocParserViaLib,
   DocxParser,
   DocxParserViaLib,
-  // PdfParserViaLib,
+  PdfParserViaLib,
   TextParser,
 } from './parsers/index.mjs';
 
@@ -30,7 +30,7 @@ const SUPPORTED_EXTENSIONS = [
   '.docm',
   '.dotx',
   // pdf parser
-  // '.pdf',
+  '.pdf',
   // text parser
   '.txt',
   '.md',
@@ -47,10 +47,7 @@ class DocumentExtractor {
   private parsers: DocumentExtractorParserParams[];
 
   constructor(options: DocumentExtractorOptions = {}) {
-    this.parsers = [
-      new TextParser(),
-      // new PdfParserViaLib()
-    ];
+    this.parsers = [new TextParser(), new PdfParserViaLib()];
 
     // Default to using library parsers (true)
     const useLibrary = options.useLibraryParsers !== false;
