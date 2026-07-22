@@ -12,21 +12,21 @@
     "serve:csr": "ms-cli web-app --exec serve-static --serveMode csr"
   },
   "dependencies": {
-    "flowbite": "^4.0.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-router": "^7.13.0",
-    "tailwindcss": "^4.1.18",
+    "flowbite": "^4.0.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.2.0",
+    "tailwindcss": "^4.3.3",
     "toolkit--local": "workspace:^"
   },
   "devDependencies": {
-    "@mainset/bundler-webpack": "^0.3.1",
-    "@mainset/cli": "^0.4.4",
-    "@tailwindcss/postcss": "^4.1.18",
-    "@types/react": "^19.2.9",
+    "@mainset/bundler-webpack": "^0.3.4",
+    "@mainset/cli": "^0.6.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "autoprefixer": "^10.4.23",
+    "autoprefixer": "^10.5.4",
     "cross-env": "^10.1.0"
   },
-  "packageManager": "pnpm@10.28.2"
+  "packageManager": "pnpm@11.15.1"
 }

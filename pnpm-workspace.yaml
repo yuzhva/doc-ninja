@@ -2,14 +2,26 @@ packages:
   - apps/*
   - packages/*
 
-# ignoredBuiltDependencies:
-#   - '@parcel/watcher'
-#   - core-js
-#   - esbuild
-#   - protobufjs
+overrides:
+  "@electron/rebuild>@electron/node-gyp": "-"
 
-onlyBuiltDependencies:
-  - electron
-  - electron-winstaller
-  - onnxruntime-node
-  - sharp
+minimumReleaseAgeExclude:
+  - '@dotenvx/dotenvx@2.17.1'
+  - '@dotenvx/tooling@1.0.3'
+  - '@mainset/builder-rslib@0.3.2'
+  - '@mainset/bundler-webpack@0.3.4'
+  - '@mainset/cli@0.6.0'
+  - '@mainset/dev-stack-fe@0.2.2'
+  - electron@43.2.0
+  - lint-staged@17.1.1
+  - react-dom@19.2.8
+  - react@19.2.8
+
+allowBuilds:
+  '@parcel/watcher': true
+  core-js: true
+  electron-winstaller: true
+  esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
