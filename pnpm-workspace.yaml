@@ -2,6 +2,12 @@ packages:
   - apps/*
   - packages/*
 
+# This satisfies the Forge check and ensures binaries are easy to find
+# Electron Forge (apps/electron) requires pnpm's node-linker to be "hoisted".
+# This is a pnpm-workspace-level setting, so it must live in the root .npmrc,
+# not in a package's own .npmrc.
+# nodeLinker: hoisted
+
 overrides:
   "@electron/rebuild>@electron/node-gyp": "-"
 

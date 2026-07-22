@@ -11,13 +11,30 @@ pnpm exec electron --version
 
 !IMPORTANT TO BUILD THE APP
 
+1. Install packages from root:
+
+```bash
+pnpm i // from root
 ```
-pnpm i // from root
-cd apps/electron
-pnpm i // from electron
-rm -rf node_modules // drop node_modules
-cd ../../
-pnpm i // from root
+
+2. Compile source code for everything: packages/toolkit, apps/ui-sauce, apps/be-krang
+
+```bash
+pnpm run build // for all
+```
+
+3. Uncomment `nodeLinker: hoisted` in `pnpm-workspace.yaml`
+
+```bash
+nodeLinker: hoisted
+```
+
+4. Go to electron app, install dependencies and make the app:
+
+```bash
+cd ./apps/electron
+pnpm i
+pnpm run make
 ```
 
 profit - ready to start
