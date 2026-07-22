@@ -1,5 +1,10 @@
-import type { PipelineType } from '@huggingface/transformers';
-import { Pipeline, pipeline } from '@huggingface/transformers';
+import type {
+  PipelineType,
+  SummarizationPipeline,
+  TextClassificationPipeline,
+  TokenClassificationPipeline,
+} from '@huggingface/transformers';
+import { pipeline } from '@huggingface/transformers';
 
 import { ClassificationProcessor } from '../processors/classification-processor.mjs';
 import { CustomProcessorRegistry } from '../processors/custom-processor-registry.mjs';
@@ -7,14 +12,14 @@ import { EntityProcessor } from '../processors/entity-processor.mjs';
 import { KeywordsProcessor } from '../processors/keywords-processor.mjs';
 import { SentimentProcessor } from '../processors/sentiment-processor.mjs';
 import { SummaryProcessor } from '../processors/summary-processor.mjs';
-import { AnalysisTask, ModelConfig } from '../types.mjs';
+import { AnalysisTask, LoadedPipeline, ModelConfig } from '../types.mjs';
 
 interface TaskProcessor {
   process(chunks: any[], config: any): Promise<any>;
 }
 
 class ModelManager {
-  private loadedModels = new Map<string, Pipeline>();
+  private loadedModels = new Map<string, LoadedPipeline>();
   private processors = new Map<AnalysisTask, TaskProcessor>();
   private modelVersions = new Map<string, string>();
   private modelsPath?: string;
@@ -111,12 +116,12 @@ class ModelManager {
       }
 
       // Load model pipeline with STRICT local-only settings
-      const model = (await pipeline(pipelineTask, modelName, {
+      const model = await pipeline(pipelineTask, modelName, {
         local_files_only: true, // 🔒 CRITICAL: NEVER download during analysis
         device: config?.device || 'cpu',
         dtype: config?.quantized !== false ? 'q8' : 'fp32', // Use dtype for quantization instead of {quantized: true}
         cache_dir: process.env.TRANSFORMERS_CACHE, // Use local cache only
-      })) as unknown as Pipeline;
+      });
 
       this.loadedModels.set(task, model);
       this.modelVersions.set(task, modelName);
@@ -143,7 +148,7 @@ class ModelManager {
     }
   }
 
-  private createProcessor(task: AnalysisTask, model?: Pipeline): void {
+  private createProcessor(task: AnalysisTask, model?: LoadedPipeline): void {
     let processor: TaskProcessor;
 
     // Check for custom processors first
@@ -170,19 +175,24 @@ class ModelManager {
       throw new Error(`Model required for built-in task: ${task}`);
     }
 
-    // Fallback to built-in processors
+    // Fallback to built-in processors. Each built-in task loads a specific,
+    // statically-known pipeline type (see the switch in loadModel above), so
+    // the loosely-typed `model` here is narrowed to the concrete class each
+    // processor actually expects.
     switch (task) {
       case 'sentiment':
-        processor = new SentimentProcessor(model);
+        processor = new SentimentProcessor(model as TextClassificationPipeline);
         break;
       case 'entities':
-        processor = new EntityProcessor(model);
+        processor = new EntityProcessor(model as TokenClassificationPipeline);
         break;
       case 'classification':
-        processor = new ClassificationProcessor(model);
+        processor = new ClassificationProcessor(
+          model as TextClassificationPipeline,
+        );
         break;
       case 'summary':
-        processor = new SummaryProcessor(model);
+        processor = new SummaryProcessor(model as SummarizationPipeline);
         break;
       case 'keywords':
         processor = new KeywordsProcessor();
@@ -202,7 +212,7 @@ class ModelManager {
    */
   registerCustomProcessor(
     taskName: string,
-    processorClass: new (model?: Pipeline, config?: any) => TaskProcessor,
+    processorClass: new (model?: LoadedPipeline, config?: any) => TaskProcessor,
     options: {
       description?: string;
       requiresModel?: boolean;
@@ -253,8 +263,7 @@ class ModelManager {
    * Get the custom processor registry (for internal use by analyzer)
    */
   getCustomProcessorRegistry():
-    | typeof CustomProcessorRegistry.prototype
-    | undefined {
+    typeof CustomProcessorRegistry.prototype | undefined {
     return this.customProcessorRegistry;
   }
 

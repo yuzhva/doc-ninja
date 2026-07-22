@@ -1,6 +1,4 @@
-import { Pipeline } from '@huggingface/transformers';
-
-import { AnalysisConfig, DocumentChunk } from '../../types.mjs';
+import { AnalysisConfig, DocumentChunk, LoadedPipeline } from '../../types.mjs';
 import { BaseProcessor } from '../base-processor.mjs';
 
 interface MedicalAnalysisResult {
@@ -72,7 +70,7 @@ class MedicalDocumentProcessor extends BaseProcessor {
     },
   };
 
-  constructor(model?: Pipeline, config?: any) {
+  constructor(model?: LoadedPipeline, config?: any) {
     super(model, config);
   }
 

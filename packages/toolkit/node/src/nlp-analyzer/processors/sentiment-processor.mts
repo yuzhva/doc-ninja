@@ -1,12 +1,12 @@
-import { Pipeline } from '@huggingface/transformers';
+import type { TextClassificationPipeline } from '@huggingface/transformers';
 
 import { TaskProcessor } from '../managers/model-manager.mjs';
 import { AnalysisConfig, DocumentChunk, SentimentResult } from '../types.mjs';
 
 class SentimentProcessor implements TaskProcessor {
-  private model: Pipeline;
+  private model: TextClassificationPipeline;
 
-  constructor(model: Pipeline) {
+  constructor(model: TextClassificationPipeline) {
     this.model = model;
   }
 

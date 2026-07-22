@@ -1,4 +1,4 @@
-import { Pipeline } from '@huggingface/transformers';
+import type { TokenClassificationPipeline } from '@huggingface/transformers';
 
 import { TaskProcessor } from '../managers/model-manager.mjs';
 import { AnalysisConfig, DocumentChunk, EntityResult } from '../types.mjs';
@@ -41,10 +41,13 @@ class EntityProcessor implements TaskProcessor {
     REGULATION: 'LEGAL',
   };
 
-  private model: Pipeline;
+  private model: TokenClassificationPipeline;
   private entityConfig?: EntityMappingConfig;
 
-  constructor(model: Pipeline, entityConfig?: EntityMappingConfig) {
+  constructor(
+    model: TokenClassificationPipeline,
+    entityConfig?: EntityMappingConfig,
+  ) {
     this.model = model;
     this.entityConfig = entityConfig;
   }

@@ -1,4 +1,4 @@
-import { Pipeline } from '@huggingface/transformers';
+import type { SummarizationPipeline } from '@huggingface/transformers';
 
 import { TaskProcessor } from '../managers/model-manager.mjs';
 import { AnalysisConfig, DocumentChunk } from '../types.mjs';
@@ -15,9 +15,9 @@ interface SummaryResult {
 }
 
 class SummaryProcessor implements TaskProcessor {
-  private model: Pipeline;
+  private model: SummarizationPipeline;
 
-  constructor(model: Pipeline) {
+  constructor(model: SummarizationPipeline) {
     this.model = model;
   }
 
