@@ -1,4 +1,5 @@
 import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerMSIX } from '@electron-forge/maker-msix';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
@@ -54,6 +55,28 @@ const config: ForgeConfig = {
     new MakerZIP({}),
     new MakerRpm({}),
     new MakerDeb({}),
+    new MakerMSIX({
+      // Pin to the installed SDK; electron-windows-msix otherwise derives the
+      // build-tooling version from packageMinOSVersion below and fails if that
+      // exact SDK isn't installed.
+      windowsKitVersion: '10.0.26100.0',
+      // Real tile/logo assets — without this, electron-windows-msix falls back to
+      // its bundled placeholder images, which fails Store cert 10.1.1.11.
+      packageAssets: path.join(__dirname, 'images/msix-assets'),
+      manifestVariables: {
+        appDisplayName: 'DocNinja',
+        // TODO: replace with the exact values from Partner Center > App identity before submitting
+        packageIdentity: 'REPLACE_WITH_PACKAGE_IDENTITY',
+        publisher: 'CN=REPLACE_WITH_PUBLISHER_CN',
+        publisherDisplayName: 'REPLACE_WITH_PUBLISHER_DISPLAY_NAME',
+        // Store rejects packages targeting MinVersion <= 10.0.17134.0; default in
+        // electron-windows-msix (10.0.14393.0) is below that, so set it explicitly.
+        // 10.0.19041.0 (Win10 2004) also covers Windows 11 since both share the
+        // "Windows.Desktop" device family — there's no separate way to cap at Win10 only.
+        packageMinOSVersion: '10.0.19041.0',
+        packageMaxOSVersionTested: '10.0.19041.0',
+      },
+    }),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
