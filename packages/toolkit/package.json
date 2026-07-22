@@ -32,17 +32,17 @@
     "demo:nlp--parallel": "tsx ./node/examples/nlp-analyzer/parallel-processing.example.ts"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.8.1",
-    "mammoth": "^1.11.0",
-    "natural": "^8.1.0",
-    "pdfjs-dist": "^5.4.624",
+    "@huggingface/transformers": "^4.2.0",
+    "mammoth": "^1.12.0",
+    "natural": "^8.1.1",
+    "pdfjs-dist": "^6.1.200",
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {
-    "@mainset/cli": "^0.4.4",
-    "@types/node": "^25.0.10",
+    "@mainset/cli": "^0.6.0",
+    "@types/node": "^26.1.1",
     "@types/word-extractor": "^1.0.6",
     "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@10.28.2"
+  "packageManager": "pnpm@11.15.1"
 }

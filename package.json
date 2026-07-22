@@ -3,23 +3,24 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "purge:workspace--node_modules": "for /d /r . %d in (node_modules) do @if exist \"%d\" rmdir /s /q \"%d\"",
-    "purge:workspace--dist": "for /d /r . %d in (dist) do @if exist \"%d\" rmdir /s /q \"%d\"",
-    "purge": "npm run purge:workspace--node_modules && npm run purge:workspace--dist",
+    "purge:workspace--node_modules": "ms-cli purge --target node_modules",
+    "purge:workspace--dist": "ms-cli purge --target dist",
+    "purge": "ms-cli purge",
     "build:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" build",
     "dev:apps": "pnpm --filter \"./packages/**\" --filter \"./apps/**\" --parallel dev",
     "el:start": "pnpm --filter \"./apps/electron\" start",
     "el:make": "pnpm --filter \"./apps/electron\" make"
   },
   "devDependencies": {
-    "@mainset/dev-stack-fe": "^0.2.0",
+    "@mainset/cli": "^0.6.0",
+    "@mainset/dev-stack-fe": "^0.2.2",
     "cross-env": "^10.1.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.7.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
-    "nodemon": "^3.1.11",
-    "prettier": "^3.8.1",
-    "stylelint": "^16.26.1"
+    "lint-staged": "^17.1.1",
+    "nodemon": "^3.1.14",
+    "prettier": "^3.9.6",
+    "stylelint": "^17.14.1"
   },
-  "packageManager": "pnpm@10.28.2"
+  "packageManager": "pnpm@11.15.1"
 }
