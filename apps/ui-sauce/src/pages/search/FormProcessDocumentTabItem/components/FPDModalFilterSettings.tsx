@@ -74,6 +74,19 @@ const FPDModalFilterSettings = ({
     setConfigJson(JSON.stringify(serializeFilterCategories(next), null, 2));
   };
 
+  // Sync JSON -> Form once the user is done editing (not on every keystroke,
+  // since rebuilding categories mints new ids and would reset the
+  // collapsed/expanded state on every change). Silently skip invalid JSON;
+  // the user will get a proper error on Save.
+  const handleConfigJsonBlur = () => {
+    try {
+      const parsed = JSON.parse(configJson);
+      setFilterCategories(buildFilterCategories(parsed));
+    } catch (e) {
+      // Leave the Form tab as-is until the JSON becomes valid again.
+    }
+  };
+
   React.useEffect(() => {
     if (isOpen) {
       try {
@@ -273,7 +286,11 @@ const FPDModalFilterSettings = ({
         id: createEntityId(),
         labelFilterTitle: '',
         labelFilterDescription: '',
-        filterRules: [],
+        // Prefilled with one empty rule so the category isn't blank on
+        // creation — user doesn't need an extra click to add the first rule.
+        filterRules: [
+          { id: createEntityId(), labelOption: '', containsText: [] },
+        ],
       },
     ]);
   };
@@ -357,7 +374,7 @@ const FPDModalFilterSettings = ({
                     key={category.id}
                     className="rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden"
                   >
-                    <div className="flex items-center justify-between gap-3 bg-gray-50 px-4 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                    <div className="flex items-end gap-3 bg-gray-50 px-4 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                       <button
                         type="button"
                         onClick={() => removeFilterCategory(category.id)}
@@ -382,56 +399,72 @@ const FPDModalFilterSettings = ({
                         <span className="sr-only">Видалити категорію</span>
                       </button>
                       <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          value={category.labelFilterTitle}
-                          onChange={(e) =>
-                            updateCategoryField(
-                              category.id,
-                              'labelFilterTitle',
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Назва фільтра"
-                          className="block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm font-semibold"
-                        />
-                        <input
-                          type="text"
-                          value={category.labelFilterDescription}
-                          onChange={(e) =>
-                            updateCategoryField(
-                              category.id,
-                              'labelFilterDescription',
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Опис фільтра"
-                          className="block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => toggleCategoryCollapsed(category.id)}
-                          className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 focus:outline-none cursor-pointer"
-                          title={isCollapsed ? 'Розгорнути' : 'Згорнути'}
-                        >
-                          <svg
-                            className={`w-4 h-4 transition-transform duration-200 ${
-                              isCollapsed ? '' : 'rotate-180'
-                            }`}
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                            xmlns="http://www.w3.org/2000/svg"
+                        <div>
+                          <label
+                            htmlFor={`category-title-${category.id}`}
+                            className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
                           >
-                            <path
-                              fillRule="evenodd"
-                              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                              clipRule="evenodd"
-                            ></path>
-                          </svg>
-                        </button>
+                            Назва фільтра
+                          </label>
+                          <input
+                            id={`category-title-${category.id}`}
+                            type="text"
+                            value={category.labelFilterTitle}
+                            onChange={(e) =>
+                              updateCategoryField(
+                                category.id,
+                                'labelFilterTitle',
+                                e.target.value,
+                              )
+                            }
+                            placeholder="напр. Тип документа"
+                            className="block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            htmlFor={`category-desc-${category.id}`}
+                            className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
+                          >
+                            Опис фільтра
+                          </label>
+                          <input
+                            id={`category-desc-${category.id}`}
+                            type="text"
+                            value={category.labelFilterDescription}
+                            onChange={(e) =>
+                              updateCategoryField(
+                                category.id,
+                                'labelFilterDescription',
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Короткий опис для користувача"
+                            className="block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm"
+                          />
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleCategoryCollapsed(category.id)}
+                        className="shrink-0 p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 focus:outline-none cursor-pointer"
+                        title={isCollapsed ? 'Розгорнути' : 'Згорнути'}
+                      >
+                        <svg
+                          className={`w-4 h-4 transition-transform duration-200 ${
+                            isCollapsed ? '' : 'rotate-180'
+                          }`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                            clipRule="evenodd"
+                          ></path>
+                        </svg>
+                      </button>
                     </div>
 
                     {!isCollapsed && (
@@ -439,54 +472,77 @@ const FPDModalFilterSettings = ({
                         {category.filterRules.map((rule) => (
                           <div
                             key={rule.id}
-                            className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_auto] gap-3 items-center"
+                            className="relative rounded-lg border border-gray-200 dark:border-gray-600 p-3"
                           >
-                            <input
-                              type="text"
-                              value={rule.labelOption}
-                              onChange={(e) =>
-                                updateFilterRuleLabel(
-                                  category.id,
-                                  rule.id,
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Назва опції"
-                              className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                            />
-                            <input
-                              key={`${rule.id}:${rule.containsText.join('|')}`}
-                              type="text"
-                              defaultValue={rule.containsText.join(', ')}
-                              onBlur={(e) =>
-                                updateFilterRuleContainsText(
-                                  category.id,
-                                  rule.id,
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Ключові слова через кому"
-                              className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                            />
                             <button
                               type="button"
                               onClick={() =>
                                 removeFilterRule(category.id, rule.id)
                               }
-                              className="flex items-center justify-center w-10 h-10 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 shrink-0 justify-self-start cursor-pointer"
+                              className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
                               title="Видалити фільтр"
                             >
                               −
                             </button>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
+                              <div>
+                                <label
+                                  htmlFor={`rule-label-${rule.id}`}
+                                  className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
+                                >
+                                  Назва опції
+                                </label>
+                                <input
+                                  id={`rule-label-${rule.id}`}
+                                  type="text"
+                                  value={rule.labelOption}
+                                  onChange={(e) =>
+                                    updateFilterRuleLabel(
+                                      category.id,
+                                      rule.id,
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="напр. Наказ"
+                                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label
+                                  htmlFor={`rule-contains-${rule.id}`}
+                                  className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
+                                >
+                                  Ключові слова (через кому)
+                                </label>
+                                <input
+                                  id={`rule-contains-${rule.id}`}
+                                  key={`${rule.id}:${rule.containsText.join('|')}`}
+                                  type="text"
+                                  defaultValue={rule.containsText.join(', ')}
+                                  onBlur={(e) =>
+                                    updateFilterRuleContainsText(
+                                      category.id,
+                                      rule.id,
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="слово1, слово2"
+                                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                                />
+                              </div>
+                            </div>
                           </div>
                         ))}
-                        <button
-                          type="button"
-                          onClick={() => addFilterRule(category.id)}
-                          className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
-                        >
-                          + Додати фільтр
-                        </button>
+                        <div className="flex justify-end pr-2">
+                          <button
+                            type="button"
+                            onClick={() => addFilterRule(category.id)}
+                            className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
+                            title="Додати фільтр"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -513,6 +569,7 @@ const FPDModalFilterSettings = ({
             id="filterConfigJson"
             value={configJson}
             onChange={(e) => setConfigJson(e.target.value)}
+            onBlur={handleConfigJsonBlur}
             className="block p-2.5 w-full h-96 text-xs font-mono text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500 resize-y"
             placeholder="[]"
           ></textarea>

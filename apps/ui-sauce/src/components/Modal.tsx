@@ -1,5 +1,25 @@
 import React from 'react';
 
+// Reference-counted so nested/sibling modals don't fight over restoring the
+// body's original overflow value — only the last one to close restores it.
+let bodyScrollLockCount = 0;
+let previousBodyOverflow = '';
+
+const lockBodyScroll = () => {
+  if (bodyScrollLockCount === 0) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  bodyScrollLockCount++;
+};
+
+const unlockBodyScroll = () => {
+  bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+  if (bodyScrollLockCount === 0) {
+    document.body.style.overflow = previousBodyOverflow;
+  }
+};
+
 const Modal = ({
   title,
   isOpen,
@@ -17,6 +37,12 @@ const Modal = ({
   maxWidthClassName?: string;
   bodyClassName?: string;
 }) => {
+  React.useEffect(() => {
+    if (!isOpen) return;
+    lockBodyScroll();
+    return unlockBodyScroll;
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (

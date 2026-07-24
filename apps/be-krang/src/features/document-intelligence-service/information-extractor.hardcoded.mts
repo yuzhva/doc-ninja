@@ -24,7 +24,7 @@ type FindResult = {
   after: string;
 };
 
-class InformationExtractor {
+class InformationExtractorHardcoded {
   /**
    * Finds the document date from the header.
    * Expects DD.MM.YYYY format usually found in the first few paragraphs.
@@ -583,5 +583,5 @@ class InformationExtractor {
   }
 }
 
-export { InformationExtractor };
+export { InformationExtractorHardcoded };
 export type { ExtractedInfo };
