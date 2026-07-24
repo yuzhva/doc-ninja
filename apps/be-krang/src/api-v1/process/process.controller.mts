@@ -8,6 +8,7 @@ import {
   ExcelReportGenerator,
 } from '../../features/document-intelligence-service/index.mjs';
 import { InformationExtractor } from '../../features/document-intelligence-service/information-extractor.mjs';
+import type { ExtractorSchema } from '../../features/document-intelligence-service/information-extractor.mjs';
 
 const postProcessDocuments = async (req: Request, res: Response) => {
   try {
@@ -44,8 +45,12 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       searchOptions,
     );
 
-    const extractedResults =
-      await InformationExtractor.extractSearchResults(searchResults);
+    const extractorSchema: ExtractorSchema | undefined =
+      req.body.extractorSchema;
+    const extractedResults = await InformationExtractor.extractSearchResults(
+      extractorSchema,
+      searchResults,
+    );
 
     res.status(StatusCodes.OK).json({
       batchIndex: 1,

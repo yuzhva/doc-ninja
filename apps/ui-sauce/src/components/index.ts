@@ -4,6 +4,8 @@ export { Checkbox } from './Checkbox';
 export { FilterDropdown } from './FilterDropdown';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Modal } from './Modal';
+export { Select } from './Select';
+export type { SelectOption } from './Select';
 export { Tabs } from './Tabs';
 export { Toast } from './Toast';
 export type { ToastMessage } from './Toast';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileSystemItem } from 'toolkit--local/browser';
 
-import { Checkbox } from '../../../components';
+import { Checkbox, Select } from '../../../components';
 import { fetchRequest } from '../../../utils';
 import {
   FormInputFileSelect,
@@ -11,6 +11,7 @@ import type { FormPageSectionProps } from '../../process/process-page.types';
 import {
   TableProcessedDocumentResults,
   calculateDynamicValues,
+  getExtractedFieldOutputs,
 } from './FormProcessDocumentTabItem.components';
 import type {
   GroupedProcessedResults,
@@ -18,6 +19,13 @@ import type {
   SearchResultItem,
 } from './FormProcessDocumentTabItem.types';
 import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
+import {
+  FPDModalParserConfigSettings,
+  readStoredParserConfigs,
+} from './components/FPDModalParserConfigSettings';
+
+const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
+  'docNinja_selectedParserConfigName';
 
 const FormProcessDocumentTabItem = ({
   onSelectSourceDirectory,
@@ -63,6 +71,73 @@ const FormProcessDocumentTabItem = ({
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
   const [allowFuzzyMatch, setAllowFuzzyMatch] = React.useState(true);
+  const [sortOrder, setSortOrder] = React.useState('desc');
+
+  // Parser config: determines how the backend extracts fields from documents.
+  // Reloaded from localStorage whenever parserConfigsVersion changes (i.e. after
+  // the settings modal saves), same pattern as filterConfigs in TableProcessedDocumentResults.
+  const [isParserConfigSettingsOpen, setIsParserConfigSettingsOpen] =
+    React.useState(false);
+  const [parserConfigsVersion, setParserConfigsVersion] = React.useState(0);
+  const parserConfigs: any[] = React.useMemo(() => {
+    return readStoredParserConfigs();
+  }, [parserConfigsVersion]);
+
+  const [selectedParserConfigName, setSelectedParserConfigName] =
+    React.useState(() => {
+      if (typeof window === 'undefined') return '';
+      try {
+        return (
+          localStorage.getItem(SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY) || ''
+        );
+      } catch {
+        return '';
+      }
+    });
+
+  // Keep the selection valid whenever the parser config list changes
+  // (e.g. an entry was renamed or removed via the settings modal).
+  // An empty selection ('') represents the "none" option and is always valid.
+  React.useEffect(() => {
+    if (parserConfigs.length === 0 || selectedParserConfigName === '') return;
+
+    const stillExists = parserConfigs.some(
+      (c: any) => c.name === selectedParserConfigName,
+    );
+
+    if (!stillExists) {
+      setSelectedParserConfigName('');
+    }
+  }, [parserConfigs, selectedParserConfigName]);
+
+  React.useEffect(() => {
+    try {
+      if (selectedParserConfigName) {
+        localStorage.setItem(
+          SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY,
+          selectedParserConfigName,
+        );
+      } else {
+        localStorage.removeItem(SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn('Failed to save selected parser config to storage', e);
+    }
+  }, [selectedParserConfigName]);
+
+  const handleParserConfigSettingsSave = () => {
+    setIsParserConfigSettingsOpen(false);
+    setParserConfigsVersion((v) => v + 1);
+  };
+
+  // The schema currently selected in the UI — used both to interpret results
+  // already on screen (table columns, excel export) and, per-request, as the
+  // default for postProcessDocuments below (which still allows an explicit
+  // formDataJSON.parserConfigName override to take precedence).
+  const selectedParserSchema = React.useMemo(
+    () => parserConfigs.find((c: any) => c.name === selectedParserConfigName),
+    [parserConfigs, selectedParserConfigName],
+  );
 
   // Persist state changes
   React.useEffect(() => {
@@ -176,6 +251,12 @@ const FormProcessDocumentTabItem = ({
     Parameters<typeof initSubmitHandler>[0]
   >(
     async (formDataJSON) => {
+      const selectedParserConfig = parserConfigs.find(
+        (c: any) =>
+          c.name ===
+          (formDataJSON.parserConfigName || selectedParserConfigName),
+      );
+
       const payload = {
         ...formDataJSON,
         sourcePath:
@@ -184,6 +265,9 @@ const FormProcessDocumentTabItem = ({
           '',
         searchScopedPaths: Array.from(selectedPaths),
         isTypoToleranceEnabled: allowFuzzyMatch,
+        // Sent to the backend so it knows which pipelines/compounds to
+        // parse the matched documents with. API wiring TBD server-side.
+        extractorSchema: selectedParserConfig,
       };
 
       return executeBatch(
@@ -291,6 +375,8 @@ const FormProcessDocumentTabItem = ({
       directoryData, // Updated dependency
       selectedPaths,
       allowFuzzyMatch,
+      parserConfigs,
+      selectedParserConfigName,
     ],
   );
 
@@ -316,8 +402,8 @@ const FormProcessDocumentTabItem = ({
         console.warn('Failed to load filter config for export', e);
       }
 
-      // 2. Define Columns (Standard + Dynamic)
-      const standardCols = [
+      // 2. Define Columns (Base + Parser Schema SPREADSHEET fields + Filter Configs)
+      const baseCols = [
         { header: 'Input Name', key: 'inputName', options: { wch: 25 } },
         {
           header: 'Found In Document',
@@ -329,14 +415,16 @@ const FormProcessDocumentTabItem = ({
           key: 'foundDeclension',
           options: { wch: 25 },
         },
-        { header: 'Summary', key: 'summary', options: { wch: 80 } },
-        {
-          header: 'Document Number',
-          key: 'documentNumber',
-          options: { wch: 15 },
-        },
-        { header: 'Document Day', key: 'actionDate', options: { wch: 15 } },
       ];
+
+      const { spreadsheetFields, primaryFieldId } =
+        getExtractedFieldOutputs(selectedParserSchema);
+
+      const schemaCols = spreadsheetFields.map((field) => ({
+        header: field.label,
+        key: field.id,
+        options: { wch: field.id === primaryFieldId ? 80 : 25 },
+      }));
 
       const dynamicCols = filterConfigs.map((conf) => ({
         header: conf.labelFilterTitle,
@@ -344,7 +432,7 @@ const FormProcessDocumentTabItem = ({
         options: { wch: 25 },
       }));
 
-      const allColumns = [...standardCols, ...dynamicCols];
+      const allColumns = [...baseCols, ...schemaCols, ...dynamicCols];
 
       // 3. Process Rows: Map standard fields & Calculate dynamic fields
       const processedRows = flattenedGroups.flatMap((group: any) => {
@@ -360,16 +448,18 @@ const FormProcessDocumentTabItem = ({
             inputName: extracted.searchQuery,
             foundInDocument: extracted.foundInDocument,
             foundDeclension: extracted.matchedText,
-            summary: extracted.summary,
-            documentNumber: extracted.documentNumber,
-            actionDate: extracted.actionDate,
           };
+
+          spreadsheetFields.forEach((field) => {
+            row[field.id] = extracted[field.id];
+          });
 
           // Calculate dynamic fields using shared helper
           // The helper expects { extracted: ... } structure for consistency
           const dynamicValues = calculateDynamicValues(
             { extracted },
             filterConfigs,
+            primaryFieldId,
           );
 
           return { ...row, ...dynamicValues };
@@ -457,7 +547,7 @@ const FormProcessDocumentTabItem = ({
         console.error('Failed to export filtered results:', error);
       }
     },
-    [],
+    [selectedParserSchema],
   );
 
   // const handleTextAreaOnChange = React.useCallback((e) => {
@@ -472,14 +562,16 @@ const FormProcessDocumentTabItem = ({
           data-testid="flowbite-card"
         >
           <div className="flex h-full flex-col justify-center gap-4 p-6">
+            {/*
             <h3 className="mb-4 text-xl font-bold dark:text-white">
               Пошук в документах
             </h3>
+            */}
             <form onSubmit={initSubmitHandler(postProcessDocuments)}>
               <div
                 className={`transition-all duration-500 ease-in-out ${
                   isSettingsExpanded
-                    ? 'max-h-[1000px] opacity-100 py-4'
+                    ? 'max-h-[1000px] opacity-100 pb-4'
                     : 'max-h-0 opacity-0 overflow-hidden'
                 }`}
               >
@@ -544,21 +636,17 @@ const FormProcessDocumentTabItem = ({
 
                   {/* Sort Order - Moved to new line */}
                   <div className="sm:col-span-2">
-                    <label
-                      htmlFor="sortOrder"
-                      className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
-                    >
-                      Сортування (дата)
-                    </label>
-                    <select
+                    <Select
                       id="sortOrder"
                       name="sortOrder"
-                      className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                      defaultValue="desc"
-                    >
-                      <option value="desc">Новіші спочатку</option>
-                      <option value="asc">Старіші спочатку</option>
-                    </select>
+                      label="Сортування (дата)"
+                      value={sortOrder}
+                      onChange={setSortOrder}
+                      options={[
+                        { value: 'desc', label: 'Новіші спочатку' },
+                        { value: 'asc', label: 'Старіші спочатку' },
+                      ]}
+                    />
                   </div>
 
                   <div className="sm:col-span-2 grid grid-cols-2 gap-4 pb-2">
@@ -633,6 +721,62 @@ const FormProcessDocumentTabItem = ({
                   />
                 </div>
 
+                {/* Parser Config Selection */}
+                {directoryData?.structure && (
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor="parserConfigName"
+                      className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+                    >
+                      Обробка знайденого тексту
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <Select
+                          id="parserConfigName"
+                          name="parserConfigName"
+                          value={selectedParserConfigName}
+                          onChange={setSelectedParserConfigName}
+                          options={[
+                            { value: '', label: 'Без обробки' },
+                            ...parserConfigs.map((c: any) => ({
+                              value: c.name,
+                              label: c.name,
+                            })),
+                          ]}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsParserConfigSettingsOpen(true)}
+                        title="Налаштування парсера документів"
+                        className="shrink-0 rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth="2"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Directory Tree View */}
                 {directoryData?.structure &&
                   directoryData.structure.fsNestedItems &&
@@ -657,12 +801,19 @@ const FormProcessDocumentTabItem = ({
             </form>
           </div>
         </div>
+
+        <FPDModalParserConfigSettings
+          isOpen={isParserConfigSettingsOpen}
+          onClose={() => setIsParserConfigSettingsOpen(false)}
+          onSave={handleParserConfigSettingsSave}
+        />
       </div>
 
       <div className="lg:col-span-3">
         <TableProcessedDocumentResults
           results={processedResults}
           onBtnExportClick={postFilteredResultExport}
+          parserSchema={selectedParserSchema}
         />
       </div>
     </div>

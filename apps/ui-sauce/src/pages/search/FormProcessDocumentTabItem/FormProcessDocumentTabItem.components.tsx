@@ -13,17 +13,69 @@ import { FPDModalFilterSettings } from './components/FPDModalFilterSettings';
 import { FrontendInformationExtractor } from './frontend-information-extractor';
 
 // Helper to calculate dynamic values including legacy dependencies
-const calculateDynamicValues = (item: any, filterConfigs: any[]) => {
+const calculateDynamicValues = (
+  item: any,
+  filterConfigs: any[],
+  primaryFieldId: string | null,
+) => {
   const dynamicValues: Record<string, string | null> = {};
+  const primaryText = primaryFieldId
+    ? item.extracted?.[primaryFieldId]
+    : undefined;
 
   filterConfigs.forEach((conf) => {
     dynamicValues[conf.id] = FrontendInformationExtractor.determineValue(
-      item.extracted?.summary,
+      primaryText,
       conf,
     );
   });
 
   return dynamicValues;
+};
+
+// A field/compound is only relevant to a given FE surface if it opted into
+// that destination (or was marked as the primary search-result text) — every
+// other detail of the parser schema (regex, scan direction, ...) is a BE
+// concern the FE never needs to know about.
+type ExtractedTableField = { id: string; label: string };
+
+const getExtractedFieldOutputs = (
+  parserSchema: any,
+): {
+  tableFields: ExtractedTableField[];
+  spreadsheetFields: ExtractedTableField[];
+  primaryFieldId: string | null;
+} => {
+  const pipelines = Array.isArray(parserSchema?.config?.pipelines)
+    ? parserSchema.config.pipelines
+    : [];
+  const compounds = Array.isArray(parserSchema?.config?.compounds)
+    ? parserSchema.config.compounds
+    : [];
+  const allFields = [...pipelines, ...compounds];
+
+  const fieldsForDestination = (destination: string): ExtractedTableField[] =>
+    allFields
+      .filter((field: any) =>
+        field?.output?.useIn?.some((dest: any) => dest?.type === destination),
+      )
+      .map((field: any) => ({
+        id: field.id,
+        label: field.output?.label || field.id,
+      }));
+
+  // BE always emits a 'summary' compound (see DEFAULT_EXTRACTOR_SCHEMA), so
+  // fall back to it whenever no field in the schema was explicitly marked
+  // primary — otherwise no-template/default-template searches show no content.
+  const primaryFieldId =
+    allFields.find((field: any) => field?.output?.isPrimarySearchResponseText)
+      ?.id ?? 'summary';
+
+  return {
+    tableFields: fieldsForDestination('TABLE'),
+    spreadsheetFields: fieldsForDestination('SPREADSHEET'),
+    primaryFieldId,
+  };
 };
 
 // Component for individual expandable row
@@ -34,6 +86,8 @@ const ProcessedResultRow = ({
   onOpenFile,
   onViewContent,
   filterConfigs, // Add prop
+  tableFields,
+  primaryFieldId,
 }: {
   result: any;
   isExpanded: boolean;
@@ -41,22 +95,27 @@ const ProcessedResultRow = ({
   onOpenFile: (result: any) => void;
   onViewContent: (result: any) => void;
   filterConfigs: any[]; // Add type
+  tableFields: ExtractedTableField[];
+  primaryFieldId: string | null;
 }) => {
   // Aggregate data from items in the group
   const items = result.items || [result];
   const firstItem = items[0];
   const docName = result.docName || firstItem?.extracted?.foundInDocument;
   const filePath = result.search?.doc?.originalFilePath;
-  const documentNumber = firstItem?.extracted?.documentNumber;
 
   // Pre-calculate dynamic values for each item in this group
   // Returns: [ { item: item, dynamicValues: { [filterId]: string | null } }, ... ]
   const enrichedItems = React.useMemo(() => {
     return items.map((item: any) => {
-      const dynamicValues = calculateDynamicValues(item, filterConfigs);
+      const dynamicValues = calculateDynamicValues(
+        item,
+        filterConfigs,
+        primaryFieldId,
+      );
       return { item, dynamicValues };
     });
-  }, [items, filterConfigs]);
+  }, [items, filterConfigs, primaryFieldId]);
 
   // Aggregate unique values for the closed row view (e.g. show all statuses found in group)
   const aggregatedValues = React.useMemo(() => {
@@ -140,10 +199,15 @@ const ProcessedResultRow = ({
           </div>
         </td>
 
-        {/* Document Number Column */}
-        <td className="px-6 py-4 whitespace-nowrap align-middle text-center text-sm text-gray-700 dark:text-gray-300 font-medium">
-          {documentNumber || '---'}
-        </td>
+        {/* Dynamic Columns based on Parser Schema TABLE fields */}
+        {tableFields.map((field) => (
+          <td
+            key={field.id}
+            className="px-6 py-4 whitespace-nowrap align-middle text-center text-sm text-gray-700 dark:text-gray-300 font-medium"
+          >
+            {firstItem?.extracted?.[field.id] || '---'}
+          </td>
+        ))}
 
         {/* Dynamic Columns based on Filter Configs */}
         {filterConfigs.map((conf, index) => {
@@ -176,7 +240,7 @@ const ProcessedResultRow = ({
       {/* Expanded Content Row */}
       {isExpanded && (
         <tr className="bg-gray-50 dark:bg-gray-900/40 border-b dark:border-gray-700">
-          <td colSpan={3 + filterConfigs.length}>
+          <td colSpan={2 + tableFields.length + filterConfigs.length}>
             <div className="sticky left-0 z-10 w-[100cqw] bg-gray-50 dark:bg-gray-900/40 py-4 pl-10 pr-6 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
               {enrichedItems.map(({ item, dynamicValues }, idx: number) => (
                 <div
@@ -216,12 +280,16 @@ const ProcessedResultRow = ({
 
                   <div className="relative group">
                     <HighlightedText
-                      text={item.extracted.summary}
+                      text={
+                        primaryFieldId ? item.extracted[primaryFieldId] : ''
+                      }
                       highlights={[item.extracted.matchedText]}
                     />
                     <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <ButtonCopyToClipboard
-                        textToCopy={item.extracted.summary}
+                        textToCopy={
+                          primaryFieldId ? item.extracted[primaryFieldId] : ''
+                        }
                         placement="left"
                       />
                     </div>
@@ -241,11 +309,15 @@ const ProcessedResultGroup = ({
   items,
   onViewContent,
   filterConfigs, // Add prop
+  tableFields,
+  primaryFieldId,
 }: {
   searchQuery: string;
   items: any[];
   onViewContent: (item: any) => void;
   filterConfigs: any[]; // Add prop type
+  tableFields: ExtractedTableField[];
+  primaryFieldId: string | null;
 }) => {
   const [isOpen, setIsOpen] = React.useState(true);
 
@@ -375,9 +447,15 @@ const ProcessedResultGroup = ({
                   </div>
                 </th>
                 <th className="px-6 py-3 whitespace-nowrap">Шлях</th>
-                <th className="px-6 py-3 whitespace-nowrap w-px text-center">
-                  Номер
-                </th>
+                {/* Dynamic Headers based on Parser Schema TABLE fields */}
+                {tableFields.map((field) => (
+                  <th
+                    key={field.id}
+                    className="px-6 py-3 whitespace-nowrap w-px text-center"
+                  >
+                    {field.label}
+                  </th>
+                ))}
                 {/* Dynamic Headers */}
                 {filterConfigs.map((conf, idx) => (
                   <th
@@ -399,6 +477,8 @@ const ProcessedResultGroup = ({
                   onOpenFile={handleOpenFile}
                   onViewContent={onViewContent}
                   filterConfigs={filterConfigs} // Pass config
+                  tableFields={tableFields}
+                  primaryFieldId={primaryFieldId}
                 />
               ))}
             </tbody>
@@ -409,7 +489,15 @@ const ProcessedResultGroup = ({
   );
 };
 
-const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
+const TableProcessedDocumentResults = ({
+  results,
+  onBtnExportClick,
+  parserSchema,
+}: {
+  results: any;
+  onBtnExportClick: (filteredResults: any) => void;
+  parserSchema?: any;
+}) => {
   // Removed internal filter open/close state logic as it is now inside FilterDropdown
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
@@ -451,6 +539,13 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
     }));
   }, [configVersion]); // Re-run when version changes
 
+  // parserSchema is owned by the parent (it also decides what gets sent to
+  // the BE) — derive only the FE-relevant projection of it here.
+  const { tableFields, primaryFieldId } = React.useMemo(
+    () => getExtractedFieldOutputs(parserSchema),
+    [parserSchema],
+  );
+
   // Filtering logic
   const filteredResults = React.useMemo(() => {
     if (!results) return {};
@@ -470,10 +565,10 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
 
           // 1b. If the document name/key didn't match the search term,
           // narrow the group down to only the sub-items whose own content
-          // (item.extracted.summary) actually contains it.
+          // (the schema's primary field) actually contains it.
           if (searchTerm && !matchesKey) {
             const matchingGroupItems = groupItems.filter((item: any) =>
-              (item.extracted?.summary || '')
+              ((primaryFieldId && item.extracted?.[primaryFieldId]) || '')
                 .toLowerCase()
                 .includes(searchTermLower),
             );
@@ -503,7 +598,11 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
             // Check if ANY item in the group has a matching property value
             // Value is calculated dynamically on the frontend now using helper
             const hasMatch = groupItems.some((item: any) => {
-              const vals = calculateDynamicValues(item, filterConfigs);
+              const vals = calculateDynamicValues(
+                item,
+                filterConfigs,
+                primaryFieldId,
+              );
               const dynamicVal = vals[conf.id];
               return dynamicVal && selectedOptions.includes(dynamicVal);
             });
@@ -528,7 +627,14 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
     });
 
     return filtered;
-  }, [results, searchTerm, selectedFilters, maxResults, filterConfigs]);
+  }, [
+    results,
+    searchTerm,
+    selectedFilters,
+    maxResults,
+    filterConfigs,
+    primaryFieldId,
+  ]);
 
   const hasResults = filteredResults && Object.keys(filteredResults).length > 0;
 
@@ -583,10 +689,10 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
     if (!previewItem || !filterConfigs) return [];
     const items = previewItem.items || [previewItem];
     return items.map((item: any) => {
-      const vals = calculateDynamicValues(item, filterConfigs);
+      const vals = calculateDynamicValues(item, filterConfigs, primaryFieldId);
       return { item, vals };
     });
-  }, [previewItem, filterConfigs]);
+  }, [previewItem, filterConfigs, primaryFieldId]);
 
   const handleSaveSettings = () => {
     setIsSettingsOpen(false);
@@ -945,6 +1051,8 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
                   items={items}
                   onViewContent={handleViewContent}
                   filterConfigs={filterConfigs} // Pass config
+                  tableFields={tableFields}
+                  primaryFieldId={primaryFieldId}
                 />
               ),
             )}
@@ -955,4 +1063,9 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
   );
 };
 
-export { calculateDynamicValues, TableProcessedDocumentResults };
+export {
+  calculateDynamicValues,
+  getExtractedFieldOutputs,
+  TableProcessedDocumentResults,
+};
+export type { ExtractedTableField };
