@@ -459,39 +459,60 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
 
     Object.entries(results).forEach(([searchQuery, items]) => {
       // 1. Filter by Search Term (on keys/searchQuery)
-      if (
-        searchTerm &&
-        !searchQuery.toLowerCase().includes(searchTerm.toLowerCase())
-      ) {
-        return;
-      }
+      const searchTermLower = searchTerm.toLowerCase();
+      const matchesKey =
+        !searchTerm || searchQuery.toLowerCase().includes(searchTermLower);
 
       // 2. Filter items within the group
-      let filteredItems = (items as any[]).filter((group) => {
-        const groupItems = group.items || [group];
+      let filteredItems = (items as any[])
+        .map((group) => {
+          const groupItems = group.items || [group];
 
-        // Dynamic Filter Loop
-        const matchesAllFilters = filterConfigs.every((conf) => {
-          // Use 'id' from config as both the State Key and the Data Field Key
-          const filterStateId = conf.id;
-          const selectedOptions = selectedFilters[filterStateId];
+          // 1b. If the document name/key didn't match the search term,
+          // narrow the group down to only the sub-items whose own content
+          // (item.extracted.summary) actually contains it.
+          if (searchTerm && !matchesKey) {
+            const matchingGroupItems = groupItems.filter((item: any) =>
+              (item.extracted?.summary || '')
+                .toLowerCase()
+                .includes(searchTermLower),
+            );
 
-          // If no options selected for this filter, skip (pass)
-          if (!selectedOptions || selectedOptions.length === 0) return true;
+            if (matchingGroupItems.length === 0) return null;
 
-          // Check if ANY item in the group has a matching property value
-          // Value is calculated dynamically on the frontend now using helper
-          const hasMatch = groupItems.some((item: any) => {
-            const vals = calculateDynamicValues(item, filterConfigs);
-            const dynamicVal = vals[conf.id];
-            return dynamicVal && selectedOptions.includes(dynamicVal);
+            return group.items
+              ? { ...group, items: matchingGroupItems }
+              : group;
+          }
+
+          return group;
+        })
+        .filter((group): group is any => group !== null)
+        .filter((group) => {
+          const groupItems = group.items || [group];
+
+          // Dynamic Filter Loop
+          const matchesAllFilters = filterConfigs.every((conf) => {
+            // Use 'id' from config as both the State Key and the Data Field Key
+            const filterStateId = conf.id;
+            const selectedOptions = selectedFilters[filterStateId];
+
+            // If no options selected for this filter, skip (pass)
+            if (!selectedOptions || selectedOptions.length === 0) return true;
+
+            // Check if ANY item in the group has a matching property value
+            // Value is calculated dynamically on the frontend now using helper
+            const hasMatch = groupItems.some((item: any) => {
+              const vals = calculateDynamicValues(item, filterConfigs);
+              const dynamicVal = vals[conf.id];
+              return dynamicVal && selectedOptions.includes(dynamicVal);
+            });
+
+            return hasMatch;
           });
 
-          return hasMatch;
+          return matchesAllFilters;
         });
-
-        return matchesAllFilters;
-      });
 
       // 3. Limit results per group
       if (maxResults !== '' && !isNaN(Number(maxResults))) {
@@ -642,259 +663,265 @@ const TableProcessedDocumentResults = ({ results, onBtnExportClick }) => {
         onSave={handleSaveSettings}
       />
 
-      {/* Toolbar - Row 1: Search, Limit, Export */}
-      <div className="flex flex-col items-center justify-between p-4 space-y-3 md:flex-row md:space-y-0 md:space-x-4">
-        <div className="w-full md:w-1/2 flex items-center space-x-2">
-          {/* Search Input */}
-          <form
-            className="flex items-center flex-1"
-            onSubmit={(e) => e.preventDefault()}
-          >
-            <label htmlFor="simple-search" className="sr-only">
-              Пошук
-            </label>
-            <div className="relative w-full">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg
-                  aria-hidden="true"
-                  className="w-5 h-5 text-gray-500 dark:text-gray-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
-              <input
-                type="text"
-                id="simple-search"
-                className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                placeholder="Пошук"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
-                  onClick={() => setSearchTerm('')}
-                >
-                  <svg
-                    className="w-3 h-3"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 14 14"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
-                    />
-                  </svg>
-                  <span className="sr-only">Clear search</span>
-                </button>
-              )}
-              {searchTerm && (
-                <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
-                  1
-                </div>
-              )}
-            </div>
-          </form>
-        </div>
-        <div className="flex flex-col items-stretch justify-end flex-shrink-0 w-full space-y-2 md:w-auto md:flex-row md:space-y-0 md:items-center md:space-x-3">
-          {/* Max Results Counter */}
-          <div className="relative flex items-center max-w-[8rem]">
-            <button
-              type="button"
-              id="decrement-button"
-              onClick={handleDecrementMaxResults}
-              className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-s-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none"
-            >
+      {/* Toolbar - Row 1: Search, Max Results, Export */}
+      <div className="flex flex-wrap items-center gap-2 p-4">
+        {/* Search Input */}
+        <form
+          className="flex items-center w-full sm:w-auto"
+          onSubmit={(e) => e.preventDefault()}
+        >
+          <label htmlFor="simple-search" className="sr-only">
+            Фільтр
+          </label>
+          <div className="relative w-full sm:w-64 md:w-72">
+            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
               <svg
-                className="w-3 h-3 text-gray-900 dark:text-white"
                 aria-hidden="true"
+                className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
                 xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 18 2"
               >
                 <path
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M1 1h16"
+                  fillRule="evenodd"
+                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                  clipRule="evenodd"
                 />
               </svg>
-            </button>
+            </div>
             <input
               type="text"
-              id="max-results-input"
-              className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-              placeholder="Всі"
-              value={maxResults}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === '' || /^\d+$/.test(val)) {
-                  setMaxResults(val);
-                }
-              }}
+              id="simple-search"
+              className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+              placeholder="Фільтр"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <button
-              type="button"
-              id="increment-button"
-              onClick={handleIncrementMaxResults}
-              className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-e-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none"
-            >
-              <svg
-                className="w-3 h-3 text-gray-900 dark:text-white"
-                aria-hidden="true"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 18 18"
+            {searchTerm && (
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
+                onClick={() => setSearchTerm('')}
               >
-                <path
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M9 1v16M1 9h16"
-                />
-              </svg>
-            </button>
-            {maxResults !== '' && (
+                <svg
+                  className="w-3 h-3"
+                  aria-hidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 14 14"
+                >
+                  <path
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                  />
+                </svg>
+                <span className="sr-only">Clear search</span>
+              </button>
+            )}
+            {searchTerm && (
               <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
                 1
               </div>
             )}
           </div>
+        </form>
 
-          {/* Export Button */}
+        {/* Max Results Counter */}
+        <div className="relative flex items-center max-w-[8rem]">
           <button
             type="button"
-            className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
-            onClick={handleButtonExportClick}
-            disabled={!hasResults}
+            id="decrement-button"
+            onClick={handleDecrementMaxResults}
+            className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-s-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none"
           >
             <svg
-              className="w-4 h-4 mr-2"
-              // className="w-4 h-4 mr-2 rotate-180"
+              className="w-3 h-3 text-gray-900 dark:text-white"
+              aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth="2"
-              stroke="currentColor"
-              aria-hidden="true"
+              viewBox="0 0 18 2"
             >
               <path
+                stroke="currentColor"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                strokeWidth="2"
+                d="M1 1h16"
               />
             </svg>
-            Зберегти .xlsx
           </button>
+          <input
+            type="text"
+            id="max-results-input"
+            className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+            placeholder="Всі"
+            value={maxResults}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === '' || /^\d+$/.test(val)) {
+                setMaxResults(val);
+              }
+            }}
+          />
+          <button
+            type="button"
+            id="increment-button"
+            onClick={handleIncrementMaxResults}
+            className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-e-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none"
+          >
+            <svg
+              className="w-3 h-3 text-gray-900 dark:text-white"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 18 18"
+            >
+              <path
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 1v16M1 9h16"
+              />
+            </svg>
+          </button>
+          {maxResults !== '' && (
+            <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
+              1
+            </div>
+          )}
         </div>
+
+        <div className="flex-grow" />
+
+        {/* Export Button */}
+        <button
+          type="button"
+          className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
+          onClick={handleButtonExportClick}
+          disabled={!hasResults}
+        >
+          <svg
+            className="w-4 h-4 mr-2"
+            // className="w-4 h-4 mr-2 rotate-180"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth="2"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+            />
+          </svg>
+          Зберегти .xlsx
+        </button>
       </div>
 
       {/* Divider */}
       <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
 
       {/* Toolbar - Row 2: Filters */}
-      <div className="flex items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20">
-        <div className="flex-grow" />
-
+      <div className="flex flex-wrap items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20">
         {filterConfigs.length === 0 ? (
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
-          >
-            <svg
-              className="mr-2 w-4 h-4 text-gray-400"
-              aria-hidden="true"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth="2"
-              stroke="currentColor"
+          <>
+            <div className="flex-grow" />
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
-              />
-            </svg>
-            Додайте фільтри
-          </button>
+              <svg
+                className="mr-2 w-4 h-4 text-gray-400"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="2"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                />
+              </svg>
+              Додайте фільтри
+            </button>
+          </>
         ) : (
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
-          >
-            <svg
-              className="w-4 h-4 text-gray-400"
-              aria-hidden="true"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth="2"
-              stroke="currentColor"
+          <>
+            <div className="flex-grow" />
+
+            {/* Settings cog - rendered as the first item in the filters cluster */}
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
-              />
-            </svg>
-          </button>
+              <svg
+                className="w-4 h-4 text-gray-400"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="2"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                />
+              </svg>
+            </button>
+
+            {/* Dynamic Filters rendering */}
+            {filterConfigs.map((config, index) => {
+              // Extract unique options from rules
+              const uniqueOptions = Array.from(
+                new Set<string>(
+                  config.filterRules
+                    ?.map((r: any) => r.labelOption)
+                    .filter(Boolean) || [],
+                ),
+              );
+
+              if (uniqueOptions.length === 0) return null;
+
+              // Use config.id as the stable key for state
+              // Fallback to title-index only if id is missing (though filtering won't work without id)
+              const filterId =
+                config.id || `${config.labelFilterTitle}-${index}`;
+
+              return (
+                <FilterDropdown
+                  key={filterId}
+                  label={config.labelFilterTitle}
+                  dropdownTitle={config.labelFilterDescription}
+                  items={uniqueOptions.sort()}
+                  selectedItems={selectedFilters[filterId] || []}
+                  onItemChange={(item) => handleFilterChange(filterId, item)}
+                  idPrefix={`filter-${filterId}`}
+                />
+              );
+            })}
+          </>
         )}
-
-        {/* Dynamic Filters rendering */}
-        {filterConfigs.map((config, index) => {
-          // Extract unique options from rules
-          const uniqueOptions = Array.from(
-            new Set<string>(
-              config.filterRules
-                ?.map((r: any) => r.labelOption)
-                .filter(Boolean) || [],
-            ),
-          );
-
-          if (uniqueOptions.length === 0) return null;
-
-          // Use config.id as the stable key for state
-          // Fallback to title-index only if id is missing (though filtering won't work without id)
-          const filterId = config.id || `${config.labelFilterTitle}-${index}`;
-
-          return (
-            <FilterDropdown
-              key={filterId}
-              label={config.labelFilterTitle}
-              dropdownTitle={config.labelFilterDescription}
-              items={uniqueOptions.sort()}
-              selectedItems={selectedFilters[filterId] || []}
-              onItemChange={(item) => handleFilterChange(filterId, item)}
-              idPrefix={`filter-${filterId}`}
-            />
-          );
-        })}
       </div>
 
       {/* Divider */}
