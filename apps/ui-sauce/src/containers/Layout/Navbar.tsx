@@ -636,7 +636,7 @@ const Navbar = ({
                 </div>
                 */}
                 <button
-                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700"
+                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
                   data-testid="settings-open"
                   type="button"
                   aria-label="Налаштування"
@@ -660,7 +660,7 @@ const Navbar = ({
                   </svg>
                 </button>
                 <button
-                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700"
+                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
                   data-testid="dark-theme-toggle"
                   type="button"
                   aria-label="Toggle dark mode"
@@ -774,6 +774,7 @@ const Navbar = ({
         title="Налаштування"
         isOpen={isSettingsModalOpen}
         onBtnCloseClick={() => setIsSettingsModalOpen(false)}
+        maxWidthClassName="max-w-lg"
       >
         <Checkbox
           theme="toggle"
