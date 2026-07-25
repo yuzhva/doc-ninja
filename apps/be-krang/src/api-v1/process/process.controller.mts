@@ -28,11 +28,13 @@ const postProcessDocuments = async (req: Request, res: Response) => {
     // Extract search options from request
     const pageSize = req.body.pageSize;
     const sortOrder = req.body.sortOrder;
+    const maxTypoDistance = req.body.maxTypoDistance;
     const searchOptions = {
       pageSize: pageSize === 'ALL' ? pageSize : Number(pageSize) || 10,
       sortOrder,
       searchScopedPaths: req.body.searchScopedPaths,
       isTypoToleranceEnabled: req.body.isTypoToleranceEnabled,
+      maxTypoDistance,
     };
 
     // Use DocumentIntelligenceService for search

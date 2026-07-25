@@ -71,6 +71,7 @@ const FormProcessDocumentTabItem = ({
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
   const [allowFuzzyMatch, setAllowFuzzyMatch] = React.useState(true);
+  const [maxTypoDistance, setMaxTypoDistance] = React.useState('1');
   const [sortOrder, setSortOrder] = React.useState('desc');
 
   // Parser config: determines how the backend extracts fields from documents.
@@ -265,6 +266,7 @@ const FormProcessDocumentTabItem = ({
           '',
         searchScopedPaths: Array.from(selectedPaths),
         isTypoToleranceEnabled: allowFuzzyMatch,
+        maxTypoDistance: Number(maxTypoDistance),
         // Sent to the backend so it knows which pipelines/compounds to
         // parse the matched documents with. API wiring TBD server-side.
         extractorSchema: selectedParserConfig,
@@ -375,6 +377,7 @@ const FormProcessDocumentTabItem = ({
       directoryData, // Updated dependency
       selectedPaths,
       allowFuzzyMatch,
+      maxTypoDistance,
       parserConfigs,
       selectedParserConfigName,
     ],
@@ -592,6 +595,44 @@ const FormProcessDocumentTabItem = ({
                     />
                   </div>
 
+                  {/* Max Typo Distance & Fuzzy Toggle */}
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor="maxTypoDistanceNumber"
+                      className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
+                    >
+                      К-сть символів одруківки
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <input
+                          id="maxTypoDistanceNumber"
+                          type="number"
+                          min="0"
+                          value={maxTypoDistance}
+                          onChange={(e) => setMaxTypoDistance(e.target.value)}
+                          className="block w-full border bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                          placeholder="1"
+                        />
+                      </div>
+
+                      <div className="flex items-center">
+                        <Checkbox
+                          theme="toggle"
+                          checked={allowFuzzyMatch}
+                          onChange={setAllowFuzzyMatch}
+                          label={
+                            <>
+                              <span>Дозволити</span>
+                              <span>співпадіння</span>
+                            </>
+                          }
+                          labelClassName="flex flex-col justify-center leading-tight whitespace-nowrap"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Page Size & Toggle */}
                   <div className="sm:col-span-2">
                     <label
@@ -650,6 +691,16 @@ const FormProcessDocumentTabItem = ({
                   </div>
 
                   <div className="sm:col-span-2 grid grid-cols-2 gap-4 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        /* TODO: implement search history */
+                      }}
+                      className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-500 flex items-center justify-center cursor-pointer"
+                    >
+                      Історія пошуку
+                    </button>
+
                     <ProcessingButton
                       type="submit"
                       isLoading={isProcessing}
@@ -658,22 +709,6 @@ const FormProcessDocumentTabItem = ({
                       {/* {isProcessing ? 'Обробляю документи...' : 'Пошук збігів'} */}
                       Пошук
                     </ProcessingButton>
-
-                    {/* Fuzzy Phrase Toggle */}
-                    <div className="flex items-center h-10">
-                      <Checkbox
-                        theme="toggle"
-                        checked={allowFuzzyMatch}
-                        onChange={setAllowFuzzyMatch}
-                        label={
-                          <>
-                            <span>Дозволити</span>
-                            <span>співпадіння</span>
-                          </>
-                        }
-                        labelClassName="flex flex-col justify-center leading-tight"
-                      />
-                    </div>
                   </div>
                 </div>
               </div>
@@ -783,7 +818,7 @@ const FormProcessDocumentTabItem = ({
                   directoryData.structure.fsNestedItems.length > 0 && (
                     <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
                       <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
-                        Оберіть папки для пошуку
+                        Папки для пошуку
                       </div>
                       {directoryData.structure.fsNestedItems.map(
                         (fsNestedItem: any) => (
