@@ -23,6 +23,10 @@ import {
   FPDModalParserConfigSettings,
   readStoredParserConfigs,
 } from './components/FPDModalParserConfigSettings';
+import {
+  FPDModalSearchHistory,
+  addSearchHistoryEntry,
+} from './components/FPDModalSearchHistory';
 
 const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
   'docNinja_selectedParserConfigName';
@@ -73,6 +77,8 @@ const FormProcessDocumentTabItem = ({
   const [allowFuzzyMatch, setAllowFuzzyMatch] = React.useState(true);
   const [maxTypoDistance, setMaxTypoDistance] = React.useState('1');
   const [sortOrder, setSortOrder] = React.useState('desc');
+  const [bulkNamesValue, setBulkNamesValue] = React.useState('');
+  const [isSearchHistoryOpen, setIsSearchHistoryOpen] = React.useState(false);
 
   // Parser config: determines how the backend extracts fields from documents.
   // Reloaded from localStorage whenever parserConfigsVersion changes (i.e. after
@@ -252,6 +258,8 @@ const FormProcessDocumentTabItem = ({
     Parameters<typeof initSubmitHandler>[0]
   >(
     async (formDataJSON) => {
+      addSearchHistoryEntry(String(formDataJSON.bulkNames || ''));
+
       const selectedParserConfig = parserConfigs.find(
         (c: any) =>
           c.name ===
@@ -590,6 +598,8 @@ const FormProcessDocumentTabItem = ({
                       id="bulkNamesTextArea"
                       name="bulkNames"
                       rows={4}
+                      value={bulkNamesValue}
+                      onChange={(e) => setBulkNamesValue(e.target.value)}
                       className="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
                       placeholder={`ПІБ 1\nПІБ 2\nПІБ 3\n...`}
                     />
@@ -693,9 +703,7 @@ const FormProcessDocumentTabItem = ({
                   <div className="sm:col-span-2 grid grid-cols-2 gap-4 pb-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        /* TODO: implement search history */
-                      }}
+                      onClick={() => setIsSearchHistoryOpen(true)}
                       className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-500 flex items-center justify-center cursor-pointer"
                     >
                       Історія пошуку
@@ -841,6 +849,15 @@ const FormProcessDocumentTabItem = ({
           isOpen={isParserConfigSettingsOpen}
           onClose={() => setIsParserConfigSettingsOpen(false)}
           onSave={handleParserConfigSettingsSave}
+        />
+
+        <FPDModalSearchHistory
+          isOpen={isSearchHistoryOpen}
+          onClose={() => setIsSearchHistoryOpen(false)}
+          onSelectQuery={(query) => {
+            setBulkNamesValue(query);
+            setIsSearchHistoryOpen(false);
+          }}
         />
       </div>
 
