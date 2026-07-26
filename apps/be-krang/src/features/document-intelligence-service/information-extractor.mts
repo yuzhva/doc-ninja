@@ -74,7 +74,8 @@ type ExtractorCompound = {
   // Array of lines. A line that is exactly "{{fieldId}}" — same delimiter as
   // the .docx placeholder convention — is only included when that field has
   // a truthy value (no stray blank lines for missing fields). Any other line
-  // (including "") is always included as-is.
+  // has "{{fieldId}}" occurrences replaced inline (missing/falsy fields
+  // become "", the rest of the line is kept as-is).
   value: string[];
   output?: ExtractorOutput;
 };
@@ -338,17 +339,19 @@ class InformationExtractor {
     lines: string[],
     fields: Record<string, string | null>,
   ): string {
-    const fieldRefPattern = /^\{\{(\w+)\}\}$/;
+    const wholeLinePattern = /^\{\{(\w+)\}\}$/;
+    const inlinePattern = /\{\{(\w+)\}\}/g;
     const parts: string[] = [];
 
     for (const line of lines) {
-      const refMatch = line.match(fieldRefPattern);
-      if (refMatch) {
-        const value = fields[refMatch[1]];
+      const wholeLineMatch = line.match(wholeLinePattern);
+      if (wholeLineMatch) {
+        const value = fields[wholeLineMatch[1]];
         if (value) parts.push(value);
-      } else {
-        parts.push(line);
+        continue;
       }
+
+      parts.push(line.replace(inlinePattern, (_, id) => fields[id] ?? ''));
     }
 
     return parts.join('\n').trim();
