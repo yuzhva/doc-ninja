@@ -9,18 +9,24 @@ import {
   FormProcessDocumentSideOver,
   HighlightedText,
 } from './FormProcessDocumentSideOver';
+import type {
+  GroupedProcessedResults,
+  // Aliased — this file already has a local `ProcessedResultGroup` component.
+  ProcessedResultGroup as ResultGroup,
+  RichProcessedResultItem,
+} from './FormProcessDocumentTabItem.types';
 import { FPDModalFilterSettings } from './components/FPDModalFilterSettings';
 import { FrontendInformationExtractor } from './frontend-information-extractor';
 
 // Helper to calculate dynamic values including legacy dependencies
 const calculateDynamicValues = (
-  item: any,
+  item: RichProcessedResultItem,
   filterConfigs: any[],
   primaryFieldId: string | null,
 ) => {
   const dynamicValues: Record<string, string | null> = {};
   const primaryText = primaryFieldId
-    ? item.extracted?.extractedFieldById?.[primaryFieldId]
+    ? item.extracted?.extractedFieldById[primaryFieldId]
     : undefined;
 
   filterConfigs.forEach((conf) => {
@@ -89,17 +95,17 @@ const ProcessedResultRow = ({
   tableFields,
   primaryFieldId,
 }: {
-  result: any;
+  result: ResultGroup;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  onOpenFile: (result: any) => void;
-  onViewContent: (result: any) => void;
+  onOpenFile: (result: ResultGroup) => void;
+  onViewContent: (result: ResultGroup) => void;
   filterConfigs: any[]; // Add type
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
 }) => {
   // Aggregate data from items in the group
-  const items = result.items || [result];
+  const items = result.items;
   const firstItem = items[0];
   const docName = result.docName || firstItem?.extracted?.foundInDocument;
   const filePath = result.search?.doc?.originalFilePath;
@@ -107,7 +113,7 @@ const ProcessedResultRow = ({
   // Pre-calculate dynamic values for each item in this group
   // Returns: [ { item: item, dynamicValues: { [filterId]: string | null } }, ... ]
   const enrichedItems = React.useMemo(() => {
-    return items.map((item: any) => {
+    return items.map((item) => {
       const dynamicValues = calculateDynamicValues(
         item,
         filterConfigs,
@@ -205,7 +211,7 @@ const ProcessedResultRow = ({
             key={field.id}
             className="px-6 py-4 whitespace-nowrap align-middle text-center text-sm text-gray-700 dark:text-gray-300 font-medium"
           >
-            {firstItem?.extracted?.extractedFieldById?.[field.id] || '---'}
+            {firstItem?.extracted?.extractedFieldById[field.id] || '---'}
           </td>
         ))}
 
@@ -281,20 +287,20 @@ const ProcessedResultRow = ({
                   <div className="relative group">
                     <HighlightedText
                       text={
-                        primaryFieldId
-                          ? item.extracted.extractedFieldById?.[primaryFieldId]
-                          : ''
+                        (primaryFieldId
+                          ? item.extracted.extractedFieldById[primaryFieldId]
+                          : '') ?? ''
                       }
                       highlights={[item.extracted.matchedText]}
                     />
                     <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <ButtonCopyToClipboard
                         textToCopy={
-                          primaryFieldId
-                            ? item.extracted.extractedFieldById?.[
-                                primaryFieldId
-                              ]
-                            : ''
+                          (primaryFieldId &&
+                            item.extracted.extractedFieldById[
+                              primaryFieldId
+                            ]) ??
+                          ''
                         }
                         placement="left"
                       />
@@ -319,8 +325,8 @@ const ProcessedResultGroup = ({
   primaryFieldId,
 }: {
   searchQuery: string;
-  items: any[];
-  onViewContent: (item: any) => void;
+  items: ResultGroup[];
+  onViewContent: (item: ResultGroup) => void;
   filterConfigs: any[]; // Add prop type
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
@@ -357,7 +363,7 @@ const ProcessedResultGroup = ({
     });
   };
 
-  const handleOpenFile = async (result: any) => {
+  const handleOpenFile = async (result: ResultGroup) => {
     // Attempt to resolve file path from result metadata (now nested in .search.doc)
     const filePath = result.search?.doc?.originalFilePath;
 
@@ -500,8 +506,8 @@ const TableProcessedDocumentResults = ({
   onBtnExportClick,
   parserSchema,
 }: {
-  results: any;
-  onBtnExportClick: (filteredResults: any) => void;
+  results: GroupedProcessedResults;
+  onBtnExportClick: (filteredResults: GroupedProcessedResults) => void;
   parserSchema?: any;
 }) => {
   // Removed internal filter open/close state logic as it is now inside FilterDropdown
@@ -520,7 +526,9 @@ const TableProcessedDocumentResults = ({
   >({});
 
   // State for FormProcessDocumentSideOver
-  const [previewItem, setPreviewItem] = React.useState<any | null>(null);
+  const [previewItem, setPreviewItem] = React.useState<ResultGroup | null>(
+    null,
+  );
 
   // Read configuration dynamically
   const filterConfigs = React.useMemo(() => {
@@ -556,7 +564,7 @@ const TableProcessedDocumentResults = ({
   const filteredResults = React.useMemo(() => {
     if (!results) return {};
 
-    const filtered: Record<string, any[]> = {};
+    const filtered: Record<string, ResultGroup[]> = {};
 
     Object.entries(results).forEach(([searchQuery, items]) => {
       // 1. Filter by Search Term (on keys/searchQuery)
@@ -565,36 +573,35 @@ const TableProcessedDocumentResults = ({
         !searchTerm || searchQuery.toLowerCase().includes(searchTermLower);
 
       // 2. Filter items within the group
-      let filteredItems = (items as any[])
+      let filteredItems = items
         .map((group) => {
-          const groupItems = group.items || [group];
+          const groupItems = group.items;
 
           // 1b. If the document name/key didn't match the search term,
           // narrow the group down to only the sub-items whose own content
           // (the schema's primary field) actually contains it.
           if (searchTerm && !matchesKey) {
-            const matchingGroupItems = groupItems.filter((item: any) =>
-              (
-                (primaryFieldId &&
-                  item.extracted?.extractedFieldById?.[primaryFieldId]) ||
-                ''
-              )
-                .toLowerCase()
-                .includes(searchTermLower),
+            const matchingGroupItems = groupItems.filter(
+              (item: RichProcessedResultItem) =>
+                (
+                  (primaryFieldId &&
+                    item.extracted?.extractedFieldById[primaryFieldId]) ??
+                  ''
+                )
+                  .toLowerCase()
+                  .includes(searchTermLower),
             );
 
             if (matchingGroupItems.length === 0) return null;
 
-            return group.items
-              ? { ...group, items: matchingGroupItems }
-              : group;
+            return { ...group, items: matchingGroupItems };
           }
 
           return group;
         })
-        .filter((group): group is any => group !== null)
+        .filter((group): group is ResultGroup => group !== null)
         .filter((group) => {
-          const groupItems = group.items || [group];
+          const groupItems = group.items;
 
           // Dynamic Filter Loop
           const matchesAllFilters = filterConfigs.every((conf) => {
@@ -607,15 +614,17 @@ const TableProcessedDocumentResults = ({
 
             // Check if ANY item in the group has a matching property value
             // Value is calculated dynamically on the frontend now using helper
-            const hasMatch = groupItems.some((item: any) => {
-              const vals = calculateDynamicValues(
-                item,
-                filterConfigs,
-                primaryFieldId,
-              );
-              const dynamicVal = vals[conf.id];
-              return dynamicVal && selectedOptions.includes(dynamicVal);
-            });
+            const hasMatch = groupItems.some(
+              (item: RichProcessedResultItem) => {
+                const vals = calculateDynamicValues(
+                  item,
+                  filterConfigs,
+                  primaryFieldId,
+                );
+                const dynamicVal = vals[conf.id];
+                return dynamicVal && selectedOptions.includes(dynamicVal);
+              },
+            );
 
             return hasMatch;
           });
@@ -685,7 +694,7 @@ const TableProcessedDocumentResults = ({
     }
   };
 
-  const handleViewContent = (item: any) => {
+  const handleViewContent = (item: ResultGroup) => {
     setPreviewItem(item);
   };
 
@@ -697,8 +706,7 @@ const TableProcessedDocumentResults = ({
   // We'll calculate them on the fly in the render below
   const previewDynamicValues = React.useMemo(() => {
     if (!previewItem || !filterConfigs) return [];
-    const items = previewItem.items || [previewItem];
-    return items.map((item: any) => {
+    return previewItem.items.map((item) => {
       const vals = calculateDynamicValues(item, filterConfigs, primaryFieldId);
       return { item, vals };
     });
@@ -716,19 +724,13 @@ const TableProcessedDocumentResults = ({
       <FormProcessDocumentSideOver
         isOpen={!!previewItem}
         onClose={closePreview}
-        title={
-          previewItem?.docName ||
-          previewItem?.extracted?.foundInDocument ||
-          'Деталі документу'
-        }
+        title={previewItem?.docName || 'Деталі документу'}
         textFilePath={
           previewItem?.search?.doc?.textFilePath ||
-          previewItem?.items?.[0]?.search?.doc?.textFilePath
+          previewItem?.items[0]?.search?.doc?.textFilePath
         }
         highlightPhrases={
-          previewItem?.items
-            ? previewItem.items.map((i: any) => i.extracted.matchedText)
-            : [previewItem?.extracted?.matchedText]
+          previewItem?.items.map((i) => i.extracted.matchedText) ?? []
         }
       >
         {previewItem && (
@@ -736,7 +738,7 @@ const TableProcessedDocumentResults = ({
             {/* Header / Metadata only - context removed to avoid duplication */}
             <div>
               <div className="text-xs text-gray-500 dark:text-gray-400">
-                Запит: {previewItem.items?.[0]?.extracted?.searchQuery}
+                Запит: {previewItem.items[0]?.extracted?.searchQuery}
               </div>
 
               {/* Show Status/Type for each match if available */}
@@ -1053,7 +1055,7 @@ const TableProcessedDocumentResults = ({
           </div>
         ) : (
           <div className="space-y-6">
-            {(Object.entries(filteredResults) as [string, any[]][]).map(
+            {Object.entries(filteredResults).map(
               ([searchQuery, items], filteredResultIndex) => (
                 <ProcessedResultGroup
                   key={searchQuery}

@@ -14,8 +14,10 @@ import {
   getExtractedFieldOutputs,
 } from './FormProcessDocumentTabItem.components';
 import type {
+  ExtractedResultItem,
   GroupedProcessedResults,
   ProcessDocumentsApiResponse,
+  ProcessedResultGroup,
   SearchResultItem,
 } from './FormProcessDocumentTabItem.types';
 import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
@@ -339,7 +341,7 @@ const FormProcessDocumentTabItem = ({
               }
 
               const groupedResults = resAsJson.extractedResults.reduce(
-                (acc: GroupedProcessedResults, item: any) => {
+                (acc: GroupedProcessedResults, item: ExtractedResultItem) => {
                   const key = item.searchQuery;
                   if (!acc[key]) {
                     acc[key] = [];
@@ -363,13 +365,15 @@ const FormProcessDocumentTabItem = ({
 
                   // Group by docIdentifier (unique path) to squash duplicates correctly
                   // Check existing group by the unique identifier we derived
-                  const existingDocGroup = acc[key].find((g: any) => {
-                    // Check against the group's unique ID we store (we'll start storing it)
-                    // Or check against stored search result path
-                    const groupPath =
-                      g.uniqueId || g.search?.doc?.originalFilePath;
-                    return groupPath === docIdentifier;
-                  });
+                  const existingDocGroup = acc[key].find(
+                    (g: ProcessedResultGroup) => {
+                      // Check against the group's unique ID we store (we'll start storing it)
+                      // Or check against stored search result path
+                      const groupPath =
+                        g.uniqueId || g.search?.doc?.originalFilePath;
+                      return groupPath === docIdentifier;
+                    },
+                  );
 
                   const newItem = {
                     extracted: item,
@@ -377,7 +381,7 @@ const FormProcessDocumentTabItem = ({
                   };
 
                   if (existingDocGroup) {
-                    (existingDocGroup as any).items.push(newItem);
+                    existingDocGroup.items.push(newItem);
                   } else {
                     acc[key].push({
                       docName: item.foundInDocument || 'Unknown', // Display name
@@ -385,7 +389,7 @@ const FormProcessDocumentTabItem = ({
                       items: [newItem],
                       // Use first result as the main search ref for file path/metadata
                       search: searchResult,
-                    } as any);
+                    });
                   }
                   return acc;
                 },
@@ -413,7 +417,7 @@ const FormProcessDocumentTabItem = ({
   );
 
   const postFilteredResultExport = React.useCallback(
-    async (filteredResults: any) => {
+    async (filteredResults: GroupedProcessedResults) => {
       // Flatten the grouped structure back to individual extracted items for the backend
       const flattenedGroups = Object.values(filteredResults).flat();
 
@@ -478,13 +482,11 @@ const FormProcessDocumentTabItem = ({
       const allColumns = [...baseCols, ...schemaCols, ...dynamicCols];
 
       // 3. Process Rows: Map standard fields & Calculate dynamic fields
-      const processedRows = flattenedGroups.flatMap((group: any) => {
-        // Unpack from the grouped wrapper structure
-        const items =
-          group.items && Array.isArray(group.items) ? group.items : [group];
+      const processedRows = flattenedGroups.flatMap((group) => {
+        const items = group.items;
 
-        return items.map((item: any) => {
-          const extracted = item.extracted || item;
+        return items.map((item) => {
+          const extracted = item.extracted;
 
           // Map standard fields matching BE Excel structure
           const row: any = {
@@ -494,7 +496,7 @@ const FormProcessDocumentTabItem = ({
           };
 
           exportedSpreadsheetFields.forEach((field) => {
-            row[field.id] = extracted.extractedFieldById?.[field.id];
+            row[field.id] = extracted.extractedFieldById[field.id];
           });
 
           // Calculate dynamic fields using shared helper

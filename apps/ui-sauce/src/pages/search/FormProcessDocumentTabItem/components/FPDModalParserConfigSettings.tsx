@@ -795,7 +795,10 @@ const FPDModalParserConfigSettings = ({
                                   />
                                 </Field>
                               </div>
-                              <Field label="Регулярний вираз для пошуку" required>
+                              <Field
+                                label="Регулярний вираз для пошуку"
+                                required
+                              >
                                 <input
                                   type="text"
                                   value={pipeline.pattern}
@@ -889,7 +892,10 @@ const FPDModalParserConfigSettings = ({
                                   />
                                 </Field>
                                 <div>
-                                  <div className="h-5 mb-2" aria-hidden="true" />
+                                  <div
+                                    className="h-5 mb-2"
+                                    aria-hidden="true"
+                                  />
                                   <Checkbox
                                     theme="toggle"
                                     checked={pipeline.consume}
@@ -979,7 +985,7 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="напр. summary"
+                                    placeholder="напр. SUMMARY"
                                     className={inputClassName}
                                   />
                                   <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
@@ -1010,7 +1016,10 @@ const FPDModalParserConfigSettings = ({
                                   />
                                 </Field>
                               </div>
-                              <Field label="Шаблон тексту (об'єднання полів)" required>
+                              <Field
+                                label="Шаблон тексту (об'єднання полів)"
+                                required
+                              >
                                 <textarea
                                   value={compound.valueText}
                                   onChange={(e) =>
