@@ -36,6 +36,7 @@ const FilterDropdown = ({
 
   return (
     <Dropdown
+      panelClassName="w-64 right-0 bg-white dark:bg-gray-700"
       onOpenChange={(isOpen) => {
         // Reset filter text when closed
         if (!isOpen) setFilterText('');

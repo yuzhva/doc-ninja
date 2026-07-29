@@ -1,7 +1,4 @@
-import type {
-  FileSystemItem,
-  FileSystemProcessedResult,
-} from 'toolkit--local/browser';
+import type { FileSystemItem } from 'toolkit--local/browser';
 import { FileScannerBrowser, FileSystemService } from 'toolkit--local/browser';
 
 interface FilePickerAcceptType {
@@ -113,6 +110,38 @@ class FileSystemBridge {
     };
   }
 
+  /**
+   * Re-reads a previously picked-and-remembered file later (e.g. a saved
+   * template), as opposed to pickFile, which always shows a picker dialog.
+   * pickFile always returns a real handle now (Electron included — see
+   * pickFile below), so this is the only kind of stored reference a caller
+   * can have.
+   *
+   * Throws a DOMException-shaped 'NotAllowedError' when permission was
+   * denied (queryPermission/requestPermission never reject, they just
+   * resolve 'denied', so this has to be raised by hand). A read that fails
+   * because the file was moved/deleted propagates whatever NotFoundError
+   * the browser raised, unchanged — see isFileNotFoundError callers.
+   */
+  static async readStoredFile(handle: FileSystemFileHandle): Promise<Blob> {
+    // queryPermission/requestPermission aren't in this project's TS DOM
+    // lib (same gap as showOpenFilePicker/showDirectoryPicker elsewhere).
+    const handleWithPermissions = handle as any;
+    const currentPermission = await handleWithPermissions.queryPermission({
+      mode: 'read',
+    });
+    const permission =
+      currentPermission === 'granted'
+        ? currentPermission
+        : await handleWithPermissions.requestPermission({ mode: 'read' });
+    if (permission !== 'granted') {
+      const error: any = new Error('Permission to read the file was denied.');
+      error.name = 'NotAllowedError';
+      throw error;
+    }
+    return handle.getFile();
+  }
+
   static async pickFile(options: PickFileOptions = {}) {
     if (!this.isSupported()) {
       console.warn('File System Access API not supported');
@@ -120,40 +149,32 @@ class FileSystemBridge {
     }
 
     try {
-      let result: FileSystemProcessedResult | null = null;
+      // Always the native File System Access picker, Electron included —
+      // same precedent as pickDirectory's readwrite branch below, which
+      // already relies on Electron's Chromium supporting this API. Unlike
+      // directory scanning (where Electron's own dialog + Node fs walk is
+      // used deliberately, see the other branch of pickDirectory), a single
+      // file pick has no such reason to prefer the Electron-specific path:
+      // this way every pick, in every environment, comes back with a real
+      // FileSystemFileHandle, so callers that need to remember a pick (e.g.
+      // a docm template) never have to special-case Electron.
+      const [fileHandle] = await window.showOpenFilePicker({
+        multiple: false,
+        ...options,
+      });
 
-      if (window.electronAPI) {
-        const fileData = await window.electronAPI.showOpenFilePicker(options);
-        if (fileData) {
-          result = FileSystemService.processSingleFile({
-            name: fileData.name,
-            path: fileData.path,
-            size: fileData.size,
-            modifiedAt: fileData.modifiedAt,
-            getFileContent: () => window.electronAPI!.readFile(fileData.path),
-          });
-        }
-      } else {
-        const [fileHandle] = await window.showOpenFilePicker({
-          multiple: false,
-          ...options,
-        });
+      const file = await fileHandle.getFile();
 
-        const file = await fileHandle.getFile();
+      const result = FileSystemService.processSingleFile({
+        name: file.name,
+        path: `./${file.name}`,
+        size: file.size,
+        modifiedAt: new Date(file.lastModified),
+        // getFileContent: () => FileScannerBrowser.readFileAsBase64(file),
+        getFileContent: () => file,
+      });
 
-        result = FileSystemService.processSingleFile({
-          name: file.name,
-          path: `./${file.name}`,
-          size: file.size,
-          modifiedAt: new Date(file.lastModified),
-          // getFileContent: () => FileScannerBrowser.readFileAsBase64(file),
-          getFileContent: () => file,
-        });
-      }
-
-      if (!result) return null;
-
-      return result;
+      return { ...result, browserFSAPIhandle: fileHandle };
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('Error selecting file:', error);

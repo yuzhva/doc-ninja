@@ -15,6 +15,8 @@ import type {
   ProcessedResultGroup as ResultGroup,
   RichProcessedResultItem,
 } from './FormProcessDocumentTabItem.types';
+import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
+import { FPDDocmTemplatesDropdown } from './components/FPDDocmTemplatesDropdown';
 import { FPDModalFilterSettings } from './components/FPDModalFilterSettings';
 import { FrontendInformationExtractor } from './frontend-information-extractor';
 
@@ -51,6 +53,12 @@ const getExtractedFieldOutputs = (
   tableFields: ExtractedTableField[];
   spreadsheetFields: ExtractedTableField[];
   primaryFieldId: string | null;
+  // Every schema-defined field id, regardless of TABLE/SPREADSHEET useIn —
+  // this is the set that follows the {{fieldId}} template-tag convention
+  // (see FPDModalParserConfigSettings' hint text), unlike the BE's
+  // structural search fields (searchQuery/foundInDocument/matchedText/...)
+  // which were never meant to be filled into a document template.
+  allFieldIds: string[];
 } => {
   const pipelines = Array.isArray(parserSchema?.config?.pipelines)
     ? parserSchema.config.pipelines
@@ -81,7 +89,22 @@ const getExtractedFieldOutputs = (
     tableFields: fieldsForDestination('TABLE'),
     spreadsheetFields: fieldsForDestination('SPREADSHEET'),
     primaryFieldId,
+    allFieldIds: allFields.map((field: any) => field.id),
   };
+};
+
+// Shared by the xlsx export and the .docm generation dropdown — unwraps the
+// grouped-by-document-with-duplicates structure into individual extracted items.
+const flattenGroupedResults = (
+  filteredResults: Record<string, any[]>,
+): { extracted: any }[] => {
+  const flattenedGroups = Object.values(filteredResults).flat();
+
+  return flattenedGroups.flatMap((group: any) => {
+    const items =
+      group.items && Array.isArray(group.items) ? group.items : [group];
+    return items.map((item: any) => ({ extracted: item.extracted || item }));
+  });
 };
 
 // Component for individual expandable row
@@ -94,6 +117,9 @@ const ProcessedResultRow = ({
   filterConfigs, // Add prop
   tableFields,
   primaryFieldId,
+  templateTagFieldIds,
+  onBtnGenerateDocmClick,
+  addToast,
 }: {
   result: ResultGroup;
   isExpanded: boolean;
@@ -103,6 +129,9 @@ const ProcessedResultRow = ({
   filterConfigs: any[]; // Add type
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
+  templateTagFieldIds: string[];
+  onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
+  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
   // Aggregate data from items in the group
   const items = result.items;
@@ -287,13 +316,44 @@ const ProcessedResultRow = ({
                   <div className="relative group">
                     <HighlightedText
                       text={
-                        (primaryFieldId
-                          ? item.extracted.extractedFieldById[primaryFieldId]
-                          : '') ?? ''
+                        (primaryFieldId &&
+                          item.extracted.extractedFieldById[primaryFieldId]) ??
+                        ''
                       }
                       highlights={[item.extracted.matchedText]}
                     />
-                    <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <FPDDocmTemplatesDropdown
+                        items={[item]}
+                        templateTagFieldIds={templateTagFieldIds}
+                        onGenerate={onBtnGenerateDocmClick}
+                        addToast={addToast}
+                        openDirection="up"
+                        renderTrigger={({ toggle }) => (
+                          <button
+                            type="button"
+                            onClick={toggle}
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                            title="Зберегти .doc*"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth="2"
+                              stroke="currentColor"
+                              aria-hidden="true"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                      />
                       <ButtonCopyToClipboard
                         textToCopy={
                           (primaryFieldId &&
@@ -323,6 +383,9 @@ const ProcessedResultGroup = ({
   filterConfigs, // Add prop
   tableFields,
   primaryFieldId,
+  templateTagFieldIds,
+  onBtnGenerateDocmClick,
+  addToast,
 }: {
   searchQuery: string;
   items: ResultGroup[];
@@ -330,6 +393,9 @@ const ProcessedResultGroup = ({
   filterConfigs: any[]; // Add prop type
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
+  templateTagFieldIds: string[];
+  onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
+  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
   const [isOpen, setIsOpen] = React.useState(true);
 
@@ -491,6 +557,9 @@ const ProcessedResultGroup = ({
                   filterConfigs={filterConfigs} // Pass config
                   tableFields={tableFields}
                   primaryFieldId={primaryFieldId}
+                  templateTagFieldIds={templateTagFieldIds}
+                  onBtnGenerateDocmClick={onBtnGenerateDocmClick}
+                  addToast={addToast}
                 />
               ))}
             </tbody>
@@ -504,11 +573,15 @@ const ProcessedResultGroup = ({
 const TableProcessedDocumentResults = ({
   results,
   onBtnExportClick,
+  onBtnGenerateDocmClick,
   parserSchema,
+  addToast,
 }: {
   results: GroupedProcessedResults;
   onBtnExportClick: (filteredResults: GroupedProcessedResults) => void;
+  onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
   parserSchema?: any;
+  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
   // Removed internal filter open/close state logic as it is now inside FilterDropdown
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -555,7 +628,7 @@ const TableProcessedDocumentResults = ({
 
   // parserSchema is owned by the parent (it also decides what gets sent to
   // the BE) — derive only the FE-relevant projection of it here.
-  const { tableFields, primaryFieldId } = React.useMemo(
+  const { tableFields, primaryFieldId, allFieldIds } = React.useMemo(
     () => getExtractedFieldOutputs(parserSchema),
     [parserSchema],
   );
@@ -656,6 +729,13 @@ const TableProcessedDocumentResults = ({
   ]);
 
   const hasResults = filteredResults && Object.keys(filteredResults).length > 0;
+
+  // Shared by the table-level export dropdown and (per-row) the individual
+  // download button — both just need the flat item list, not the grouping.
+  const flattenedItems = React.useMemo(
+    () => flattenGroupedResults(filteredResults),
+    [filteredResults],
+  );
 
   const handleFilterChange = (filterId: string, item: string) => {
     setSelectedFilters((prev) => {
@@ -924,7 +1004,6 @@ const TableProcessedDocumentResults = ({
         >
           <svg
             className="w-4 h-4 mr-2"
-            // className="w-4 h-4 mr-2 rotate-180"
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
@@ -935,11 +1014,18 @@ const TableProcessedDocumentResults = ({
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+              d="M10 3v4a1 1 0 0 1-1 1H5m8-2h3m-3 3h3m-4 3v6m4-3H8M19 4v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1ZM8 12v6h8v-6H8Z"
             />
           </svg>
           Зберегти .xlsx
         </button>
+
+        <FPDDocmTemplatesDropdown
+          items={flattenedItems}
+          templateTagFieldIds={allFieldIds}
+          onGenerate={onBtnGenerateDocmClick}
+          addToast={addToast}
+        />
       </div>
 
       {/* Divider */}
@@ -1065,6 +1151,9 @@ const TableProcessedDocumentResults = ({
                   filterConfigs={filterConfigs} // Pass config
                   tableFields={tableFields}
                   primaryFieldId={primaryFieldId}
+                  templateTagFieldIds={allFieldIds}
+                  onBtnGenerateDocmClick={onBtnGenerateDocmClick}
+                  addToast={addToast}
                 />
               ),
             )}
@@ -1077,6 +1166,7 @@ const TableProcessedDocumentResults = ({
 
 export {
   calculateDynamicValues,
+  flattenGroupedResults,
   getExtractedFieldOutputs,
   TableProcessedDocumentResults,
 };

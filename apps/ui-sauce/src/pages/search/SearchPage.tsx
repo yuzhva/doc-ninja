@@ -97,6 +97,7 @@ const SearchPage = () => {
         progress={progress}
         isFileSystemAccessSupported={sourceDir.isSupported}
         isProcessing={isProcessing}
+        addToast={addToast}
       />
 
       {/* Progress footer — always mounted so the slide transition can play;
