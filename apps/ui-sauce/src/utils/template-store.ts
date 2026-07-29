@@ -18,15 +18,38 @@ interface StoredTemplateRecord {
   cachedContent?: Blob;
 }
 
-const openDatabase = (): Promise<IDBDatabase> =>
-  new Promise((resolve, reject) => {
+// Memoized so repeated calls (one per list/save/remove) reuse the same
+// connection instead of opening a fresh one every time.
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+const openDatabase = (): Promise<IDBDatabase> => {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       request.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      // Another tab wants to upgrade this database (DB_VERSION bumped) —
+      // release our connection so it isn't blocked waiting on us forever,
+      // and forget it so the next call here opens a fresh one.
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onerror = () => {
+      // Don't cache a failed open — let the next call retry from scratch.
+      dbPromise = null;
+      reject(request.error);
+    };
   });
+
+  return dbPromise;
+};
 
 const withStore = <T, _>(
   mode: IDBTransactionMode,

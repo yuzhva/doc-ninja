@@ -6,6 +6,7 @@ import {
   useDirectoryPicker,
   useFilePicker,
 } from '../../../../hooks/use-file-system';
+import { FileSystemBridge } from '../../../../utils/file-system-bridge';
 import type { WriteFilesViaDestinationHandle } from '../../../../utils/file-system-processor';
 import type { StoredTemplateRecord } from '../../../../utils/template-store';
 import {
@@ -59,16 +60,11 @@ const buildJobFileName = (extracted: any): string => {
 const verifyOutputDirectoryIsWritable = async (
   handle: WriteFilesViaDestinationHandle,
 ): Promise<void> => {
-  // queryPermission/requestPermission aren't in this project's TS DOM lib.
-  const handleWithPermissions = handle as any;
-  const currentPermission = await handleWithPermissions.queryPermission({
-    mode: 'readwrite',
-  });
-  const permission =
-    currentPermission === 'granted'
-      ? currentPermission
-      : await handleWithPermissions.requestPermission({ mode: 'readwrite' });
-  if (permission !== 'granted') {
+  const hasPermission = await FileSystemBridge.ensurePermission(
+    handle,
+    'readwrite',
+  );
+  if (!hasPermission) {
     throw new Error('Немає дозволу на запис у обрану папку.');
   }
 };
