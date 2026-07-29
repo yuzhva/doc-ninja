@@ -1,6 +1,7 @@
 export { Badge } from './Badge';
 export { ButtonCopyToClipboard } from './ButtonCopyToClipboard';
 export { Checkbox } from './Checkbox';
+export { Dropdown } from './Dropdown';
 export { FilterDropdown } from './FilterDropdown';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Modal } from './Modal';
