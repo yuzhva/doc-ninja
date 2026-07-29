@@ -3,6 +3,7 @@ import { FileSystemItem } from 'toolkit--local/browser';
 
 import { Checkbox, Select } from '../../../components';
 import { fetchRequest } from '../../../utils';
+import { DocxTemplateEngine } from '../../../utils/docx-template-engine';
 import {
   FormInputFileSelect,
   ProcessingButton,
@@ -11,6 +12,7 @@ import type { FormPageSectionProps } from '../../process/process-page.types';
 import {
   TableProcessedDocumentResults,
   calculateDynamicValues,
+  flattenGroupedResults,
   getExtractedFieldOutputs,
 } from './FormProcessDocumentTabItem.components';
 import type {
@@ -21,6 +23,7 @@ import type {
   SearchResultItem,
 } from './FormProcessDocumentTabItem.types';
 import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
+import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
 import {
   FPDModalParserConfigSettings,
   readStoredParserConfigs,
@@ -65,7 +68,10 @@ const FormProcessDocumentTabItem = ({
   // progress,
   isFileSystemAccessSupported,
   isProcessing,
-}: FormPageSectionProps) => {
+  addToast,
+}: FormPageSectionProps & {
+  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
+}) => {
   const [processedResults, setProcessedResults] =
     React.useState<GroupedProcessedResults>({});
 
@@ -418,9 +424,6 @@ const FormProcessDocumentTabItem = ({
 
   const postFilteredResultExport = React.useCallback(
     async (filteredResults: GroupedProcessedResults) => {
-      // Flatten the grouped structure back to individual extracted items for the backend
-      const flattenedGroups = Object.values(filteredResults).flat();
-
       // 1. Load Filter Configs from localStorage for dynamic columns
       let filterConfigs: any[] = [];
       try {
@@ -482,12 +485,8 @@ const FormProcessDocumentTabItem = ({
       const allColumns = [...baseCols, ...schemaCols, ...dynamicCols];
 
       // 3. Process Rows: Map standard fields & Calculate dynamic fields
-      const processedRows = flattenedGroups.flatMap((group) => {
-        const items = group.items;
-
-        return items.map((item) => {
-          const extracted = item.extracted;
-
+      const processedRows = flattenGroupedResults(filteredResults).map(
+        ({ extracted }) => {
           // Map standard fields matching BE Excel structure
           const row: any = {
             inputName: extracted.searchQuery,
@@ -508,8 +507,8 @@ const FormProcessDocumentTabItem = ({
           );
 
           return truncateRowForXlsx({ ...row, ...dynamicValues });
-        });
-      });
+        },
+      );
 
       // Prepare unified payload for export
       const exportPayload = {
@@ -593,6 +592,40 @@ const FormProcessDocumentTabItem = ({
       }
     },
     [selectedParserSchema],
+  );
+
+  const handleGenerateDocm = React.useCallback(
+    async (payload: DocmGeneratePayload) => {
+      try {
+        const result = await DocxTemplateEngine.generateBatch({
+          template: {
+            file: payload.templateFile,
+            fileName: payload.templateName,
+          },
+          jobs: payload.jobs,
+          layout: payload.layout,
+        });
+
+        for (const file of result.files) {
+          const fileHandle = await payload.outputDirectoryHandle.getFileHandle(
+            file.fileName,
+            { create: true },
+          );
+          const writable = await fileHandle.createWritable();
+          await writable.write(file.blob);
+          await writable.close();
+        }
+
+        addToast(
+          'success',
+          `Успішно створено ${result.files.length} файл(ів) у обраній папці.`,
+        );
+      } catch (error: any) {
+        console.error('Failed to generate .doc* files', error);
+        addToast('error', `Помилка створення файлу: ${error.message || error}`);
+      }
+    },
+    [addToast],
   );
 
   // const handleTextAreaOnChange = React.useCallback((e) => {
@@ -899,7 +932,9 @@ const FormProcessDocumentTabItem = ({
         <TableProcessedDocumentResults
           results={processedResults}
           onBtnExportClick={postFilteredResultExport}
+          onBtnGenerateDocmClick={handleGenerateDocm}
           parserSchema={selectedParserSchema}
+          addToast={addToast}
         />
       </div>
     </div>
