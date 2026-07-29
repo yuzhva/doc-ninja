@@ -193,18 +193,27 @@ const getOutputDirectory = (): SharedOutputDirectory | null => outputDirectory;
 
 // The server never has IndexedDB/localStorage/filesystem access, so it
 // always renders with no templates, no selection, nothing flagged
-// unavailable, and no output folder picked — fixed, stable references (not
-// just the live values at call time) so React never sees them change across
-// a render, which useSyncExternalStore requires for the server snapshot.
-// (null itself is already referentially stable, so getServerOutputDirectory
-// needs no EMPTY_-style constant the way the array/Set ones do.)
-const EMPTY_TEMPLATES: DocmTemplate[] = [];
-const EMPTY_UNAVAILABLE_IDS: Set<string> = new Set();
-const getServerSnapshot = (): DocmTemplate[] => EMPTY_TEMPLATES;
-const getServerSelectedTemplateId = (): string | null => null;
-const getServerUnavailableTemplateIds = (): Set<string> =>
-  EMPTY_UNAVAILABLE_IDS;
-const getServerOutputDirectory = (): SharedOutputDirectory | null => null;
+// unavailable, and no output folder picked — each getServerX below always
+// returns the exact same reference (never a fresh [] / new Set() / value
+// computed at call time), which useSyncExternalStore requires for the
+// server snapshot to compare equal across renders.
+// Same <T, _> trick as template-store.ts's withStore — a lone trailing
+// comma (<T,>) stops Babel's JSX-aware parser from reading <T> as a JSX tag
+// opening, but Prettier strips a bare trailing comma back out on every save
+// since .ts files "can't have JSX" as far as it's concerned. A second,
+// unused type param doesn't get stripped the same way, so it actually
+// survives formatting. Defaulted so callers below can still explicitly
+// supply just T, the same way they would if this were the single-param
+// <T,> form.
+const constant =
+  <T, _ = unknown>(value: T) =>
+  (): T =>
+    value;
+
+const getServerSnapshot = constant<DocmTemplate[]>([]);
+const getServerSelectedTemplateId = constant<string | null>(null);
+const getServerUnavailableTemplateIds = constant<Set<string>>(new Set());
+const getServerOutputDirectory = constant<SharedOutputDirectory | null>(null);
 
 // Adds a freshly-picked template to the shared list immediately (so every
 // subscribed dropdown sees it right away). Built through

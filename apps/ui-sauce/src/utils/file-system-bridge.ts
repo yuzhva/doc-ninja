@@ -111,6 +111,29 @@ class FileSystemBridge {
   }
 
   /**
+   * Checks (and requests, if not already granted) permission for a handle
+   * at the given mode — the one piece of plumbing every stored file or
+   * directory handle needs before being read from or written to.
+   * queryPermission/requestPermission aren't in this project's TS DOM lib
+   * (same gap as showOpenFilePicker/showDirectoryPicker elsewhere), hence
+   * the `any` cast.
+   */
+  static async ensurePermission(
+    handle: FileSystemHandle,
+    mode: 'read' | 'readwrite',
+  ): Promise<boolean> {
+    const handleWithPermissions = handle as any;
+    const currentPermission = await handleWithPermissions.queryPermission({
+      mode,
+    });
+    if (currentPermission === 'granted') return true;
+    const requestedPermission = await handleWithPermissions.requestPermission({
+      mode,
+    });
+    return requestedPermission === 'granted';
+  }
+
+  /**
    * Re-reads a previously picked-and-remembered file later (e.g. a saved
    * template), as opposed to pickFile, which always shows a picker dialog.
    * pickFile always returns a real handle now (Electron included — see
@@ -124,17 +147,8 @@ class FileSystemBridge {
    * the browser raised, unchanged — see isFileNotFoundError callers.
    */
   static async readStoredFile(handle: FileSystemFileHandle): Promise<Blob> {
-    // queryPermission/requestPermission aren't in this project's TS DOM
-    // lib (same gap as showOpenFilePicker/showDirectoryPicker elsewhere).
-    const handleWithPermissions = handle as any;
-    const currentPermission = await handleWithPermissions.queryPermission({
-      mode: 'read',
-    });
-    const permission =
-      currentPermission === 'granted'
-        ? currentPermission
-        : await handleWithPermissions.requestPermission({ mode: 'read' });
-    if (permission !== 'granted') {
+    const hasPermission = await this.ensurePermission(handle, 'read');
+    if (!hasPermission) {
       const error: any = new Error('Permission to read the file was denied.');
       error.name = 'NotAllowedError';
       throw error;
