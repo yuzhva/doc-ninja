@@ -14,9 +14,11 @@ type ExtractionInput = {
 // Config-driven extraction produces a dynamic set of fields (one per pipeline
 // rule + one per compound), kept separate from the base match fields so
 // consumers can tell "structural search info" and "schema-defined data"
-// apart without guessing by key name.
+// apart without guessing by key name. Always string|null — every pipeline
+// rule and compound resolves to text (or null when nothing matched), never
+// a number.
 type ExtractedFields = {
-  [fieldId: string]: string | number | null | undefined;
+  [fieldId: string]: string | null | undefined;
 };
 
 type ExtractedInfo = ExtractionInput & {
