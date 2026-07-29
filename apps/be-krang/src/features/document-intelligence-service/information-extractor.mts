@@ -12,9 +12,15 @@ type ExtractionInput = {
 };
 
 // Config-driven extraction produces a dynamic set of fields (one per pipeline
-// rule + one per compound) layered on top of the base match fields.
-type ExtractedInfo = ExtractionInput & {
+// rule + one per compound), kept separate from the base match fields so
+// consumers can tell "structural search info" and "schema-defined data"
+// apart without guessing by key name.
+type ExtractedFields = {
   [fieldId: string]: string | number | null | undefined;
+};
+
+type ExtractedInfo = ExtractionInput & {
+  extractedFieldById: ExtractedFields;
 };
 
 type ExtractorStartFrom = 'DOC__START' | 'DOC__CONTENT' | 'DOC__END';
@@ -337,7 +343,7 @@ class InformationExtractor {
   /** Joins previously resolved field values into a single compound field. */
   private static buildCompoundValue(
     lines: string[],
-    fields: Record<string, string | null>,
+    extractedFieldById: Record<string, string | null>,
   ): string {
     const wholeLinePattern = /^\{\{(\w+)\}\}$/;
     const inlinePattern = /\{\{(\w+)\}\}/g;
@@ -346,12 +352,14 @@ class InformationExtractor {
     for (const line of lines) {
       const wholeLineMatch = line.match(wholeLinePattern);
       if (wholeLineMatch) {
-        const value = fields[wholeLineMatch[1]];
+        const value = extractedFieldById[wholeLineMatch[1]];
         if (value) parts.push(value);
         continue;
       }
 
-      parts.push(line.replace(inlinePattern, (_, id) => fields[id] ?? ''));
+      parts.push(
+        line.replace(inlinePattern, (_, id) => extractedFieldById[id] ?? ''),
+      );
     }
 
     return parts.join('\n').trim();
@@ -366,7 +374,7 @@ class InformationExtractor {
     match: ExtractionInput,
   ): ExtractedInfo {
     const position = match.position ?? 0;
-    const fields: Record<string, string | null> = {};
+    const extractedFieldById: Record<string, string | null> = {};
     const unitsCache = new Map<ExtractorUnit, UnitSpan[]>();
 
     const getUnits = (unit: ExtractorUnit): UnitSpan[] => {
@@ -406,23 +414,51 @@ class InformationExtractor {
             rule.pattern,
           );
 
-      fields[rule.id] = value;
+      extractedFieldById[rule.id] = value;
 
       if (
         consume &&
         value &&
-        typeof fields.content === 'string' &&
-        fields.content.includes(value)
+        typeof extractedFieldById.content === 'string' &&
+        extractedFieldById.content.includes(value)
       ) {
-        fields.content = fields.content.replace(value, '').trim();
+        extractedFieldById.content = extractedFieldById.content
+          .replace(value, '')
+          .trim();
       }
     }
 
     for (const compound of schemaConfig.compounds ?? []) {
-      fields[compound.id] = this.buildCompoundValue(compound.value, fields);
+      extractedFieldById[compound.id] = this.buildCompoundValue(
+        compound.value,
+        extractedFieldById,
+      );
     }
 
-    return { ...match, ...fields };
+    // Guaranteed fallback: whatever the schema does or doesn't define, the FE
+    // needs *something* to show as a result's body text. Any schema that
+    // opts a field into isPrimarySearchResponseText overrides this on the FE
+    // side, but schemas that define no such field (or no compounds at all)
+    // would otherwise leave callers with nothing — so always resolve the
+    // plain surrounding paragraph here, the same rule DEFAULT_EXTRACTOR_SCHEMA
+    // uses for its own 'summary' compound.
+    if (extractedFieldById.summary === undefined) {
+      const paragraphUnits = getUnits('PARAGRAPH');
+      const anchorIndex = this.resolveAnchorIndex(
+        paragraphUnits,
+        'DOC__CONTENT',
+        position,
+      );
+      extractedFieldById.summary = this.runSingleValueRule(
+        content,
+        paragraphUnits,
+        anchorIndex,
+        'DIRECTION__BOTTOM',
+        1,
+      );
+    }
+
+    return { ...match, extractedFieldById };
   }
 
   static async extractSearchResults(
