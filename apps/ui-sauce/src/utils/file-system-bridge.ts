@@ -54,12 +54,22 @@ class FileSystemBridge {
   /**
    * Helper to reconstruct a FileSystemItem object from the raw DTO received from Electron.
    * This attaches the behavior (getFileContent) which cannot be passed via IPC.
+   *
+   * `item.path` is relative to the scanned root (it later gets rewritten to a
+   * `/relative/path` form by FileSystemService.processDirectory for tree building),
+   * so the real absolute path has to be reconstructed here using the root path
+   * returned alongside the scan, otherwise Electron's main process tries to read
+   * a relative path from its own cwd and fails with ENOENT.
    */
-  private static hydrateElectronFileSystemItem(item: FileSystemItem) {
+  private static hydrateElectronFileSystemItem(
+    item: FileSystemItem,
+    rootPath: string,
+  ) {
+    const relativePath = item.path;
     return {
       ...item,
       getFileContent: () => {
-        return window.electronAPI!.readFile(item.path);
+        return window.electronAPI!.readFile(`${rootPath}/${relativePath}`);
       },
     };
   }
@@ -165,8 +175,8 @@ class FileSystemBridge {
         if (!dirResult) return null;
 
         // Hydrate files with getFileContent
-        const scannedFiles = dirResult.files.map(
-          this.hydrateElectronFileSystemItem,
+        const scannedFiles = dirResult.files.map((file) =>
+          this.hydrateElectronFileSystemItem(file, dirResult.filePath),
         );
 
         const result = await FileSystemService.processDirectory(scannedFiles, {

@@ -38,3 +38,7 @@ pnpm run make
 ```
 
 profit - ready to start
+
+---
+
+The screenshots are generated at [https://shots.so/](https://shots.so/)
