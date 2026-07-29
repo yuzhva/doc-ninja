@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavLink } from 'react-router';
 
 interface SidebarSubItem {
@@ -166,7 +166,7 @@ const EXAMPLE_ITEMS: SidebarItemConfig[] = [
 ];
 
 const SidebarExampleItem = ({ item }: { item: SidebarItemConfig }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = React.useState(false);
   const { label, href, icon, badge, children } = item;
   const id = `flowbite-sidebar-item-${label.toLowerCase().replace(/\s+/g, '-')}`;
   const collapseId = `flowbite-sidebar-collapse-${label.toLowerCase().replace(/\s+/g, '-')}`;

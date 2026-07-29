@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 
 // This component is a data container for the tab's content.
 // It doesn't render anything itself; the parent `Tabs` component handles rendering.
@@ -13,7 +13,7 @@ const TabsItem = ({
 };
 
 const Tabs = ({ children }: { children: React.ReactNode }) => {
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = React.useState(0);
 
   // Filter out any invalid children to get an array of Tab.Item components
   const tabs = React.Children.toArray(children).filter(
