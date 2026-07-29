@@ -8,6 +8,7 @@ import {
   net,
   protocol,
   screen,
+  session,
   shell,
 } from 'electron';
 import fs from 'fs';
@@ -157,6 +158,21 @@ electronApp.whenReady().then(async () => {
 
       // Return the response body and status to the UI
       return { status: response.status, body: response.body };
+    },
+  );
+
+  // The renderer's showOpenFilePicker/showDirectoryPicker calls (File System
+  // Access API — see file-system-bridge.ts) hang indefinitely if the user
+  // picks a Chromium-restricted path (home dir, Desktop, Documents, or
+  // Downloads *root*), because nothing answers this event by default in
+  // Electron — unlike a real Chrome tab, which shows its own "choose a
+  // different folder" prompt for exactly this case. 'tryAgain' reopens the
+  // native picker immediately, matching that same real-browser behavior
+  // instead of leaving the picker's promise pending forever.
+  session.defaultSession.on(
+    'file-system-access-restricted',
+    (_event, _details, callback) => {
+      callback('tryAgain');
     },
   );
 
