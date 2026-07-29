@@ -31,6 +31,27 @@ import {
 const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
   'docNinja_selectedParserConfigName';
 
+// xlsx has a hard 32767-char-per-cell ceiling (SheetJS throws
+// "Text length must not exceed 32767 characters" past it). Some source
+// .txt files have no paragraph breaks at all, so even a schema that only
+// reads "to the end of the paragraph" can occasionally still produce a
+// huge string — truncate defensively right before export so one oversized
+// field can never crash the whole spreadsheet generation.
+const MAX_XLSX_CELL_LENGTH = 32000;
+const truncateForXlsxCell = (value: unknown): unknown => {
+  if (typeof value !== 'string' || value.length <= MAX_XLSX_CELL_LENGTH) {
+    return value;
+  }
+  return `${value.slice(0, MAX_XLSX_CELL_LENGTH)}… [обрізано]`;
+};
+const truncateRowForXlsx = (row: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      truncateForXlsxCell(value),
+    ]),
+  );
+
 const FormProcessDocumentTabItem = ({
   onSelectSourceDirectory,
   // onSelectOutputDirectory,
@@ -431,7 +452,18 @@ const FormProcessDocumentTabItem = ({
       const { spreadsheetFields, primaryFieldId } =
         getExtractedFieldOutputs(selectedParserSchema);
 
-      const schemaCols = spreadsheetFields.map((field) => ({
+      // The primary field is always shown in the UI (see the `?? 'summary'`
+      // fallback in getExtractedFieldOutputs) even when the schema never
+      // opts it into the SPREADSHEET destination — e.g. "Без обробки", which
+      // has no fields/compounds at all. Exporting less than what's visible
+      // on screen would be surprising, so guarantee it a column here too.
+      const exportedSpreadsheetFields =
+        !primaryFieldId ||
+        spreadsheetFields.some((field) => field.id === primaryFieldId)
+          ? spreadsheetFields
+          : [...spreadsheetFields, { id: primaryFieldId, label: 'Summary' }];
+
+      const schemaCols = exportedSpreadsheetFields.map((field) => ({
         header: field.label,
         key: field.id,
         options: { wch: field.id === primaryFieldId ? 80 : 25 },
@@ -461,7 +493,7 @@ const FormProcessDocumentTabItem = ({
             foundDeclension: extracted.matchedText,
           };
 
-          spreadsheetFields.forEach((field) => {
+          exportedSpreadsheetFields.forEach((field) => {
             row[field.id] = extracted.extractedFieldById?.[field.id];
           });
 
@@ -473,7 +505,7 @@ const FormProcessDocumentTabItem = ({
             primaryFieldId,
           );
 
-          return { ...row, ...dynamicValues };
+          return truncateRowForXlsx({ ...row, ...dynamicValues });
         });
       });
 

@@ -70,6 +70,11 @@ type ExtractorRule = {
   // field's value after extraction (e.g. reason / action period clauses that
   // are physically part of the same paragraph as the content).
   consume?: boolean;
+  // Only meaningful for a verbatim rule (no `pattern`) anchored on the match.
+  // Instead of returning the whole anchor unit, starts the returned text at
+  // the beginning of the line containing the match — so a match buried deep
+  // in a long paragraph doesn't force scrolling past unrelated leading text.
+  clipToMatchLine?: boolean;
   output?: ExtractorOutput;
 };
 
@@ -121,7 +126,9 @@ const RULE_DEFAULTS: Required<
 const DEFAULT_EXTRACTOR_SCHEMA: ExtractorSchema = {
   name: 'DEFAULT_EXTRACTOR',
   config: {
-    pipelines: [{ id: 'content', unit: 'PARAGRAPH', limit: 1 }],
+    pipelines: [
+      { id: 'content', unit: 'PARAGRAPH', limit: 1, clipToMatchLine: true },
+    ],
     compounds: [{ id: 'summary', value: ['{{content}}'] }],
   },
 };
@@ -210,6 +217,19 @@ class InformationExtractor {
   }
 
   /**
+   * Start of the line containing `position`, clamped to `boundStart` so it
+   * never escapes the unit the caller is slicing within.
+   */
+  private static findLineStart(
+    content: string,
+    boundStart: number,
+    position: number,
+  ): number {
+    const lastNewline = content.lastIndexOf('\n', position);
+    return lastNewline < boundStart ? boundStart : lastNewline + 1;
+  }
+
+  /**
    * "Find first match and stop" rule: grows a text window unit-by-unit from
    * the anchor in `direction`, testing `pattern` after each expansion. When
    * `pattern` is omitted, just returns the verbatim text of the window once
@@ -222,6 +242,8 @@ class InformationExtractor {
     direction: ExtractorDirection,
     limit: ExtractorLimit,
     pattern?: string,
+    position?: number,
+    clipToMatchLine?: boolean,
   ): string | null {
     if (anchorIndex < 0 || anchorIndex >= units.length) return null;
 
@@ -235,7 +257,14 @@ class InformationExtractor {
     let nonEmptyUnitsSeen = units[anchorIndex].text.trim() ? 1 : 0;
 
     while (true) {
-      const windowText = content.slice(units[low].start, units[high].end);
+      // Only clip while the window's low edge is still the anchor unit
+      // itself — once expansion walks past it (extra units above the match),
+      // those units should be returned in full.
+      const windowStart =
+        clipToMatchLine && position !== undefined && low === anchorIndex
+          ? this.findLineStart(content, units[low].start, position)
+          : units[low].start;
+      const windowText = content.slice(windowStart, units[high].end);
 
       if (!pattern) {
         const isFinalStep =
@@ -412,6 +441,8 @@ class InformationExtractor {
             direction,
             limit,
             rule.pattern,
+            position,
+            rule.clipToMatchLine,
           );
 
       extractedFieldById[rule.id] = value;
@@ -455,6 +486,9 @@ class InformationExtractor {
         anchorIndex,
         'DIRECTION__BOTTOM',
         1,
+        undefined,
+        position,
+        true,
       );
     }
 
