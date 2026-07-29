@@ -34,11 +34,11 @@ interface SearchResultSet {
 }
 
 // Represents an extracted information item (found in 'extractedResults').
-// Only searchQuery/foundInDocument/matchedText/position are structural
-// (always present, set by the BE regardless of schema); every other field
-// (documentNumber, summary, ...) is defined by whichever parser schema
-// produced this result, so it can't be typed as a fixed set of keys — see
-// getExtractedFieldOutputs() in FormProcessDocumentTabItem.components.tsx
+// searchQuery/foundInDocument/matchedText/position are structural (always
+// present, set by the BE regardless of schema); every schema-defined field
+// (documentNumber, summary, ...) is nested under extractedFieldById instead
+// of being spread onto this object, so it can't be typed as a fixed set of
+// keys — see getExtractedFieldOutputs() in FormProcessDocumentTabItem.components.tsx
 // for how the FE discovers which fields exist and where to show them.
 interface ExtractedResultItem {
   searchQuery: string;
@@ -46,7 +46,7 @@ interface ExtractedResultItem {
   matchedText: string;
   originalFilePath?: string;
   position?: number;
-  [fieldId: string]: string | number | null | undefined;
+  extractedFieldById: Record<string, string | number | null | undefined>;
 }
 
 // Container that holds both the NLP extraction and the raw search metadata

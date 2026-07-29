@@ -462,7 +462,7 @@ const FormProcessDocumentTabItem = ({
           };
 
           spreadsheetFields.forEach((field) => {
-            row[field.id] = extracted[field.id];
+            row[field.id] = extracted.extractedFieldById?.[field.id];
           });
 
           // Calculate dynamic fields using shared helper

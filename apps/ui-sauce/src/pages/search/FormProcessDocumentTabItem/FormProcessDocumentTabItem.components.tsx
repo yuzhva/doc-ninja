@@ -20,7 +20,7 @@ const calculateDynamicValues = (
 ) => {
   const dynamicValues: Record<string, string | null> = {};
   const primaryText = primaryFieldId
-    ? item.extracted?.[primaryFieldId]
+    ? item.extracted?.extractedFieldById?.[primaryFieldId]
     : undefined;
 
   filterConfigs.forEach((conf) => {
@@ -205,7 +205,7 @@ const ProcessedResultRow = ({
             key={field.id}
             className="px-6 py-4 whitespace-nowrap align-middle text-center text-sm text-gray-700 dark:text-gray-300 font-medium"
           >
-            {firstItem?.extracted?.[field.id] || '---'}
+            {firstItem?.extracted?.extractedFieldById?.[field.id] || '---'}
           </td>
         ))}
 
@@ -281,14 +281,20 @@ const ProcessedResultRow = ({
                   <div className="relative group">
                     <HighlightedText
                       text={
-                        primaryFieldId ? item.extracted[primaryFieldId] : ''
+                        primaryFieldId
+                          ? item.extracted.extractedFieldById?.[primaryFieldId]
+                          : ''
                       }
                       highlights={[item.extracted.matchedText]}
                     />
                     <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <ButtonCopyToClipboard
                         textToCopy={
-                          primaryFieldId ? item.extracted[primaryFieldId] : ''
+                          primaryFieldId
+                            ? item.extracted.extractedFieldById?.[
+                                primaryFieldId
+                              ]
+                            : ''
                         }
                         placement="left"
                       />
@@ -568,7 +574,11 @@ const TableProcessedDocumentResults = ({
           // (the schema's primary field) actually contains it.
           if (searchTerm && !matchesKey) {
             const matchingGroupItems = groupItems.filter((item: any) =>
-              ((primaryFieldId && item.extracted?.[primaryFieldId]) || '')
+              (
+                (primaryFieldId &&
+                  item.extracted?.extractedFieldById?.[primaryFieldId]) ||
+                ''
+              )
                 .toLowerCase()
                 .includes(searchTermLower),
             );
