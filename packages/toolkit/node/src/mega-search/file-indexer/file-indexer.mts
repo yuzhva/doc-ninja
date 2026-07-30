@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as v8 from 'v8';
 
+import { resolveCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { createLogger } from '../shared/logger.mjs';
 import {
@@ -684,19 +685,32 @@ class FileIndexer {
 
   /**
    * Wipes the on-disk index cache (global index + per-file vocab/positions +
-   * extracted text) and every in-memory cache mirroring it. Mirrors the same
-   * `cacheRoot` default ('.cache' under rootDirectory) that IndexStorage and
-   * FileScannerIndexer already use — see their `.cache/index`, `.cache/txt`,
-   * and `.cache/global-inverted-index.json.gz` defaults.
+   * extracted text) and every in-memory cache mirroring it. Uses the same
+   * resolver (resolveCachePaths) that IndexStorage/DocumentProcessor/
+   * FileScannerIndexer use to locate cache files, so this stays correct even
+   * when cacheRoot/txtCacheSubdir/indexCacheSubdir/globalIndexPath have been
+   * customized away from the defaults.
    */
   async clearCache(): Promise<void> {
-    const cacheDir = path.join(
-      this.config.rootDirectory,
-      this.config.cacheRoot || '.cache',
-    );
+    const { cacheRoot, globalIndexPath } = resolveCachePaths(this.config);
 
-    this.logger.info(`🗑️ Deleting index cache: ${cacheDir}`);
-    await fs.promises.rm(cacheDir, { recursive: true, force: true });
+    this.logger.info(`🗑️ Deleting index cache: ${cacheRoot}`);
+    await fs.promises.rm(cacheRoot, { recursive: true, force: true });
+
+    // globalIndexPath can be pointed outside cacheRoot via an explicit
+    // override, in which case the rm above won't have touched it (or its
+    // chunked-storage sibling directory) — clean those up too.
+    const globalIndexDir = path.dirname(globalIndexPath);
+    if (
+      globalIndexDir !== cacheRoot &&
+      !globalIndexDir.startsWith(cacheRoot + path.sep)
+    ) {
+      await fs.promises.rm(globalIndexPath, { force: true });
+      await fs.promises.rm(globalIndexPath.replace('.json.gz', '.chunks'), {
+        recursive: true,
+        force: true,
+      });
+    }
 
     this.documentCache.clear();
     this.invertedIndex = new InvertedIndex();

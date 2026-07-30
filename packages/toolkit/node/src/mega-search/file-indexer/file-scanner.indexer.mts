@@ -2,28 +2,25 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { FileSystemService } from 'toolkit--local/browser';
 
+import { resolveCachePaths } from '../cache-paths.mjs';
+import type { ResolvedCachePaths } from '../cache-paths.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { DocumentMetadata, SearchConfig } from '../types.mjs';
 import { FileScannerNode } from './file-scanner.node.mjs';
 
 class FileScannerIndexer {
-  private absoluteTxtCacheRoot: string;
+  private cachePaths: ResolvedCachePaths;
 
   constructor(
     private config: SearchConfig,
     private logger: Logger,
   ) {
-    const txtCacheRoot = this.config.txtCacheSubdir || '.cache/txt';
-    this.absoluteTxtCacheRoot = path.resolve(
-      this.config.rootDirectory,
-      txtCacheRoot,
-    );
+    this.cachePaths = resolveCachePaths(this.config);
   }
 
   private getTextCachePath(filePath: string): string {
-    // Optimization: Use pre-calculated absolute cache root
     const rel = path.relative(this.config.rootDirectory, filePath);
-    return path.join(this.absoluteTxtCacheRoot, `${rel}.txt`);
+    return path.join(this.cachePaths.txtCacheRoot, `${rel}.txt`);
   }
 
   async discoverFiles(): Promise<DocumentMetadata[]> {
@@ -35,7 +32,7 @@ class FileScannerIndexer {
         {
           extensions: this.config.extensions,
           maxFileSize: this.config.maxFileSize,
-          excludeDirs: [this.config.cacheRoot || '.cache'],
+          excludeAbsoluteDirs: this.cachePaths.excludeAbsoluteDirs,
         },
       );
 
@@ -78,7 +75,7 @@ class FileScannerIndexer {
           const items = await FileScannerNode.scanDirectory(fullPath, {
             extensions: this.config.extensions,
             maxFileSize: this.config.maxFileSize,
-            excludeDirs: [this.config.cacheRoot || '.cache'],
+            excludeAbsoluteDirs: this.cachePaths.excludeAbsoluteDirs,
           });
 
           const infos = items.map((item) => ({

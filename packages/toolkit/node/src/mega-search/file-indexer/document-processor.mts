@@ -3,6 +3,8 @@ import * as path from 'path';
 import { promisify } from 'util';
 
 import { DocumentExtractor } from '../../document-extractor/index.mjs';
+import { resolveCachePaths } from '../cache-paths.mjs';
+import type { ResolvedCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
@@ -13,11 +15,14 @@ class DocumentProcessor {
   private documentExtractor = new DocumentExtractor();
   private textLRU = new LRUCache<string, string>(25);
   private createdDirectories = new Set<string>();
+  private cachePaths: ResolvedCachePaths;
 
   constructor(
     private config: SearchConfig,
     private logger: Logger,
-  ) {}
+  ) {
+    this.cachePaths = resolveCachePaths(this.config);
+  }
 
   private getCacheRelativePath(filePath: string): string {
     const rel = path.relative(this.config.rootDirectory, filePath);
@@ -26,18 +31,12 @@ class DocumentProcessor {
 
   private getTextCachePath(filePath: string): string {
     const rel = this.getCacheRelativePath(filePath);
-    const txtCacheRoot = this.config.txtCacheSubdir || '.cache/txt';
-    return path.join(this.config.rootDirectory, txtCacheRoot, `${rel}.txt`);
+    return path.join(this.cachePaths.txtCacheRoot, `${rel}.txt`);
   }
 
   private getIndexCachePath(filePath: string): string {
     const rel = this.getCacheRelativePath(filePath);
-    const indexCacheRoot = this.config.indexCacheSubdir || '.cache/index';
-    return path.join(
-      this.config.rootDirectory,
-      indexCacheRoot,
-      `${rel}.index.json`,
-    );
+    return path.join(this.cachePaths.indexCacheRoot, `${rel}.index.json`);
   }
 
   private async ensureDirectory(dirPath: string): Promise<void> {
