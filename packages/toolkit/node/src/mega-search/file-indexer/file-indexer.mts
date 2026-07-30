@@ -399,7 +399,7 @@ class FileIndexer {
       }
 
       const significantChanges =
-        actuallyProcessed >
+        actuallyProcessed >=
         Math.max(minFiles!, files.length * rebuildThreshold!);
 
       // If files were removed, we should consider it a significant change to ensure index consistency
@@ -517,7 +517,7 @@ class FileIndexer {
       await Promise.all(workerPromises);
 
       if (
-        totalIndexed > Math.max(minFiles!, files.length * rebuildThreshold!) ||
+        totalIndexed >= Math.max(minFiles!, files.length * rebuildThreshold!) ||
         filesRemoved
       ) {
         await this.builder.updateInvertedIndexBatch(
