@@ -326,7 +326,7 @@ const ProcessedResultRow = ({
                     <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Tooltip
                         content="Скопіювати"
-                        placement="bottom"
+                        placement="top"
                         align="end"
                       >
                         <ButtonCopyToClipboard
@@ -350,7 +350,7 @@ const ProcessedResultRow = ({
                           <div className="flex">
                             <Tooltip
                               content="Зберегти .doc*"
-                              placement="bottom"
+                              placement="top"
                               align="end"
                             >
                               <button

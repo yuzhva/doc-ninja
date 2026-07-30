@@ -1,10 +1,6 @@
 import path from 'path';
-import type {
-  MegaSearch,
-  PaginatedSearchResult,
-  SearchOptions,
-} from 'toolkit--local/node';
-import { createMegaSearch } from 'toolkit--local/node';
+import type { PaginatedSearchResult, SearchOptions } from 'toolkit--local/node';
+import { createMegaSearch, MegaSearch } from 'toolkit--local/node';
 
 import { runtimePathById } from '../../supplement/index.mjs';
 
@@ -81,6 +77,27 @@ class DocumentIntelligenceService {
     }
 
     return results;
+  }
+
+  /**
+   * Re-runs indexing for this instance's rootDirectory. Same incremental
+   * engine that runs on first search (only new/changed files are
+   * reprocessed, deleted files are pruned) — this just lets a caller
+   * trigger it explicitly, independent of running a search.
+   */
+  async reindex(): Promise<void> {
+    const megaSearch = await this.getMegaSearchInstance();
+    await megaSearch.reindex();
+  }
+
+  /**
+   * Deletes the on-disk index cache for this instance's rootDirectory.
+   * Deliberately does NOT go through getMegaSearchInstance() — that would
+   * run a full initialize() (reading the very cache being deleted) first.
+   */
+  async clearCache(): Promise<void> {
+    await MegaSearch.clearCacheFor(this.rootDirectory);
+    this.megaSearchInstance = null;
   }
 }
 

@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as v8 from 'v8';
@@ -679,6 +680,29 @@ class FileIndexer {
       stemDictionary: this.getStemDictionary(),
       searchCache: this.searchCache,
     };
+  }
+
+  /**
+   * Wipes the on-disk index cache (global index + per-file vocab/positions +
+   * extracted text) and every in-memory cache mirroring it. Mirrors the same
+   * `cacheRoot` default ('.cache' under rootDirectory) that IndexStorage and
+   * FileScannerIndexer already use — see their `.cache/index`, `.cache/txt`,
+   * and `.cache/global-inverted-index.json.gz` defaults.
+   */
+  async clearCache(): Promise<void> {
+    const cacheDir = path.join(
+      this.config.rootDirectory,
+      this.config.cacheRoot || '.cache',
+    );
+
+    this.logger.info(`🗑️ Deleting index cache: ${cacheDir}`);
+    await fs.promises.rm(cacheDir, { recursive: true, force: true });
+
+    this.documentCache.clear();
+    this.invertedIndex = new InvertedIndex();
+    this.stemDictionary.clear();
+    this.documentLRU.clear();
+    this.searchCache = undefined;
   }
 }
 

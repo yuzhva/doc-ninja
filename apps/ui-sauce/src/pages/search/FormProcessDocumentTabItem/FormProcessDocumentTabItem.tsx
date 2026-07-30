@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileSystemItem } from 'toolkit--local/browser';
 
-import { Checkbox, Select } from '../../../components';
+import { Checkbox, Dropdown, Select } from '../../../components';
 import { fetchRequest } from '../../../utils';
 import { DocxTemplateEngine } from '../../../utils/docx-template-engine';
 import {
@@ -165,6 +165,47 @@ const FormProcessDocumentTabItem = ({
     setIsParserConfigSettingsOpen(false);
     setParserConfigsVersion((v) => v + 1);
   };
+
+  // Reindex / delete-cache act on the currently selected source folder, so
+  // both share the same sourcePath resolution and request plumbing — only
+  // the action string (and resulting toast copy) differs.
+  const [pendingDocumentsIndexAction, setPendingDocumentsIndexAction] =
+    React.useState<'reindex' | 'delete-cache' | null>(null);
+
+  const handleDocumentsIndexAction = React.useCallback(
+    async (action: 'reindex' | 'delete-cache') => {
+      const sourcePath =
+        sourceDirectory?.structure?.path ||
+        directoryData?.structure?.path ||
+        '';
+
+      if (!sourcePath) {
+        addToast('warning', 'Спочатку оберіть папку з документами.');
+        return;
+      }
+
+      setPendingDocumentsIndexAction(action);
+      try {
+        await fetchRequest('/api-local/process/documents-index', {
+          method: 'POST',
+          body: JSON.stringify({ action, sourcePath }),
+        });
+
+        addToast(
+          'success',
+          action === 'reindex'
+            ? 'Переіндексацію завершено.'
+            : 'Кеш індексації видалено.',
+        );
+      } catch (error: any) {
+        console.error('Documents index action failed:', error);
+        addToast('error', `Не вдалося виконати дію: ${error.message || error}`);
+      } finally {
+        setPendingDocumentsIndexAction(null);
+      }
+    },
+    [sourceDirectory, directoryData, addToast],
+  );
 
   // The schema currently selected in the UI — used both to interpret results
   // already on screen (table columns, excel export) and, per-request, as the
@@ -819,16 +860,114 @@ const FormProcessDocumentTabItem = ({
               </div>
 
               <div className="grid gap-4 mb-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <FormInputFileSelect
-                    id="processDocumentsSourceFolder"
-                    name="sourceDirectory"
-                    label="Папка з документами для пошуку"
-                    onClick={onSelectSourceDirectory}
-                    selectedItem={sourceDirectory || directoryData}
-                    isFileSystemAccessSupported={isFileSystemAccessSupported}
-                    icon="folder"
-                  />
+                <div className="sm:col-span-2 flex items-end gap-2">
+                  <div className="flex-1">
+                    <FormInputFileSelect
+                      id="processDocumentsSourceFolder"
+                      name="sourceDirectory"
+                      label="Папка з документами для пошуку"
+                      onClick={onSelectSourceDirectory}
+                      selectedItem={sourceDirectory || directoryData}
+                      isFileSystemAccessSupported={isFileSystemAccessSupported}
+                      icon="folder"
+                    />
+                  </div>
+
+                  <Dropdown
+                    openDirection="up"
+                    panelClassName="right-0 bg-white dark:bg-gray-800"
+                    panelPadding=""
+                    trigger={({ toggle }) => (
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        title="Налаштування індексації документів"
+                        className={`${
+                          !directoryData?.structure
+                            ? 'opacity-50 cursor-not-allowed '
+                            : 'cursor-pointer '
+                        }shrink-0 rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700`}
+                        disabled={!directoryData?.structure}
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth="2"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  >
+                    <ul className="text-xs text-gray-700 dark:text-gray-200">
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() => handleDocumentsIndexAction('reindex')}
+                          disabled={pendingDocumentsIndexAction !== null}
+                          className="w-full whitespace-nowrap flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg
+                            className="w-4 h-4 shrink-0"
+                            aria-hidden="true"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth="2"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M17.651 7.65a7.131 7.131 0 0 0-12.68 3.15M18.001 4v4h-4m-7.652 8.35a7.13 7.13 0 0 0 12.68-3.15M6 20v-4h4"
+                            />
+                          </svg>
+                          Переіндексувати
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDocumentsIndexAction('delete-cache')
+                          }
+                          disabled={pendingDocumentsIndexAction !== null}
+                          className="w-full whitespace-nowrap flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-red-600 dark:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <svg
+                            className="w-4 h-4 shrink-0"
+                            aria-hidden="true"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth="2"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+                            />
+                          </svg>
+                          Видалити кеш
+                        </button>
+                      </li>
+                    </ul>
+                  </Dropdown>
                 </div>
 
                 {/* Parser Config Selection */}
