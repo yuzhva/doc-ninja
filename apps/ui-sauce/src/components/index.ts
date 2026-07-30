@@ -9,4 +9,5 @@ export { Select } from './Select';
 export type { SelectOption } from './Select';
 export { Tabs } from './Tabs';
 export { Toast } from './Toast';
+export { Tooltip } from './Tooltip';
 export type { ToastMessage } from './Toast';

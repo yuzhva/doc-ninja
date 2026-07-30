@@ -28,7 +28,6 @@ const ButtonCopyToClipboard = ({
         type="button"
         onClick={handleCopy}
         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-        title="Скопіювати"
       >
         {showCopied ? (
           <svg
