@@ -6,7 +6,14 @@ import { FileSystemService } from 'toolkit--local/browser';
 interface ScanOptions {
   extensions?: string[];
   maxFileSize?: number;
+  /** Directory basenames to skip, matched at any depth. */
   excludeDirs?: string[];
+  /**
+   * Absolute directory paths to skip. Unlike excludeDirs (name-only), this
+   * correctly excludes a cache directory that isn't a dot-prefixed name and/or
+   * lives at a custom, possibly nested, location.
+   */
+  excludeAbsoluteDirs?: string[];
 }
 
 class FileScannerNode {
@@ -25,6 +32,7 @@ class FileScannerNode {
       extensions,
       maxFileSize = Infinity,
       excludeDirs = ['.cache'],
+      excludeAbsoluteDirs = [],
     } = options;
 
     const files: FileSystemItem[] = [];
@@ -43,6 +51,7 @@ class FileScannerNode {
 
           if (entry.isDirectory()) {
             if (excludeDirs.includes(entry.name)) continue;
+            if (excludeAbsoluteDirs.includes(fullPath)) continue;
             await traverse(fullPath);
           } else if (entry.isFile()) {
             const ext = path.extname(entry.name).toLowerCase();
