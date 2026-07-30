@@ -102,47 +102,54 @@ interface DropdownTriggerArgs {
 const defaultRenderTrigger = ({
   isOpen,
   toggle,
-  hasResults,
-}: DropdownTriggerArgs) => (
-  <button
-    type="button"
-    onClick={toggle}
-    disabled={!hasResults}
-    className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
-  >
-    <svg
-      className="w-4 h-4 mr-2"
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth="2"
-      stroke="currentColor"
-      aria-hidden="true"
+  // hasResults,
+}: DropdownTriggerArgs) => {
+  // const dynamicClassName = !hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700';
+  const dynamicClassName =
+    'cursor-pointer hover:bg-gray-100 hover:text-blue-700';
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      // NOTE: allow to choose template before search
+      // disabled={!hasResults}
+      className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${dynamicClassName}`}
     >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
-      />
-    </svg>
-    Зберегти .doc*
-    <svg
-      className={`-mr-1 ml-1.5 w-5 h-5 transition-transform duration-200 ${
-        isOpen ? 'rotate-180' : ''
-      }`}
-      fill="currentColor"
-      viewBox="0 0 20 20"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        clipRule="evenodd"
-        fillRule="evenodd"
-        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-      />
-    </svg>
-  </button>
-);
+      <svg
+        className="w-4 h-4 mr-2"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth="2"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
+        />
+      </svg>
+      Зберегти .doc*
+      <svg
+        className={`-mr-1 ml-1.5 w-5 h-5 transition-transform duration-200 ${
+          isOpen ? 'rotate-180' : ''
+        }`}
+        fill="currentColor"
+        viewBox="0 0 20 20"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path
+          clipRule="evenodd"
+          fillRule="evenodd"
+          d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+        />
+      </svg>
+    </button>
+  );
+};
 
 const FPDDocmTemplatesDropdown = ({
   items,
@@ -383,26 +390,42 @@ const FPDDocmTemplatesDropdown = ({
           {templates.map((template) => {
             const isSelected = template.id === selectedTemplateId;
             const isUnavailable = unavailableTemplateIds.has(template.id);
+            const inputId = `docmTemplate-${template.id}`;
 
             return (
-              <button
+              <div
                 key={template.id}
-                type="button"
-                aria-current={isSelected}
                 onClick={() => DocmTemplatesStore.selectTemplate(template.id)}
                 title={
                   isUnavailable
                     ? 'Файл шаблону не знайдено на диску — спробуйте ще раз або оберіть інший'
                     : undefined
                 }
-                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium cursor-pointer transition-colors focus:outline-none ${
+                className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-blue-50 dark:bg-blue-900/30'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                <span
-                  className={`truncate flex items-center gap-1.5 ${isUnavailable ? 'text-red-600 dark:text-red-400' : ''}`}
+                <input
+                  id={inputId}
+                  type="radio"
+                  name="docmTemplate"
+                  checked={isSelected}
+                  onChange={() =>
+                    DocmTemplatesStore.selectTemplate(template.id)
+                  }
+                  className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <label
+                  htmlFor={inputId}
+                  className={`w-full truncate select-none text-sm font-medium cursor-pointer flex items-center gap-1.5 ${
+                    isUnavailable
+                      ? 'text-red-600 dark:text-red-400'
+                      : isSelected
+                        ? 'text-blue-700 dark:text-blue-400'
+                        : 'text-gray-700 dark:text-gray-300'
+                  }`}
                 >
                   {isUnavailable && (
                     <svg
@@ -422,49 +445,30 @@ const FPDDocmTemplatesDropdown = ({
                     </svg>
                   )}
                   <span className="truncate">{template.name}</span>
-                </span>
-                <span className="flex items-center gap-1 shrink-0">
-                  {isSelected && (
-                    <svg
-                      className="w-5 h-5 text-green-500"
-                      aria-hidden="true"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth="2.5"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="m4.5 12.75 6 6 9-13.5"
-                      />
-                    </svg>
-                  )}
-                  <span
-                    role="button"
-                    onClick={(e) => handleRemoveTemplate(e, template.id)}
-                    title="Видалити шаблон"
-                    className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
+                </label>
+                <button
+                  type="button"
+                  aria-label="Видалити шаблон"
+                  onClick={(e) => handleRemoveTemplate(e, template.id)}
+                  className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2"
+                    stroke="currentColor"
                   >
-                    <svg
-                      className="w-3.5 h-3.5"
-                      aria-hidden="true"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 14 14"
-                    >
-                      <path
-                        stroke="currentColor"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
-                      />
-                    </svg>
-                  </span>
-                </span>
-              </button>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18 18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
             );
           })}
         </div>

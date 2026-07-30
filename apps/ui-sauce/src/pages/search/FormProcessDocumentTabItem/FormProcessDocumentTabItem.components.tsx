@@ -4,6 +4,7 @@ import {
   Badge,
   ButtonCopyToClipboard,
   FilterDropdown,
+  Tooltip,
 } from '../../../components';
 import {
   FormProcessDocumentSideOver,
@@ -323,6 +324,22 @@ const ProcessedResultRow = ({
                       highlights={[item.extracted.matchedText]}
                     />
                     <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Tooltip
+                        content="Скопіювати"
+                        placement="bottom"
+                        align="end"
+                      >
+                        <ButtonCopyToClipboard
+                          textToCopy={
+                            (primaryFieldId &&
+                              item.extracted.extractedFieldById[
+                                primaryFieldId
+                              ]) ??
+                            ''
+                          }
+                          placement="left"
+                        />
+                      </Tooltip>
                       <FPDDocmTemplatesDropdown
                         items={[item]}
                         templateTagFieldIds={templateTagFieldIds}
@@ -330,39 +347,36 @@ const ProcessedResultRow = ({
                         addToast={addToast}
                         openDirection="up"
                         renderTrigger={({ toggle }) => (
-                          <button
-                            type="button"
-                            onClick={toggle}
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                            title="Зберегти .doc*"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              strokeWidth="2"
-                              stroke="currentColor"
-                              aria-hidden="true"
+                          <div className="flex">
+                            <Tooltip
+                              content="Зберегти .doc*"
+                              placement="bottom"
+                              align="end"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
-                              />
-                            </svg>
-                          </button>
+                              <button
+                                type="button"
+                                onClick={toggle}
+                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                              >
+                                <svg
+                                  className="w-4 h-4"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth="2"
+                                  stroke="currentColor"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
+                                  />
+                                </svg>
+                              </button>
+                            </Tooltip>
+                          </div>
                         )}
-                      />
-                      <ButtonCopyToClipboard
-                        textToCopy={
-                          (primaryFieldId &&
-                            item.extracted.extractedFieldById[
-                              primaryFieldId
-                            ]) ??
-                          ''
-                        }
-                        placement="left"
                       />
                     </div>
                   </div>
@@ -471,7 +485,9 @@ const ProcessedResultGroup = ({
           <span className="text-blue-600 dark:text-blue-400">
             {searchQuery}
           </span>
-          <ButtonCopyToClipboard textToCopy={searchQuery} placement="right" />
+          <Tooltip content="Скопіювати" placement="bottom">
+            <ButtonCopyToClipboard textToCopy={searchQuery} placement="right" />
+          </Tooltip>
         </h3>
         <button
           type="button"
@@ -996,6 +1012,13 @@ const TableProcessedDocumentResults = ({
         <div className="flex-grow" />
 
         {/* Export Button */}
+        <FPDDocmTemplatesDropdown
+          items={flattenedItems}
+          templateTagFieldIds={allFieldIds}
+          onGenerate={onBtnGenerateDocmClick}
+          addToast={addToast}
+        />
+
         <button
           type="button"
           className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
@@ -1019,13 +1042,6 @@ const TableProcessedDocumentResults = ({
           </svg>
           Зберегти .xlsx
         </button>
-
-        <FPDDocmTemplatesDropdown
-          items={flattenedItems}
-          templateTagFieldIds={allFieldIds}
-          onGenerate={onBtnGenerateDocmClick}
-          addToast={addToast}
-        />
       </div>
 
       {/* Divider */}

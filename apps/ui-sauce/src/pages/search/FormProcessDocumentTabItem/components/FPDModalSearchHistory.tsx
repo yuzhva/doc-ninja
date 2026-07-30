@@ -89,6 +89,24 @@ const FPDModalSearchHistory = ({
     onSelectQuery(history[selectedIndex]);
   };
 
+  const handleDeleteEntry = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const next = history.filter((_, i) => i !== index);
+    setHistory(next);
+
+    try {
+      localStorage.setItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(next));
+    } catch (err) {
+      console.warn('Failed to save search history', err);
+    }
+
+    setSelectedIndex((prev) => {
+      if (prev === null || prev === index) return null;
+      return prev > index ? prev - 1 : prev;
+    });
+  };
+
   return (
     <Modal
       title="Історія пошуку"
@@ -136,40 +154,59 @@ const FPDModalSearchHistory = ({
         <div className="-mx-4 md:-mx-6 max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
           {history.map((query, index) => {
             const isSelected = index === selectedIndex;
+            const inputId = `searchHistoryQuery-${index}`;
 
             return (
-              <button
+              <div
                 key={index}
-                type="button"
-                aria-current={isSelected}
                 onClick={() => setSelectedIndex(index)}
-                className={`w-full flex items-center justify-between gap-3 px-4 md:px-6 py-2.5 text-left text-sm font-medium cursor-pointer transition-colors focus:outline-none ${
+                className={`w-full flex items-center gap-3 px-4 md:px-6 py-2.5 cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-blue-50 dark:bg-blue-900/30'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                <span className="line-clamp-2 whitespace-pre-line">
+                <input
+                  id={inputId}
+                  type="radio"
+                  name="searchHistoryQuery"
+                  checked={isSelected}
+                  onChange={() => setSelectedIndex(index)}
+                  className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <label
+                  htmlFor={inputId}
+                  className={`w-full select-none text-sm font-medium line-clamp-2 whitespace-pre-line cursor-pointer ${
+                    isSelected
+                      ? 'text-blue-700 dark:text-blue-400'
+                      : 'text-gray-700 dark:text-gray-300'
+                  }`}
+                >
                   {query}
-                </span>
-                {isSelected && (
+                </label>
+                <button
+                  type="button"
+                  aria-label="Видалити запит з історії"
+                  onClick={(e) => handleDeleteEntry(index, e)}
+                  className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
+                >
                   <svg
-                    className="w-5 h-5 text-green-500 shrink-0"
+                    className="w-4 h-4"
                     aria-hidden="true"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
-                    strokeWidth="2.5"
+                    strokeWidth="2"
                     stroke="currentColor"
                   >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="m4.5 12.75 6 6 9-13.5"
+                      d="M6 18 18 6M6 6l12 12"
                     />
                   </svg>
-                )}
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>
