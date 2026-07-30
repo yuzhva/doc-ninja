@@ -14,6 +14,10 @@ class LRUCache<K, V> {
     return value;
   }
 
+  delete(key: K): void {
+    this.cache.delete(key);
+  }
+
   set(key: K, value: V) {
     if (this.cache.has(key)) this.cache.delete(key);
     this.cache.set(key, value);

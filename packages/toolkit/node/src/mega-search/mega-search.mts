@@ -5,6 +5,7 @@ import { SUPPORTED_EXTENSIONS } from '../document-extractor/index.mjs';
 import { BM25Scorer } from './bm25-scorer.mjs';
 import { FileIndexer } from './file-indexer/index.mjs';
 import { levenshtein } from './fuzzy.mjs';
+import { LRUCache } from './lru-cache.mjs';
 import { PhraseMatcher } from './mega-search.phrase-matcher.mjs';
 import { SnippetGenerator } from './mega-search.snippet-generator.mjs';
 import type {
@@ -20,6 +21,71 @@ import { DocumentIndex, InvertedIndexEntry, SearchConfig } from './types.mjs';
 
 const logger = createLogger('MegaSearch');
 
+type QueryCacheEntry = {
+  originalPhraseTokens: string[]; // Exact words (for strict phrase)
+  stemmedTokens: string[]; // Stemmed words (for fuzzy matching)
+  uniqueScoringTokens: string[]; // Deduplicated stemmed (for scoring)
+  isPhrase: boolean;
+  timestamp: number;
+};
+
+// Shared output shape for the phrase-search and token-search scoring paths,
+// so `search()` can treat them interchangeably regardless of which ran.
+type ScoringResult = {
+  filteredDocIds: string[];
+  docScores: Map<string, number>;
+  docMatchCounts: Map<string, number>;
+  phraseMatches: Map<string, number[][]>;
+};
+
+type PhraseScoringParams = {
+  tokensToUse: string[];
+  queryData: QueryCacheEntry;
+  isPhraseProximityEnabled: boolean;
+  maxTypoDistance: number;
+  maxWordsInPhraseDistance: number;
+  invertedIndex: Map<string, InvertedIndexEntry[]>;
+  stemDictionary: Map<string, string[]>;
+  docCache: Map<string, DocumentIndex>;
+  resolvedScopedPaths: string[];
+  isTypoToleranceEnabled: boolean;
+  useBM25: boolean;
+  docCount: number;
+};
+
+type TokenScoringParams = {
+  tokensToUse: string[];
+  invertedIndex: Map<string, InvertedIndexEntry[]>;
+  stemDictionary: Map<string, string[]>;
+  docCache: Map<string, DocumentIndex>;
+  resolvedScopedPaths: string[];
+  isTypoToleranceEnabled: boolean;
+  maxTypoDistance: number;
+  useBM25: boolean;
+  docCount: number;
+};
+
+type PaginationBounds = {
+  totalPages: number;
+  startIndex: number;
+  endIndex: number;
+  effectivePageSize: number;
+};
+
+type BuildPaginatedResultsParams = {
+  rawResults: [string, number][];
+  docCache: Map<string, DocumentIndex>;
+  invertedIndex: Map<string, InvertedIndexEntry[]>;
+  tokensToUse: string[];
+  isTypoToleranceEnabled: boolean;
+  isPhrase: boolean;
+  snippetsLimit: number | 'ALL';
+  phraseMatches: Map<string, number[][]>;
+  includeHighlights: boolean;
+  snippetContextBefore: number;
+  snippetContextAfter: number;
+};
+
 class MegaSearch {
   private fileIndexer: FileIndexer;
   private textProcessor: UkrainianTextProcessor;
@@ -27,23 +93,13 @@ class MegaSearch {
   private phraseMatcher: PhraseMatcher;
   private snippetGenerator: SnippetGenerator;
 
-  // ADD: Query preprocessing cache
-  private queryCache = new Map<
-    string,
-    {
-      originalPhraseTokens: string[]; // Exact words (for strict phrase)
-      stemmedTokens: string[]; // Stemmed words (for fuzzy matching)
-      uniqueScoringTokens: string[]; // Deduplicated stemmed (for scoring)
-      isPhrase: boolean;
-      timestamp: number;
-    }
-  >();
+  // Query preprocessing cache (tokenization/stemming is re-derived per unique
+  // query+typo-tolerance combination, so caching it avoids repeat work).
+  private queryCache = new LRUCache<string, QueryCacheEntry>(1000);
   private readonly QUERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  private readonly MAX_QUERY_CACHE_SIZE = 1000;
 
-  // ✅ NEW: Search result caching to speed up frequent queries
-  private searchCache = new Map<string, PaginatedSearchResult>();
-  private readonly MAX_SEARCH_CACHE_SIZE = 100;
+  // Search result cache, keyed by query+options, to speed up repeat requests.
+  private searchCache = new LRUCache<string, PaginatedSearchResult>(100);
 
   constructor(private config: SearchConfig) {
     this.fileIndexer = new FileIndexer(config);
@@ -168,10 +224,15 @@ class MegaSearch {
   /**
    * Get from query cache with TTL check
    */
-  private getFromQueryCache(key: string) {
+  private getFromQueryCache(key: string): QueryCacheEntry | null {
     const cached = this.queryCache.get(key);
     if (!cached) return null;
 
+    // LRUCache.get() just promoted this key to most-recently-used before we
+    // got a chance to check its age — if it's stale, undo that by evicting
+    // it outright. Otherwise a repeatedly-queried-but-expired entry would
+    // keep jumping the eviction queue forever, squatting on a slot a fresh
+    // entry could use.
     if (Date.now() - cached.timestamp > this.QUERY_CACHE_TTL) {
       this.queryCache.delete(key);
       return null;
@@ -181,15 +242,9 @@ class MegaSearch {
   }
 
   /**
-   * Set in query cache with size limit
+   * Set in query cache. Size limiting is handled by the underlying LRUCache.
    */
-  private setInQueryCache(key: string, data: any) {
-    // Clean old entries if cache is full
-    if (this.queryCache.size >= this.MAX_QUERY_CACHE_SIZE) {
-      const oldestKey = Array.from(this.queryCache.keys())[0];
-      this.queryCache.delete(oldestKey);
-    }
-
+  private setInQueryCache(key: string, data: QueryCacheEntry): void {
     this.queryCache.set(key, data);
   }
 
@@ -219,6 +274,391 @@ class MegaSearch {
     }
   }
 
+  private resolveScopedPaths(searchScopedPaths: string[]): string[] {
+    return searchScopedPaths.map((p) => {
+      // If path is already absolute and within root, keep it
+      if (path.isAbsolute(p) && p.startsWith(this.config.rootDirectory)) {
+        return p;
+      }
+      // Otherwise treat as relative to root. Strip a leading slash so
+      // path.join treats it as relative rather than re-rooting.
+      const cleanPath = p.replace(/^[/\\]/, '');
+      return path.join(this.config.rootDirectory, cleanPath);
+    });
+  }
+
+  /**
+   * Resolve tokenization/stemming for a query, using the query cache when
+   * the same query + typo-tolerance combination was seen recently.
+   */
+  private getOrCreateQueryData(
+    query: string,
+    isTypoToleranceEnabled: boolean,
+    isPhraseProximityEnabled: boolean,
+  ): QueryCacheEntry {
+    const tokenizationCacheKey = `${query}|${isTypoToleranceEnabled}`;
+
+    const cached = this.getFromQueryCache(tokenizationCacheKey);
+    if (cached) return cached;
+
+    const tokenizationStartTime = Date.now();
+
+    // Phrase search: query is wrapped in quotes, or proximity search is on
+    const phraseMatch = query.match(/^"(.*)"$/);
+    const isPhrase = !!phraseMatch || isPhraseProximityEnabled;
+    const phrase = phraseMatch
+      ? phraseMatch[1]
+      : isPhraseProximityEnabled
+        ? query
+        : null;
+
+    const rawTokens = this.textProcessor.tokenize(phrase || query);
+
+    // Three token variants for different purposes:
+    const originalPhraseTokens = rawTokens.map((t) => t.term.toLowerCase()); // Exact words
+    const stemmedTokens = rawTokens.map((t) =>
+      this.textProcessor.stemWord(t.term),
+    ); // Stemmed
+    const uniqueScoringTokens = Array.from(new Set(stemmedTokens)); // Deduplicated
+
+    const queryData: QueryCacheEntry = {
+      originalPhraseTokens, // For strict phrase matching (preserves exact spelling)
+      stemmedTokens, // For fuzzy phrase matching (allows word variations)
+      uniqueScoringTokens, // For BM25/TF-IDF scoring (deduplicated)
+      isPhrase,
+      timestamp: Date.now(),
+    };
+
+    this.setInQueryCache(tokenizationCacheKey, queryData);
+    logger.debug(
+      `Tokenization completed in ${Date.now() - tokenizationStartTime}ms`,
+    );
+
+    return queryData;
+  }
+
+  /**
+   * Score + filter documents for a phrase query ("..." or proximity search).
+   */
+  private scorePhraseSearch(params: PhraseScoringParams): ScoringResult {
+    const {
+      tokensToUse,
+      queryData,
+      isPhraseProximityEnabled,
+      maxTypoDistance,
+      maxWordsInPhraseDistance,
+      invertedIndex,
+      stemDictionary,
+      docCache,
+      resolvedScopedPaths,
+      isTypoToleranceEnabled,
+      useBM25,
+      docCount,
+    } = params;
+
+    const docScores = new Map<string, number>();
+    const docMatchCounts = new Map<string, number>();
+    const phraseMatches = new Map<string, number[][]>();
+
+    const phraseFilterStartTime = Date.now();
+
+    let filteredDocIds: string[];
+    if (isPhraseProximityEnabled) {
+      // Index-based fuzzy phrase search
+      const matches = this.phraseMatcher.findDocsWithFuzzyPhrase(
+        tokensToUse,
+        { maxTypoDistance, maxWordsInPhraseDistance },
+        invertedIndex,
+        stemDictionary,
+        docCache,
+      );
+
+      filteredDocIds = Array.from(matches.keys());
+      matches.forEach((value, key) => {
+        phraseMatches.set(key, value);
+        docMatchCounts.set(key, value.length);
+      });
+    } else {
+      const candidateDocIds = this.phraseMatcher.getCandidateDocsForPhrase(
+        tokensToUse,
+        invertedIndex,
+      );
+      filteredDocIds = candidateDocIds.filter((docId) => {
+        const doc = docCache.get(docId);
+        if (!doc) return false;
+
+        const count = this.phraseMatcher.countExactPhrase(
+          doc,
+          queryData.originalPhraseTokens,
+        );
+
+        if (count > 0) {
+          docMatchCounts.set(docId, count);
+          return true;
+        }
+        return false;
+      });
+    }
+
+    if (resolvedScopedPaths.length > 0) {
+      filteredDocIds = filteredDocIds.filter((docId) => {
+        const doc = docCache.get(docId);
+        if (!doc) return false;
+        return resolvedScopedPaths.some((p) =>
+          doc.metadata.originalFilePath.startsWith(p),
+        );
+      });
+    }
+
+    logger.debug(
+      `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
+    );
+
+    for (const docId of filteredDocIds) {
+      let score = 0;
+      const doc = docCache.get(docId);
+      if (!doc) continue;
+
+      for (const term of queryData.uniqueScoringTokens) {
+        const tf = doc.termFrequency.get(term) || 0;
+        if (tf === 0) continue;
+
+        const postings = invertedIndex.get(term);
+        const df = postings ? postings.length : 0;
+        if (df === 0) continue;
+
+        if (useBM25) {
+          score += this.bm25Scorer.calculateScore(
+            tf,
+            doc.wordCount,
+            df,
+            docCount,
+          );
+        } else {
+          score += this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
+        }
+      }
+
+      // Exact phrase matches get a higher boost than fuzzy proximity matches
+      score *= isTypoToleranceEnabled ? 1.2 : 1.5;
+
+      docScores.set(docId, score);
+    }
+
+    return { filteredDocIds, docScores, docMatchCounts, phraseMatches };
+  }
+
+  /**
+   * Score + filter documents for a plain (non-phrase) token query.
+   */
+  private scoreTokenSearch(params: TokenScoringParams): ScoringResult {
+    const {
+      tokensToUse,
+      invertedIndex,
+      stemDictionary,
+      docCache,
+      resolvedScopedPaths,
+      isTypoToleranceEnabled,
+      maxTypoDistance,
+      useBM25,
+      docCount,
+    } = params;
+
+    const docScores = new Map<string, number>();
+    const docMatchCounts = new Map<string, number>();
+
+    const uniqueTokensToUse = Array.from(new Set(tokensToUse));
+
+    for (const term of uniqueTokensToUse) {
+      let candidateTerms: string[] = [term];
+      if (isTypoToleranceEnabled) {
+        // Use stemDictionary for fast candidate lookup
+        const candidates = stemDictionary.get(term);
+        if (candidates) {
+          // Exact stem match — the stemmed index is authoritative
+          candidateTerms = [term];
+        } else {
+          // Fallback for terms not in the stem dictionary (e.g. misspellings)
+          candidateTerms = Array.from(invertedIndex.keys()).filter(
+            (idxTerm: string) => levenshtein(term, idxTerm) <= maxTypoDistance,
+          );
+        }
+      }
+
+      for (const idxTerm of candidateTerms) {
+        const postings = invertedIndex.get(idxTerm);
+        if (!postings) continue;
+
+        const df = postings.length; // Document frequency
+
+        if (!Array.isArray(postings)) {
+          logger.warn(`Invalid postings for term "${idxTerm}". Skipping.`);
+          continue;
+        }
+
+        for (const entry of postings) {
+          const tf = entry.frequency; // Term frequency
+          const doc = docCache.get(entry.documentId);
+
+          if (!doc) continue;
+
+          if (resolvedScopedPaths.length > 0) {
+            const isAllowed = resolvedScopedPaths.some((p) =>
+              doc.metadata.originalFilePath.startsWith(p),
+            );
+            if (!isAllowed) continue;
+          }
+
+          const score = useBM25
+            ? this.bm25Scorer.calculateScore(tf, doc.wordCount, df, docCount)
+            : this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
+
+          docScores.set(
+            entry.documentId,
+            (docScores.get(entry.documentId) || 0) + score,
+          );
+
+          docMatchCounts.set(
+            entry.documentId,
+            (docMatchCounts.get(entry.documentId) || 0) + entry.frequency,
+          );
+        }
+      }
+    }
+
+    return {
+      filteredDocIds: Array.from(docScores.keys()),
+      docScores,
+      docMatchCounts,
+      phraseMatches: new Map(),
+    };
+  }
+
+  private calculatePaginationBounds(
+    totalResults: number,
+    page: number,
+    pageSize: number | 'ALL',
+  ): PaginationBounds {
+    if (pageSize === 'ALL') {
+      return {
+        totalPages: 1,
+        startIndex: 0,
+        endIndex: totalResults,
+        effectivePageSize: totalResults,
+      };
+    }
+
+    const effectivePageSize = Number(pageSize) || 10;
+    const totalPages = Math.ceil(totalResults / effectivePageSize);
+    const startIndex = (page - 1) * effectivePageSize;
+    const endIndex = startIndex + effectivePageSize;
+
+    return { totalPages, startIndex, endIndex, effectivePageSize };
+  }
+
+  private sortFilteredDocIds(
+    filteredDocIds: string[],
+    docScores: Map<string, number>,
+    docCache: Map<string, DocumentIndex>,
+    sortBy: 'relevance' | 'date',
+    sortOrder: 'asc' | 'desc',
+    filenameDatePattern: string | undefined,
+  ): [string, number][] {
+    // Pre-calculate dates if sorting by date to avoid repeated regex parsing
+    // inside sort (O(N) vs O(N log N)).
+    const docDates = new Map<string, number>();
+    if (sortBy === 'date') {
+      for (const docId of filteredDocIds) {
+        const doc = docCache.get(docId);
+        docDates.set(
+          docId,
+          doc
+            ? this.extractDateFromFilename(
+                doc.metadata.fileName,
+                filenameDatePattern,
+              )
+            : 0,
+        );
+      }
+    }
+
+    return filteredDocIds
+      .map((docId) => [docId, docScores.get(docId) || 0] as [string, number])
+      .sort((a, b) => {
+        const [docIdA, scoreA] = a;
+        const [docIdB, scoreB] = b;
+
+        if (sortBy === 'date') {
+          const dateA = docDates.get(docIdA) || 0;
+          const dateB = docDates.get(docIdB) || 0;
+
+          // Primary sort: Date
+          const diff = sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+          if (diff !== 0) return diff;
+
+          // Secondary sort: Relevance (always descending)
+          return scoreB - scoreA;
+        }
+
+        // Default: Relevance. If scores are equal, sort by docId for stability.
+        const scoreDiff =
+          sortOrder === 'asc' ? scoreA - scoreB : scoreB - scoreA;
+        return scoreDiff !== 0 ? scoreDiff : docIdA.localeCompare(docIdB);
+      });
+  }
+
+  /**
+   * Generate snippets/highlights for a page of scored results, yielding to
+   * the event loop periodically so memory pressure can be checked during
+   * heavy snippet generation.
+   */
+  private async buildPaginatedResults(
+    params: BuildPaginatedResultsParams,
+  ): Promise<PaginatedSearchResult['results']> {
+    const {
+      rawResults,
+      docCache,
+      invertedIndex,
+      tokensToUse,
+      isTypoToleranceEnabled,
+      isPhrase,
+      snippetsLimit,
+      phraseMatches,
+      includeHighlights,
+      snippetContextBefore,
+      snippetContextAfter,
+    } = params;
+
+    const paginatedResults: PaginatedSearchResult['results'] = [];
+
+    for (let i = 0; i < rawResults.length; i++) {
+      const [docId, score] = rawResults[i];
+      paginatedResults.push(
+        await this.processSearchResult(
+          docId,
+          score,
+          docCache,
+          invertedIndex,
+          tokensToUse,
+          isTypoToleranceEnabled,
+          isPhrase,
+          snippetsLimit,
+          phraseMatches.get(docId),
+          includeHighlights,
+          snippetContextBefore,
+          snippetContextAfter,
+        ),
+      );
+
+      // Check memory pressure every 5 documents during heavy snippet generation
+      if (i % 5 === 0) {
+        await this.manageMemoryPressure();
+      }
+    }
+
+    return paginatedResults;
+  }
+
   async search(
     query: string,
     options: SearchOptions = {},
@@ -243,394 +683,124 @@ class MegaSearch {
       searchScopedPaths = [],
     } = options;
 
-    // Resolve scoped paths to absolute paths relative to rootDirectory
-    const resolvedScopedPaths = searchScopedPaths.map((p) => {
-      // If path is already absolute and within root, keep it
-      if (path.isAbsolute(p) && p.startsWith(this.config.rootDirectory)) {
-        return p;
-      }
-      // Otherwise treat as relative to root
-      // Remove leading slash if present to ensure path.join works correctly as relative
-      const cleanPath = p.replace(/^[/\\]/, '');
-      return path.join(this.config.rootDirectory, cleanPath);
-    });
+    const resolvedScopedPaths = this.resolveScopedPaths(searchScopedPaths);
 
-    // ✅ FIX: Create a comprehensive cache key that includes all options.
+    // Cache key includes all options, so different option combos don't collide.
     const cacheKey = JSON.stringify({ query, options });
 
-    // CHECK search result cache
-    const cached = this.searchCache.get(cacheKey);
-    if (cached) {
+    const cachedResult = this.searchCache.get(cacheKey);
+    if (cachedResult) {
       logger.info(`📋 Using cached search result for: "${query}"`);
       logger.info(
         `✅ [END] Search completed in ${Date.now() - searchStartTime}ms (from cache)`,
       );
-      return cached;
+      return cachedResult;
     }
 
     try {
-      // CREATE cache key for tokenization part
-      const tokenizationCacheKey = `${query}|${isTypoToleranceEnabled}`;
+      const queryData = this.getOrCreateQueryData(
+        query,
+        isTypoToleranceEnabled,
+        isPhraseProximityEnabled,
+      );
 
-      // CHECK query cache first
-      let queryData = this.getFromQueryCache(tokenizationCacheKey);
-
-      if (!queryData) {
-        const tokenizationStartTime = Date.now();
-        // Phrase search: detect if query is wrapped in quotes OR isPhraseProximityEnabled is enabled
-        const phraseMatch = query.match(/^"(.*)"$/);
-        const isPhrase = !!phraseMatch || isPhraseProximityEnabled;
-        const phrase = phraseMatch
-          ? phraseMatch[1]
-          : isPhraseProximityEnabled
-            ? query
-            : null;
-
-        // Tokenize the query
-        const rawTokens = this.textProcessor.tokenize(phrase || query);
-
-        // Three token variants for different purposes:
-        const originalPhraseTokens = rawTokens.map((t) => t.term.toLowerCase()); // Exact words
-        const stemmedTokens = rawTokens.map((t) =>
-          this.textProcessor.stemWord(t.term),
-        ); // Stemmed
-        const uniqueScoringTokens = Array.from(new Set(stemmedTokens)); // Deduplicated
-
-        queryData = {
-          originalPhraseTokens, // For strict phrase matching (preserves exact spelling)
-          stemmedTokens, // For fuzzy phrase matching (allows word variations)
-          uniqueScoringTokens, // For BM25/TF-IDF scoring (deduplicated)
-          isPhrase,
-          timestamp: Date.now(),
-        };
-
-        // CACHE the processed query
-        this.setInQueryCache(tokenizationCacheKey, queryData);
-        logger.debug(
-          `Tokenization completed in ${Date.now() - tokenizationStartTime}ms`,
-        );
-      }
-
-      // Get index data safely
       const dataFetchStart = Date.now();
       const { docCache, invertedIndex, stemDictionary } = this.getSearchData();
       logger.debug(`📊 Index data fetched in ${Date.now() - dataFetchStart}ms`);
 
       const docCount = docCache.size;
-
       if (docCount === 0) {
         logger.info('No documents found in index. Please run indexing first.');
         return this.createEmptyResult(page, pageSize);
       }
 
-      // Score documents using BM25 or TF-IDF (always use stemmed tokens for scoring)
-      const scoringStart = Date.now();
-      const docScores = new Map<string, number>(); // Track amount of document scores
-      const docMatchCounts = new Map<string, number>(); // Track match counts per document
-      const useBM25 = this.config.useBM25 !== false;
-
-      // If phrase search, filter to only docs containing the exact phrase
-      let filteredDocIds: string[];
-      // STAGE 3: Store match positions to pass to snippet generator
-      const phraseMatches = new Map<string, number[][]>();
-
-      // !IMPORTANT: respect the fuzzy search across strict and fuzzy phrase matching.
+      // Always use stemmed tokens for scoring; typo tolerance governs which
+      // token variant drives matching (fuzzy vs. strict).
       const tokensToUse = isTypoToleranceEnabled
-        ? queryData.stemmedTokens // Fuzzy: allow word variations
-        : queryData.originalPhraseTokens; // Strict: exact spelling only
+        ? queryData.stemmedTokens
+        : queryData.originalPhraseTokens;
 
-      // ✅ CHECK: Now that tokensToUse is defined, validate it
       if (tokensToUse.length === 0) {
         logger.info(`No valid tokens found in query: "${query}"`);
         return this.createEmptyResult(page, pageSize);
       }
 
-      if (queryData.isPhrase) {
-        const phraseFilterStartTime = Date.now();
+      const scoringStart = Date.now();
+      const useBM25 = this.config.useBM25 !== false;
 
-        if (isPhraseProximityEnabled) {
-          // STAGE 2: Index-based fuzzy phrase search
-          const matches = this.phraseMatcher.findDocsWithFuzzyPhrase(
-            tokensToUse, // Use appropriate tokens based on typo tolerance
-            { maxTypoDistance, maxWordsInPhraseDistance },
-            invertedIndex,
-            stemDictionary,
-            docCache,
-          );
-
-          filteredDocIds = Array.from(matches.keys());
-          matches.forEach((value, key) => {
-            phraseMatches.set(key, value);
-            docMatchCounts.set(key, value.length); // ✅ Track phrase match counts
-          });
-        } else {
-          const candidateDocIds = this.phraseMatcher.getCandidateDocsForPhrase(
-            tokensToUse,
-            invertedIndex,
-          );
-          filteredDocIds = candidateDocIds.filter((docId) => {
-            const doc = docCache.get(docId);
-            if (!doc) return false;
-
-            const count = this.phraseMatcher.countExactPhrase(
-              doc,
-              queryData.originalPhraseTokens,
-            );
-
-            if (count > 0) {
-              docMatchCounts.set(docId, count);
-              // ✅ REMOVED: Don't boost here, score is still 0
-              // ✅ RELEVANCE BOOST: Apply a score boost for exact phrase matches.
-              // const currentScore = docScores.get(docId) || 0;
-              // docScores.set(docId, currentScore * 1.5);
-              return true;
-            }
-            return false;
-          });
-        }
-
-        // ✅ STAGE 4: Apply Path Filtering for Phrase Search
-        if (resolvedScopedPaths.length > 0) {
-          filteredDocIds = filteredDocIds.filter((docId) => {
-            const doc = docCache.get(docId);
-            if (!doc) return false;
-            return resolvedScopedPaths.some((p: string) =>
-              doc.metadata.originalFilePath.startsWith(p),
-            );
-          });
-        }
-
-        logger.debug(
-          `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
-        );
-
-        // STAGE 2: Score only the documents that passed the phrase filter
-        for (const docId of filteredDocIds) {
-          let score = 0;
-          const doc = docCache.get(docId);
-          if (!doc) continue;
-
-          for (const term of queryData.uniqueScoringTokens) {
-            const tf = doc.termFrequency.get(term) || 0;
-            if (tf === 0) continue;
-
-            const postings = invertedIndex.get(term);
-            const df = postings ? postings.length : 0;
-            if (df === 0) continue;
-
-            if (useBM25) {
-              score += this.bm25Scorer.calculateScore(
-                tf,
-                doc.wordCount,
-                df,
-                docCount,
-              );
-            } else {
-              score += this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
-            }
-          }
-
-          // ✅ FIX: Apply phrase match boost AFTER scoring
-          // Exact phrase matches get higher boost than fuzzy proximity matches
-          if (isTypoToleranceEnabled) {
-            score *= 1.2; // 20% boost for fuzzy phrase matches
-          } else {
-            score *= 1.5; // 50% boost for exact phrase matches
-          }
-
-          docScores.set(docId, score);
-        }
-      } else {
-        // Original logic for non-phrase search
-        // ✅ FIX: Use deduplicated version of tokensToUse to respect isTypoToleranceEnabled
-        const uniqueTokensToUse = Array.from(new Set(tokensToUse));
-
-        for (const term of uniqueTokensToUse) {
-          let candidateTerms: string[] = [term];
-          if (isTypoToleranceEnabled) {
-            // STAGE 1: Use stemDictionary for blazing-fast candidate lookup
-            const candidates = stemDictionary.get(term);
-            if (candidates) {
-              // ✅ FIX: If we have exact stem matches, just use the stem.
-              // The previous logic tried to filter original words and look them up in the stemmed index, which failed.
-              candidateTerms = [term];
-            } else {
-              // Fallback for terms not in dictionary (e.g., misspellings)
-              candidateTerms = Array.from(invertedIndex.keys()).filter(
-                (idxTerm: string) =>
-                  levenshtein(term, idxTerm) <= maxTypoDistance,
-              );
-            }
-          }
-
-          for (const idxTerm of candidateTerms) {
-            const postings = invertedIndex.get(idxTerm);
-            if (!postings) continue;
-
-            const df = postings.length; // Document frequency
-
-            if (!Array.isArray(postings)) {
-              logger.warn(`Invalid postings for term "${idxTerm}". Skipping.`);
-              continue;
-            }
-
-            for (const entry of postings) {
-              const tf = entry.frequency; // Term frequency
-              const doc = docCache.get(entry.documentId);
-
-              if (!doc) continue;
-
-              // ✅ STAGE 4: Apply Path Filtering for Normal Search
-              if (resolvedScopedPaths.length > 0) {
-                const isAllowed = resolvedScopedPaths.some((p: string) =>
-                  doc.metadata.originalFilePath.startsWith(p),
-                );
-                if (!isAllowed) continue;
-              }
-
-              let score: number;
-
-              if (useBM25) {
-                score = this.bm25Scorer.calculateScore(
-                  tf,
-                  doc.wordCount,
-                  df,
-                  docCount,
-                );
-              } else {
-                score = this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
-              }
-
-              docScores.set(
-                entry.documentId,
-                (docScores.get(entry.documentId) || 0) + score,
-              );
-
-              // ✅ Track match counts for normal search
-              docMatchCounts.set(
-                entry.documentId,
-                (docMatchCounts.get(entry.documentId) || 0) + entry.frequency,
-              );
-            }
-          }
-        }
-        filteredDocIds = Array.from(docScores.keys());
-      }
+      const { filteredDocIds, docScores, docMatchCounts, phraseMatches } =
+        queryData.isPhrase
+          ? this.scorePhraseSearch({
+              tokensToUse,
+              queryData,
+              isPhraseProximityEnabled,
+              maxTypoDistance,
+              maxWordsInPhraseDistance,
+              invertedIndex,
+              stemDictionary,
+              docCache,
+              resolvedScopedPaths,
+              isTypoToleranceEnabled,
+              useBM25,
+              docCount,
+            })
+          : this.scoreTokenSearch({
+              tokensToUse,
+              invertedIndex,
+              stemDictionary,
+              docCache,
+              resolvedScopedPaths,
+              isTypoToleranceEnabled,
+              maxTypoDistance,
+              useBM25,
+              docCount,
+            });
 
       logger.debug(
         `Scoring ${docScores.size} documents completed in ${Date.now() - scoringStart}ms`,
       );
 
-      // Calculate pagination
       const totalResults = filteredDocIds.length;
-      // ✅ Calculate total matches across all found documents
       const totalMatches = filteredDocIds.reduce(
         (sum, docId) => sum + (docMatchCounts.get(docId) || 0),
         0,
       );
 
-      // ✅ DEBUG: Log total results to help debug "off by one" issues
       logger.debug(
         `Found ${totalResults} documents with ${totalMatches} total matches for query: "${query}"`,
       );
 
-      let totalPages: number;
-      let startIndex: number;
-      let endIndex: number;
-      let effectivePageSize: number;
-
-      if (pageSize === 'ALL') {
-        totalPages = 1;
-        startIndex = 0;
-        endIndex = totalResults;
-        effectivePageSize = totalResults;
-      } else {
-        effectivePageSize = Number(pageSize) || 10;
-        totalPages = Math.ceil(totalResults / effectivePageSize);
-        startIndex = (page - 1) * effectivePageSize;
-        endIndex = startIndex + effectivePageSize;
-      }
+      const { totalPages, startIndex, endIndex, effectivePageSize } =
+        this.calculatePaginationBounds(totalResults, page, pageSize);
 
       const sortStartTime = Date.now();
-
-      // Pre-calculate dates if sorting by date to avoid repeated regex parsing inside sort (O(N) vs O(N log N))
-      const docDates = new Map<string, number>();
-      if (sortBy === 'date') {
-        for (const docId of filteredDocIds) {
-          const doc = docCache.get(docId);
-          docDates.set(
-            docId,
-            doc
-              ? this.extractDateFromFilename(
-                  doc.metadata.fileName,
-                  filenameDatePattern,
-                )
-              : 0,
-          );
-        }
-      }
-
-      const sortedResults = filteredDocIds
-        .map((docId) => [docId, docScores.get(docId) || 0] as [string, number])
-        .sort((a, b) => {
-          const [docIdA, scoreA] = a;
-          const [docIdB, scoreB] = b;
-
-          if (sortBy === 'date') {
-            const dateA = docDates.get(docIdA) || 0;
-            const dateB = docDates.get(docIdB) || 0;
-
-            // Primary sort: Date
-            const diff = sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
-            if (diff !== 0) return diff;
-
-            // Secondary sort: Relevance (always descending)
-            return scoreB - scoreA;
-          }
-
-          // Default: Relevance
-          // If scores are equal, sort by docId for stability
-          const scoreDiff =
-            sortOrder === 'asc' ? scoreA - scoreB : scoreB - scoreA;
-          return scoreDiff !== 0 ? scoreDiff : docIdA.localeCompare(docIdB);
-        });
-
+      const sortedResults = this.sortFilteredDocIds(
+        filteredDocIds,
+        docScores,
+        docCache,
+        sortBy,
+        sortOrder,
+        filenameDatePattern,
+      );
       logger.debug(
         `Sorting results by ${sortBy} (${sortOrder}) completed in ${Date.now() - sortStartTime}ms`,
       );
 
-      // Apply pagination
       const snippetGenerationStartTime = Date.now();
-
-      // Optimization: Process results in chunks to check memory pressure
-      const paginatedResults = [];
       const rawResults = sortedResults.slice(startIndex, endIndex);
-
-      for (let i = 0; i < rawResults.length; i++) {
-        const [docId, score] = rawResults[i];
-        paginatedResults.push(
-          await this.processSearchResult(
-            docId,
-            score,
-            docCache,
-            invertedIndex,
-            tokensToUse, // ✅ Tokens for matching and snippets
-            isTypoToleranceEnabled,
-            queryData.isPhrase,
-            snippetsLimit,
-            phraseMatches.get(docId),
-            includeHighlights,
-            snippetContextBefore,
-            snippetContextAfter,
-          ),
-        );
-
-        // Check memory pressure every 5 documents during heavy snippet generation
-        if (i % 5 === 0) {
-          await this.manageMemoryPressure();
-        }
-      }
-
+      const paginatedResults = await this.buildPaginatedResults({
+        rawResults,
+        docCache,
+        invertedIndex,
+        tokensToUse,
+        isTypoToleranceEnabled,
+        isPhrase: queryData.isPhrase,
+        snippetsLimit,
+        phraseMatches,
+        includeHighlights,
+        snippetContextBefore,
+        snippetContextAfter,
+      });
       logger.debug(
         `Snippet generation for ${paginatedResults.length} results completed in ${Date.now() - snippetGenerationStartTime}ms`,
       );
@@ -649,16 +819,12 @@ class MegaSearch {
         `Found ${totalResults} results, returning page ${page}/${totalPages} (${paginatedResults.length} results)`,
       );
 
-      const result = {
+      const result: PaginatedSearchResult = {
         results: paginatedResults,
         pagination,
       };
 
-      // CACHE the result
-      if (this.searchCache.size >= this.MAX_SEARCH_CACHE_SIZE) {
-        const oldestKey = Array.from(this.searchCache.keys())[0];
-        this.searchCache.delete(oldestKey);
-      }
+      // Size limiting handled by the underlying LRUCache
       this.searchCache.set(cacheKey, result);
 
       logger.info(
