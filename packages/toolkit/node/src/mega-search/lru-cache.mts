@@ -18,6 +18,10 @@ class LRUCache<K, V> {
     this.cache.delete(key);
   }
 
+  clear(): void {
+    this.cache.clear();
+  }
+
   set(key: K, value: V) {
     if (this.cache.has(key)) this.cache.delete(key);
     this.cache.set(key, value);

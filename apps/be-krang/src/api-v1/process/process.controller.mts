@@ -207,8 +207,70 @@ const postReadFileContent = async (req: Request, res: Response) => {
   }
 };
 
+type DocumentsIndexAction = 'reindex' | 'delete-cache';
+
+const DOCUMENTS_INDEX_ACTIONS: DocumentsIndexAction[] = [
+  'reindex',
+  'delete-cache',
+];
+
+const postManageDocumentsIndex = async (req: Request, res: Response) => {
+  try {
+    const { action, sourcePath } = req.body;
+
+    if (
+      !action ||
+      !DOCUMENTS_INDEX_ACTIONS.includes(action as DocumentsIndexAction)
+    ) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'INVALID_PARAMETERS',
+          message: `action is required and must be one of: ${DOCUMENTS_INDEX_ACTIONS.join(', ')}.`,
+        },
+      });
+    }
+
+    if (!sourcePath || typeof sourcePath !== 'string') {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'INVALID_PARAMETERS',
+          message: 'sourcePath is required and must be a string.',
+        },
+      });
+    }
+
+    const documentIntelligenceService = new DocumentIntelligenceService(
+      sourcePath,
+    );
+
+    switch (action as DocumentsIndexAction) {
+      case 'reindex':
+        await documentIntelligenceService.reindex();
+        break;
+      case 'delete-cache':
+        await documentIntelligenceService.clearCache();
+        break;
+    }
+
+    res.status(StatusCodes.OK).json({ action, sourcePath });
+  } catch (error) {
+    console.error('Manage documents index error:', error);
+
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message:
+          error instanceof Error
+            ? error.message
+            : ReasonPhrases.INTERNAL_SERVER_ERROR,
+      },
+    });
+  }
+};
+
 export {
   postGenerateFilteredSpreadsheet,
+  postManageDocumentsIndex,
   postProcessDocuments,
   postReadFileContent,
 };

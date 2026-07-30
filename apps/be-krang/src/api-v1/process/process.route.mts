@@ -13,6 +13,10 @@ const ProcessRoute = expressRouter
     ApiV1ProcessController.postReadFileContent,
   )
   .post(
+    '/process/documents-index',
+    ApiV1ProcessController.postManageDocumentsIndex,
+  )
+  .post(
     '/process/generate-filtered-spreadsheet',
     uploadSingle,
     ApiV1ProcessController.postGenerateFilteredSpreadsheet,

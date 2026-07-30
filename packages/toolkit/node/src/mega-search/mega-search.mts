@@ -204,6 +204,37 @@ class MegaSearch {
     logger.info(`Re-indexing completed in ${Date.now() - startTime}ms`);
   }
 
+  /**
+   * Deletes the on-disk index cache and resets every in-memory cache
+   * (query cache, search result cache, and the file indexer's own caches).
+   * Use `MegaSearch.clearCacheFor` instead if you don't already have an
+   * initialized instance — going through `createMegaSearch` first would
+   * mean reading (and rebuilding from) the very cache being cleared.
+   */
+  async clearCache(): Promise<void> {
+    await this.fileIndexer.clearCache();
+    this.queryCache.clear();
+    this.searchCache.clear();
+  }
+
+  /**
+   * Clears a root directory's on-disk index cache without running a full
+   * `initialize()`/`buildFullIndex()` first — useful to recover from a
+   * corrupted cache, or simply to avoid paying for a rebuild you're about
+   * to throw away.
+   */
+  static async clearCacheFor(
+    rootDirectory: string,
+    configOverrides: Partial<SearchConfig> = {},
+  ): Promise<void> {
+    const megaSearch = new MegaSearch({
+      ...defaultConfig,
+      ...configOverrides,
+      rootDirectory,
+    });
+    await megaSearch.clearCache();
+  }
+
   getStats() {
     const baseStats = this.fileIndexer.getStats();
     const memStats = this.fileIndexer.getMemoryStats?.() || null;

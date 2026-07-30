@@ -4,6 +4,7 @@ interface DropdownProps {
   trigger: (args: { isOpen: boolean; toggle: () => void }) => React.ReactNode;
   children: React.ReactNode;
   panelClassName?: string;
+  panelPadding?: string;
   openDirection?: 'down' | 'up';
   onOpenChange?: (isOpen: boolean) => void;
 }
@@ -12,6 +13,7 @@ const Dropdown = ({
   trigger,
   children,
   panelClassName = 'w-64 right-0 bg-white dark:bg-gray-700',
+  panelPadding = 'p-3',
   openDirection = 'down',
   onOpenChange,
 }: DropdownProps) => {
@@ -50,7 +52,7 @@ const Dropdown = ({
 
       {isOpen && (
         <div
-          className={`absolute z-30 p-3 rounded-lg border border-gray-200 shadow-lg max-h-96 overflow-y-auto dark:border-gray-600 ${openDirection === 'up' ? 'bottom-full mb-2' : 'mt-2'} ${panelClassName}`}
+          className={`absolute z-30 ${panelPadding} rounded-lg border border-gray-200 shadow-lg max-h-96 overflow-y-auto overflow-x-hidden dark:border-gray-600 ${openDirection === 'up' ? 'bottom-full mb-2' : 'mt-2'} ${panelClassName}`}
         >
           {children}
         </div>
