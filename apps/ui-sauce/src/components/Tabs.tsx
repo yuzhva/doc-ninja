@@ -6,7 +6,7 @@ const TabsItem = ({
   children,
 }: {
   children: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   isBetaFeature?: boolean;
 }) => {
   return <>{children}</>;
@@ -37,7 +37,7 @@ const Tabs = ({ children }: { children: React.ReactNode }) => {
               'text-gray-400 cursor-not-allowed dark:text-gray-500';
 
             return (
-              <li key={title} className="me-2">
+              <li key={index} className="me-2">
                 <button
                   onClick={() => !disabled && setActiveTab(index)}
                   className={`inline-block p-4 rounded-t-lg cursor-pointer ${

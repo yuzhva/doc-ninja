@@ -1,11 +1,13 @@
 import type { SSRConfigParams } from '@mainset/cli/ssr-server';
 import React from 'react';
+import { I18nextProvider } from 'react-i18next';
 import {
   StaticRouterProvider,
   createStaticHandler,
   createStaticRouter,
 } from 'react-router';
 
+import i18n from './i18n/i18n.server';
 import routes from './routes';
 
 type RenderSSRContentByPath = SSRConfigParams['renderSSRContentByPath'];
@@ -30,7 +32,11 @@ const provideServerReactApp = async ({ fullUrl }: RenderSSRHandlerParams) => {
   // Step 5: Create the static router
   const staticRouter = createStaticRouter(dataRoutes, routerContext);
 
-  return <StaticRouterProvider router={staticRouter} context={routerContext} />;
+  return (
+    <I18nextProvider i18n={i18n}>
+      <StaticRouterProvider router={staticRouter} context={routerContext} />
+    </I18nextProvider>
+  );
 };
 
 export default provideServerReactApp;

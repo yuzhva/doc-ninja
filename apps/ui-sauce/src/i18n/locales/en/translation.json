@@ -1,0 +1,118 @@
+{
+  "container": {
+    "layout": {
+      "navbar": {
+        "toggleSidebar": "Toggle sidebar",
+        "settings": "Settings",
+        "toggleDarkMode": "Toggle dark mode",
+        "showUtilitiesPanel": "Show \"Document utilities\"",
+        "language": "Language",
+        "beta": "Beta"
+      }
+    }
+  },
+  "page": {
+    "search": {
+      "component": {
+        "fpdModalSearchHistory": {
+          "title": "Search history",
+          "maxSizeLabel": "Number of queries to save",
+          "description": "Select a previous query from the list and press \"Apply\".",
+          "emptyState": "Search history is empty",
+          "deleteEntryAriaLabel": "Delete query from history",
+          "applyButton": "Apply"
+        },
+        "fpdModalFilterSettings": {
+          "title": "Filter settings",
+          "importJsonButton": "Import from JSON",
+          "exportJsonButton": "Download as JSON",
+          "saveButton": "Save",
+          "formTabTitle": "Form",
+          "noCategoriesMessage": "There are no filter categories yet.",
+          "addFilterButton": "Add filter",
+          "removeFilterButton": "Delete filter",
+          "categoryTitleLabel": "Filter name",
+          "categoryTitlePlaceholder": "e.g. \"By document structure\"",
+          "categoryDescriptionLabel": "Description",
+          "categoryDescriptionPlaceholder": "e.g. \"Filter documents by structure\"",
+          "expandTitle": "Expand",
+          "collapseTitle": "Collapse",
+          "removeFilterTitle": "Delete filter",
+          "ruleLabelLabel": "Table label name",
+          "ruleLabelPlaceholder": "e.g. \"Reference to paragraph\"",
+          "ruleContainsLabel": "Apply by word prefix (comma-separated):",
+          "ruleContainsPlaceholder": "accord, to, paragr",
+          "addFilterTitle": "Add filter",
+          "jsonConfigLabel": "JSON configuration",
+          "invalidJsonAlert": "Error: Invalid JSON format",
+          "importErrorAlert": "Import error: Invalid file or JSON format",
+          "exportErrorAlert": "Export error: Invalid JSON in the editor",
+          "jsonConfigFileTypeDescription": "JSON Config",
+          "jsonFileTypeDescription": "JSON File"
+        },
+        "fpdModalParserConfigSettings": {
+          "title": "Document data extraction settings",
+          "importJsonButton": "Import from JSON",
+          "exportJsonButton": "Download as JSON",
+          "saveButton": "Save",
+          "formTabTitle": "Form",
+          "noConfigsMessage": "There are no data extraction schemas yet.",
+          "addConfigButton": "Add configuration",
+          "removeConfigTitle": "Delete configuration",
+          "configNamePlaceholder": "Configuration name",
+          "expandTitle": "Expand",
+          "collapseTitle": "Collapse",
+          "pipelinesSectionTitle": "Text extraction rules",
+          "removePipelineTitle": "Delete rule",
+          "fieldIdLabel": "Field identifier",
+          "fieldIdPlaceholderPipeline": "e.g. \"DOCUMENT_NUMBER\"",
+          "fieldIdPlaceholderCompound": "e.g. \"SUMMARY\"",
+          "templateHint": "In the document template:",
+          "pipelineNameLabel": "Name",
+          "pipelineNamePlaceholder": "Name shown to the user",
+          "patternLabel": "Search regular expression",
+          "patternPlaceholder": "e.g. \"\\d{4}-\\d{2}-\\d{2}\" // if empty — the whole fragment is used",
+          "startFromOptions": {
+            "docStart": "From the beginning of the document",
+            "docContent": "From where the match was found",
+            "docEnd": "From the end of the document"
+          },
+          "startFromFieldLabel": "Start searching from",
+          "directionOptions": {
+            "top": "Up (towards the beginning of the document)",
+            "bottom": "Down (towards the end of the document)"
+          },
+          "directionFieldLabel": "Scan direction",
+          "unitOptions": {
+            "paragraph": "By paragraphs",
+            "line": "By lines"
+          },
+          "unitFieldLabel": "Scan by",
+          "maxUnitsLabel": "Maximum units",
+          "maxUnitsPlaceholder": "unlimited",
+          "stopAtLabel": "Stop further processing at fragment",
+          "stopAtPlaceholder": "e.g. \"Conclusion:\"",
+          "consumeLabel": "Remove this text from the \"Compound field\"",
+          "useInLabel": "Use the extracted text in:",
+          "useInTableLabel": "Results table",
+          "isPrimaryLabel": "Show as the primary search-result text",
+          "addPipelineTitle": "Add rule",
+          "compoundsSectionTitle": "Compound fields",
+          "removeCompoundTitle": "Delete compound field",
+          "compoundOutputLabelLabel": "Display name",
+          "compoundOutputLabelPlaceholder": "Name shown to the user",
+          "compoundValueLabel": "Text template (field combination)",
+          "compoundValuePlaceholder": "e.g.\nThe next result found in document {{DOCUMENT_NUMBER}}\n\n{{SUMMARY}}\n\n*Each line becomes one line of text; a line referencing an empty field is skipped.",
+          "addCompoundTitle": "Add compound field",
+          "jsonConfigLabel": "JSON configuration (array of parsers)",
+          "invalidConfigArrayAlert": "Error: Configuration must be an array",
+          "invalidJsonAlert": "Error: Invalid JSON format",
+          "importErrorAlert": "Import error: Invalid file or JSON format",
+          "exportErrorAlert": "Export error: Invalid JSON in the editor",
+          "jsonConfigFileTypeDescription": "JSON Config",
+          "jsonFileTypeDescription": "JSON File"
+        }
+      }
+    }
+  }
+}
