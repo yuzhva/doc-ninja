@@ -13,7 +13,13 @@ ARG PNPM_VERSION=11.15.1
 # Use node image for base image for all stages.
 FROM node:${NODE_VERSION}-slim AS base
 
-# 1. Install python3-openpyxl for working with .xlsx files.
+# 1. Install python3-openpyxl for working with .xlsx files. This is needed at
+#    RUNTIME (both dev and prod) since apps/be-krang's python-executor falls
+#    back to `python3 <script>.py` whenever the PyInstaller-compiled binaries
+#    aren't present (see src/python-scripts/python-executor.mts). The
+#    PyInstaller build toolchain itself (python3-venv, binutils, libpython3.11)
+#    lives in the pre-build--python stage below, since it's only needed to
+#    produce a production release, not to run dev or prod containers.
 RUN apt-get update && apt-get install -y \
     python3-openpyxl \
     && rm -rf /var/lib/apt/lists/*
@@ -31,6 +37,12 @@ RUN --mount=type=cache,target=/root/.npm \
     npm install -g pnpm@${PNPM_VERSION}
 
 WORKDIR /usr/src/doc-ninja
+
+# WORKDIR creates this directory as root. production/development later switch
+# to `USER node` to run the app, but pnpm needs write access to this directory
+# itself (e.g. temp state files it creates at the workspace root), so hand
+# ownership to the `node` user (built into the base node image) up front.
+RUN chown node:node /usr/src/doc-ninja
 
 ################################################################################
 # install-dependencies
@@ -61,8 +73,10 @@ RUN \
 
 ################################################################################
 # pre-build--source-code stage
-# This stage is used to build the source code of all web applications.
-FROM install-dependencies as pre-build--source-code
+# Builds the JS/TS source of all workspaces (no native toolchain required).
+# This is the shared baseline for both the development image and the JS
+# artifacts of the production image.
+FROM install-dependencies AS pre-build--source-code
 
 # Copy the rest of the source files into the image.
 COPY . .
@@ -72,15 +86,33 @@ COPY . .
 RUN pnpm run build:apps
 
 ################################################################################
+# pre-build--python stage
+# Compiles apps/be-krang's Python scripts into standalone binaries via
+# PyInstaller. Isolated in its own stage - on top of pre-build--source-code -
+# because it's the only part of the build that needs a native toolchain
+# (binutils, libpython3.11) and it's only required for a production release,
+# never for development.
+FROM pre-build--source-code AS pre-build--python
+
+RUN apt-get update && apt-get install -y \
+    python3-venv \
+    binutils \
+    libpython3.11 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pnpm --filter "./apps/be-krang" run build:python
+
+################################################################################
 # production stage
 FROM install-dependencies AS production
 
 # Set node environment.
 ENV NODE_ENV production
 
-# Copy the built source code from the pre-build stage.
+# Copy the built source code from the pre-build stages.
 # COPY --chown=node:node --from=pre-build--source-code /usr/src/doc-ninja/packages/toolkit/dist ./packages/toolkit/dist
 COPY --chown=node:node --from=pre-build--source-code /usr/src/doc-ninja/apps/ui-sauce/dist ./apps/ui-sauce/dist
+COPY --chown=node:node --from=pre-build--python /usr/src/doc-ninja/apps/be-krang/dist ./apps/be-krang/dist
 
 # Run the application as a non-root user.
 USER node
