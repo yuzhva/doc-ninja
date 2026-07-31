@@ -1,7 +1,10 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Modal, Tabs } from '../../../../components';
 import { FileSystemBridge } from '../../../../utils/file-system-bridge';
+
+const I18N_NS = 'page.search.component.fpdModalFilterSettings';
 
 interface FilterRule {
   id: number;
@@ -25,6 +28,7 @@ const FPDModalFilterSettings = ({
   onClose: () => void;
   onSave: () => void;
 }) => {
+  const { t } = useTranslation();
   const [configJson, setConfigJson] = React.useState('');
   const [filterCategories, setFilterCategories] = React.useState<
     FilterCategory[]
@@ -110,7 +114,7 @@ const FPDModalFilterSettings = ({
       localStorage.setItem('docNinja_filterConfig', JSON.stringify(parsed));
       onSave();
     } catch (e) {
-      alert('Помилка: Невалідний JSON формат');
+      alert(t(`${I18N_NS}.invalidJsonAlert`));
     }
   };
 
@@ -119,7 +123,7 @@ const FPDModalFilterSettings = ({
       const result = await FileSystemBridge.pickFile({
         types: [
           {
-            description: 'JSON Config',
+            description: t(`${I18N_NS}.jsonConfigFileTypeDescription`),
             accept: { 'application/json': ['.json'] },
           },
         ],
@@ -148,7 +152,7 @@ const FPDModalFilterSettings = ({
       setFilterCategories(buildFilterCategories(parsed));
     } catch (e) {
       console.error('Import failed', e);
-      alert('Помилка імпорту: Невалідний файл або формат JSON');
+      alert(t(`${I18N_NS}.importErrorAlert`));
     }
   };
 
@@ -166,7 +170,7 @@ const FPDModalFilterSettings = ({
             suggestedName: fileName,
             types: [
               {
-                description: 'JSON File',
+                description: t(`${I18N_NS}.jsonFileTypeDescription`),
                 accept: { 'application/json': ['.json'] },
               },
             ],
@@ -189,7 +193,7 @@ const FPDModalFilterSettings = ({
         URL.revokeObjectURL(url);
       }
     } catch (e) {
-      alert('Помилка експорту: Невалідний JSON у редакторі');
+      alert(t(`${I18N_NS}.exportErrorAlert`));
     }
   };
 
@@ -315,7 +319,7 @@ const FPDModalFilterSettings = ({
 
   return (
     <Modal
-      title="Налаштування фільтрів"
+      title={<Trans i18nKey={`${I18N_NS}.title`} />}
       isOpen={isOpen}
       onBtnCloseClick={onClose}
       bodyClassName=""
@@ -325,43 +329,87 @@ const FPDModalFilterSettings = ({
             <button
               type="button"
               onClick={handleImportJson}
-              className="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
             >
-              Імпортувати з JSON
+              <svg
+                className="w-4 h-4"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 15v2a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-2M12 4v12m0-12 4 4m-4-4L8 8"
+                />
+              </svg>
+              <Trans i18nKey={`${I18N_NS}.importJsonButton`} />
             </button>
             <button
               type="button"
               onClick={handleExportJson}
-              className="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
             >
-              Зберегти в JSON
+              <svg
+                className="w-4 h-4"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 15v2a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-2m-8 1V4m0 12-4-4m4 4 4-4"
+                />
+              </svg>
+              <Trans i18nKey={`${I18N_NS}.exportJsonButton`} />
             </button>
           </div>
           <div>
             <button
               onClick={handleSaveClick}
               type="button"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer transition-colors"
             >
-              Зберегти
+              <svg
+                className="w-4 h-4"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth={2}
+                  d="M11 16h2m6.707-9.293-2.414-2.414A1 1 0 0 0 16.586 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V7.414a1 1 0 0 0-.293-.707ZM16 20v-6a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v6h8ZM9 4h6v3a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V4Z"
+                />
+              </svg>
+              <Trans i18nKey={`${I18N_NS}.saveButton`} />
             </button>
           </div>
         </>
       }
     >
       <Tabs>
-        <Tabs.Item title="Форма">
+        <Tabs.Item title={<Trans i18nKey={`${I18N_NS}.formTabTitle`} />}>
           {filterCategories.length === 0 ? (
             <div className="flex flex-col items-start gap-3">
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Немає жодної категорії фільтрів.
+                <Trans i18nKey={`${I18N_NS}.noCategoriesMessage`} />
               </p>
               <button
                 type="button"
                 onClick={addFilterCategory}
                 className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
               >
-                + Додати категорію
+                + <Trans i18nKey={`${I18N_NS}.addFilterButton`} />
               </button>
             </div>
           ) : (
@@ -379,7 +427,7 @@ const FPDModalFilterSettings = ({
                         type="button"
                         onClick={() => removeFilterCategory(category.id)}
                         className="flex items-center justify-center w-9 h-9 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 shrink-0 cursor-pointer"
-                        title="Видалити категорію"
+                        title={t(`${I18N_NS}.removeFilterButton`)}
                       >
                         <svg
                           className="w-4 h-4"
@@ -396,7 +444,9 @@ const FPDModalFilterSettings = ({
                             d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
                           />
                         </svg>
-                        <span className="sr-only">Видалити категорію</span>
+                        <span className="sr-only">
+                          <Trans i18nKey={`${I18N_NS}.removeFilterButton`} />
+                        </span>
                       </button>
                       <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -404,7 +454,7 @@ const FPDModalFilterSettings = ({
                             htmlFor={`category-title-${category.id}`}
                             className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
                           >
-                            Назва фільтра
+                            <Trans i18nKey={`${I18N_NS}.categoryTitleLabel`} />
                           </label>
                           <input
                             id={`category-title-${category.id}`}
@@ -417,7 +467,9 @@ const FPDModalFilterSettings = ({
                                 e.target.value,
                               )
                             }
-                            placeholder="напр. Тип документа"
+                            placeholder={t(
+                              `${I18N_NS}.categoryTitlePlaceholder`,
+                            )}
                             className="block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm font-semibold"
                           />
                         </div>
@@ -426,7 +478,9 @@ const FPDModalFilterSettings = ({
                             htmlFor={`category-desc-${category.id}`}
                             className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
                           >
-                            Опис фільтра
+                            <Trans
+                              i18nKey={`${I18N_NS}.categoryDescriptionLabel`}
+                            />
                           </label>
                           <input
                             id={`category-desc-${category.id}`}
@@ -439,7 +493,9 @@ const FPDModalFilterSettings = ({
                                 e.target.value,
                               )
                             }
-                            placeholder="Короткий опис для користувача"
+                            placeholder={t(
+                              `${I18N_NS}.categoryDescriptionPlaceholder`,
+                            )}
                             className="block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm"
                           />
                         </div>
@@ -448,7 +504,11 @@ const FPDModalFilterSettings = ({
                         type="button"
                         onClick={() => toggleCategoryCollapsed(category.id)}
                         className="shrink-0 p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 focus:outline-none cursor-pointer"
-                        title={isCollapsed ? 'Розгорнути' : 'Згорнути'}
+                        title={t(
+                          isCollapsed
+                            ? `${I18N_NS}.expandTitle`
+                            : `${I18N_NS}.collapseTitle`,
+                        )}
                       >
                         <svg
                           className={`w-4 h-4 transition-transform duration-200 ${
@@ -480,7 +540,7 @@ const FPDModalFilterSettings = ({
                                 removeFilterRule(category.id, rule.id)
                               }
                               className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
-                              title="Видалити фільтр"
+                              title={t(`${I18N_NS}.removeFilterTitle`)}
                             >
                               −
                             </button>
@@ -490,7 +550,9 @@ const FPDModalFilterSettings = ({
                                   htmlFor={`rule-label-${rule.id}`}
                                   className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
                                 >
-                                  Назва опції
+                                  <Trans
+                                    i18nKey={`${I18N_NS}.ruleLabelLabel`}
+                                  />
                                 </label>
                                 <input
                                   id={`rule-label-${rule.id}`}
@@ -503,7 +565,9 @@ const FPDModalFilterSettings = ({
                                       e.target.value,
                                     )
                                   }
-                                  placeholder="напр. Наказ"
+                                  placeholder={t(
+                                    `${I18N_NS}.ruleLabelPlaceholder`,
+                                  )}
                                   className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
                                 />
                               </div>
@@ -512,7 +576,9 @@ const FPDModalFilterSettings = ({
                                   htmlFor={`rule-contains-${rule.id}`}
                                   className="block mb-1 text-xs font-medium text-gray-500 dark:text-gray-400"
                                 >
-                                  Ключові слова (через кому)
+                                  <Trans
+                                    i18nKey={`${I18N_NS}.ruleContainsLabel`}
+                                  />
                                 </label>
                                 <input
                                   id={`rule-contains-${rule.id}`}
@@ -526,7 +592,9 @@ const FPDModalFilterSettings = ({
                                       e.target.value,
                                     )
                                   }
-                                  placeholder="слово1, слово2"
+                                  placeholder={t(
+                                    `${I18N_NS}.ruleContainsPlaceholder`,
+                                  )}
                                   className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
                                 />
                               </div>
@@ -538,7 +606,7 @@ const FPDModalFilterSettings = ({
                             type="button"
                             onClick={() => addFilterRule(category.id)}
                             className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
-                            title="Додати фільтр"
+                            title={t(`${I18N_NS}.addFilterTitle`)}
                           >
                             +
                           </button>
@@ -553,7 +621,7 @@ const FPDModalFilterSettings = ({
                 onClick={addFilterCategory}
                 className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
               >
-                + Додати категорію
+                + <Trans i18nKey={`${I18N_NS}.addFilterButton`} />
               </button>
             </div>
           )}
@@ -563,7 +631,7 @@ const FPDModalFilterSettings = ({
             htmlFor="filterConfigJson"
             className="block text-sm font-medium text-gray-900 dark:text-white"
           >
-            Конфігурація JSON
+            <Trans i18nKey={`${I18N_NS}.jsonConfigLabel`} />
           </label>
           <textarea
             id="filterConfigJson"

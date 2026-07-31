@@ -29,7 +29,7 @@ const Modal = ({
   maxWidthClassName = 'max-w-4xl',
   bodyClassName = 'p-4 space-y-4 md:p-6',
 }: {
-  title: string;
+  title: React.ReactNode;
   isOpen: boolean;
   onBtnCloseClick: () => void;
   footer?: React.ReactNode;

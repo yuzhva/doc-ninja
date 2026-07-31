@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Modal } from '../../../../components';
 
@@ -58,6 +59,7 @@ const FPDModalSearchHistory = ({
   onClose: () => void;
   onSelectQuery: (query: string) => void;
 }) => {
+  const { t } = useTranslation();
   const [history, setHistory] = React.useState<string[]>([]);
   const [maxHistorySize, setMaxHistorySize] = React.useState(
     String(DEFAULT_SEARCH_HISTORY_MAX_SIZE),
@@ -109,7 +111,9 @@ const FPDModalSearchHistory = ({
 
   return (
     <Modal
-      title="Історія пошуку"
+      title={
+        <Trans i18nKey="page.search.component.fpdModalSearchHistory.title" />
+      }
       isOpen={isOpen}
       onBtnCloseClick={onClose}
       maxWidthClassName="max-w-lg"
@@ -128,7 +132,7 @@ const FPDModalSearchHistory = ({
               htmlFor="searchHistoryMaxSize"
               className="text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap"
             >
-              К-сть запитів для збереження
+              <Trans i18nKey="page.search.component.fpdModalSearchHistory.maxSizeLabel" />
             </label>
           </div>
           <button
@@ -137,18 +141,18 @@ const FPDModalSearchHistory = ({
             disabled={selectedIndex === null}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 cursor-pointer"
           >
-            Застосувати
+            <Trans i18nKey="page.search.component.fpdModalSearchHistory.applyButton" />
           </button>
         </>
       }
     >
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Оберіть попередній запит зі списку та натисніть «Застосувати».
+        <Trans i18nKey="page.search.component.fpdModalSearchHistory.description" />
       </p>
 
       {history.length === 0 ? (
         <div className="py-6 text-sm text-center text-gray-500 dark:text-gray-400">
-          Історія пошуку порожня
+          <Trans i18nKey="page.search.component.fpdModalSearchHistory.emptyState" />
         </div>
       ) : (
         <div className="-mx-4 md:-mx-6 max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
@@ -186,7 +190,9 @@ const FPDModalSearchHistory = ({
                 </label>
                 <button
                   type="button"
-                  aria-label="Видалити запит з історії"
+                  aria-label={t(
+                    'page.search.component.fpdModalSearchHistory.deleteEntryAriaLabel',
+                  )}
                   onClick={(e) => handleDeleteEntry(index, e)}
                   className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
                 >

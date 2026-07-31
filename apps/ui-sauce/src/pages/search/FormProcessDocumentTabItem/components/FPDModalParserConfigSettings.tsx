@@ -1,36 +1,54 @@
+import type { TFunction } from 'i18next';
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Checkbox, Modal, Select, Tabs } from '../../../../components';
 import { FileSystemBridge } from '../../../../utils/file-system-bridge';
 
+const I18N_NS = 'page.search.component.fpdModalParserConfigSettings';
+
 const PARSER_CONFIGS_STORAGE_KEY = 'docNinja_parserConfigs';
 
-const START_FROM_OPTIONS = {
-  DOC__START: { label: 'Від початку документа', value: 'DOC__START' },
+// Consumed as plain strings by Select's options list (not rendered as JSX),
+// so these need an actual t() value rather than <Trans> — hence taking `t`
+// as a parameter instead of reading it via the useTranslation hook, since
+// these live outside the component and can't call hooks.
+const getStartFromOptions = (t: TFunction) => ({
+  DOC__START: {
+    label: t(`${I18N_NS}.startFromOptions.docStart`),
+    value: 'DOC__START',
+  },
   DOC__CONTENT: {
-    label: 'Від місця, де знайдено збіг',
+    label: t(`${I18N_NS}.startFromOptions.docContent`),
     value: 'DOC__CONTENT',
     isDefault: true,
   },
-  DOC__END: { label: 'Від кінця документа', value: 'DOC__END' },
-} as const;
+  DOC__END: {
+    label: t(`${I18N_NS}.startFromOptions.docEnd`),
+    value: 'DOC__END',
+  },
+});
 
-const DIRECTION_OPTIONS = {
+const getDirectionOptions = (t: TFunction) => ({
   DIRECTION__TOP: {
-    label: 'Вгору (до початку документа)',
+    label: t(`${I18N_NS}.directionOptions.top`),
     value: 'DIRECTION__TOP',
   },
   DIRECTION__BOTTOM: {
-    label: 'Вниз (до кінця документа)',
+    label: t(`${I18N_NS}.directionOptions.bottom`),
     value: 'DIRECTION__BOTTOM',
     isDefault: true,
   },
-} as const;
+});
 
-const UNIT_OPTIONS = {
-  PARAGRAPH: { label: 'Абзацами', value: 'PARAGRAPH', isDefault: true },
-  LINE: { label: 'Рядками', value: 'LINE' },
-} as const;
+const getUnitOptions = (t: TFunction) => ({
+  PARAGRAPH: {
+    label: t(`${I18N_NS}.unitOptions.paragraph`),
+    value: 'PARAGRAPH',
+    isDefault: true,
+  },
+  LINE: { label: t(`${I18N_NS}.unitOptions.line`), value: 'LINE' },
+});
 
 const getDefaultOptionValue = (
   options: Record<string, { value: string; isDefault?: boolean }>,
@@ -102,14 +120,14 @@ const useInCheckboxes = (
 ) => (
   <div>
     <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
-      Використовувати результат у:
+      <Trans i18nKey={`${I18N_NS}.useInLabel`} />
     </p>
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
       <Checkbox
         theme="toggle"
         checked={entry.useInTable}
         onChange={(checked) => onChange('useInTable', checked)}
-        label="Таблиця результатів"
+        label={<Trans i18nKey={`${I18N_NS}.useInTableLabel`} />}
       />
       <Checkbox
         theme="toggle"
@@ -126,7 +144,7 @@ const inputClassName =
 
 // Select's label prop (unlike Field's) has no `required` flag of its own,
 // so callers wrap the label text with this to render the same red asterisk.
-const requiredLabel = (text: string) => (
+const requiredLabel = (text: React.ReactNode) => (
   <>
     {text} <span className="text-red-500">*</span>
   </>
@@ -138,7 +156,7 @@ const Field = ({
   required = false,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   className?: string;
   required?: boolean;
   children: React.ReactNode;
@@ -161,6 +179,10 @@ const FPDModalParserConfigSettings = ({
   onClose: () => void;
   onSave: () => void;
 }) => {
+  const { t } = useTranslation();
+  const startFromOptions = getStartFromOptions(t);
+  const directionOptions = getDirectionOptions(t);
+  const unitOptions = getUnitOptions(t);
   const [configJson, setConfigJson] = React.useState('');
   const [parserConfigEntries, setParserConfigEntries] = React.useState<
     ParserConfigEntry[]
@@ -191,10 +213,9 @@ const FPDModalParserConfigSettings = ({
         ? entry.config.pipelines.map((p: any) => ({
             clientId: createClientId(),
             id: p?.id ?? '',
-            startFrom:
-              p?.startFrom || getDefaultOptionValue(START_FROM_OPTIONS),
-            direction: p?.direction || getDefaultOptionValue(DIRECTION_OPTIONS),
-            unit: p?.unit || getDefaultOptionValue(UNIT_OPTIONS),
+            startFrom: p?.startFrom || getDefaultOptionValue(startFromOptions),
+            direction: p?.direction || getDefaultOptionValue(directionOptions),
+            unit: p?.unit || getDefaultOptionValue(unitOptions),
             limit:
               p?.limit !== undefined && p?.limit !== null
                 ? String(p.limit)
@@ -303,13 +324,13 @@ const FPDModalParserConfigSettings = ({
     try {
       const parsed = JSON.parse(configJson);
       if (!Array.isArray(parsed)) {
-        alert('Помилка: Конфігурація повинна бути масивом');
+        alert(t(`${I18N_NS}.invalidConfigArrayAlert`));
         return;
       }
       localStorage.setItem(PARSER_CONFIGS_STORAGE_KEY, JSON.stringify(parsed));
       onSave();
     } catch (e) {
-      alert('Помилка: Невалідний JSON формат');
+      alert(t(`${I18N_NS}.invalidJsonAlert`));
     }
   };
 
@@ -318,7 +339,7 @@ const FPDModalParserConfigSettings = ({
       const result = await FileSystemBridge.pickFile({
         types: [
           {
-            description: 'JSON Config',
+            description: t(`${I18N_NS}.jsonConfigFileTypeDescription`),
             accept: { 'application/json': ['.json'] },
           },
         ],
@@ -344,7 +365,7 @@ const FPDModalParserConfigSettings = ({
       setParserConfigEntries(buildParserConfigEntries(parsed));
     } catch (e) {
       console.error('Import failed', e);
-      alert('Помилка імпорту: Невалідний файл або формат JSON');
+      alert(t(`${I18N_NS}.importErrorAlert`));
     }
   };
 
@@ -361,7 +382,7 @@ const FPDModalParserConfigSettings = ({
             suggestedName: fileName,
             types: [
               {
-                description: 'JSON File',
+                description: t(`${I18N_NS}.jsonFileTypeDescription`),
                 accept: { 'application/json': ['.json'] },
               },
             ],
@@ -383,7 +404,7 @@ const FPDModalParserConfigSettings = ({
         URL.revokeObjectURL(url);
       }
     } catch (e) {
-      alert('Помилка експорту: Невалідний JSON у редакторі');
+      alert(t(`${I18N_NS}.exportErrorAlert`));
     }
   };
 
@@ -399,9 +420,9 @@ const FPDModalParserConfigSettings = ({
           {
             clientId: createClientId(),
             id: '',
-            startFrom: getDefaultOptionValue(START_FROM_OPTIONS),
-            direction: getDefaultOptionValue(DIRECTION_OPTIONS),
-            unit: getDefaultOptionValue(UNIT_OPTIONS),
+            startFrom: getDefaultOptionValue(startFromOptions),
+            direction: getDefaultOptionValue(directionOptions),
+            unit: getDefaultOptionValue(unitOptions),
             limit: '1',
             pattern: '',
             stopAt: '',
@@ -454,9 +475,9 @@ const FPDModalParserConfigSettings = ({
                 {
                   clientId: createClientId(),
                   id: '',
-                  startFrom: getDefaultOptionValue(START_FROM_OPTIONS),
-                  direction: getDefaultOptionValue(DIRECTION_OPTIONS),
-                  unit: getDefaultOptionValue(UNIT_OPTIONS),
+                  startFrom: getDefaultOptionValue(startFromOptions),
+                  direction: getDefaultOptionValue(directionOptions),
+                  unit: getDefaultOptionValue(unitOptions),
                   limit: '',
                   pattern: '',
                   stopAt: '',
@@ -605,7 +626,7 @@ const FPDModalParserConfigSettings = ({
 
   return (
     <Modal
-      title="Налаштування вилучення даних із документів"
+      title={<Trans i18nKey={`${I18N_NS}.title`} />}
       isOpen={isOpen}
       onBtnCloseClick={onClose}
       bodyClassName=""
@@ -615,43 +636,87 @@ const FPDModalParserConfigSettings = ({
             <button
               type="button"
               onClick={handleImportJson}
-              className="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
             >
-              Імпортувати з JSON
+              <svg
+                className="w-4 h-4"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 15v2a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-2M12 4v12m0-12 4 4m-4-4L8 8"
+                />
+              </svg>
+              <Trans i18nKey={`${I18N_NS}.importJsonButton`} />
             </button>
             <button
               type="button"
               onClick={handleExportJson}
-              className="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 focus:text-blue-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer transition-colors"
             >
-              Зберегти в JSON
+              <svg
+                className="w-4 h-4"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 15v2a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-2m-8 1V4m0 12-4-4m4 4 4-4"
+                />
+              </svg>
+              <Trans i18nKey={`${I18N_NS}.exportJsonButton`} />
             </button>
           </div>
           <div>
             <button
               onClick={handleSaveClick}
               type="button"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer transition-colors"
             >
-              Зберегти
+              <svg
+                className="w-4 h-4"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth={2}
+                  d="M11 16h2m6.707-9.293-2.414-2.414A1 1 0 0 0 16.586 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V7.414a1 1 0 0 0-.293-.707ZM16 20v-6a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v6h8ZM9 4h6v3a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V4Z"
+                />
+              </svg>
+              <Trans i18nKey={`${I18N_NS}.saveButton`} />
             </button>
           </div>
         </>
       }
     >
       <Tabs>
-        <Tabs.Item title="Форма">
+        <Tabs.Item title={<Trans i18nKey={`${I18N_NS}.formTabTitle`} />}>
           {parserConfigEntries.length === 0 ? (
             <div className="flex flex-col items-start gap-3 p-4">
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Ще немає жодної схеми вилучення даних.
+                <Trans i18nKey={`${I18N_NS}.noConfigsMessage`} />
               </p>
               <button
                 type="button"
                 onClick={addParserConfig}
                 className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
               >
-                + Додати конфігурацію
+                + <Trans i18nKey={`${I18N_NS}.addConfigButton`} />
               </button>
             </div>
           ) : (
@@ -671,7 +736,7 @@ const FPDModalParserConfigSettings = ({
                         type="button"
                         onClick={() => removeParserConfig(configEntry.clientId)}
                         className="flex items-center justify-center w-9 h-9 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 shrink-0 cursor-pointer"
-                        title="Видалити конфігурацію"
+                        title={t(`${I18N_NS}.removeConfigTitle`)}
                       >
                         <svg
                           className="w-4 h-4"
@@ -698,7 +763,7 @@ const FPDModalParserConfigSettings = ({
                             e.target.value,
                           )
                         }
-                        placeholder="Назва конфігурації"
+                        placeholder={t(`${I18N_NS}.configNamePlaceholder`)}
                         className="flex-1 block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm font-semibold"
                       />
                       <button
@@ -707,7 +772,11 @@ const FPDModalParserConfigSettings = ({
                           toggleParserConfigCollapsed(configEntry.clientId)
                         }
                         className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 focus:outline-none cursor-pointer shrink-0"
-                        title={isCollapsed ? 'Розгорнути' : 'Згорнути'}
+                        title={t(
+                          isCollapsed
+                            ? `${I18N_NS}.expandTitle`
+                            : `${I18N_NS}.collapseTitle`,
+                        )}
                       >
                         <svg
                           className={`w-4 h-4 transition-transform duration-200 ${
@@ -731,7 +800,9 @@ const FPDModalParserConfigSettings = ({
                         {/* Pipelines */}
                         <div className="space-y-3">
                           <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                            Правила вилучення полів
+                            <Trans
+                              i18nKey={`${I18N_NS}.pipelinesSectionTitle`}
+                            />
                           </h4>
                           {configEntry.pipelines.map((pipeline) => (
                             <div
@@ -747,12 +818,19 @@ const FPDModalParserConfigSettings = ({
                                   )
                                 }
                                 className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
-                                title="Видалити правило"
+                                title={t(`${I18N_NS}.removePipelineTitle`)}
                               >
                                 −
                               </button>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
-                                <Field label="Ідентифікатор поля" required>
+                                <Field
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.fieldIdLabel`}
+                                    />
+                                  }
+                                  required
+                                >
                                   <input
                                     type="text"
                                     value={pipeline.id}
@@ -764,13 +842,17 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="напр. DOCUMENT_NUMBER"
+                                    placeholder={t(
+                                      `${I18N_NS}.fieldIdPlaceholderPipeline`,
+                                    )}
                                     className={inputClassName}
                                   />
                                   <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                                     {pipeline.id && (
                                       <>
-                                        У шаблоні документа:{' '}
+                                        <Trans
+                                          i18nKey={`${I18N_NS}.templateHint`}
+                                        />{' '}
                                         <code className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-1.5 py-0.5">
                                           {`{{${pipeline.id}}}`}
                                         </code>
@@ -778,7 +860,14 @@ const FPDModalParserConfigSettings = ({
                                     )}
                                   </p>
                                 </Field>
-                                <Field label="Назва" required>
+                                <Field
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.pipelineNameLabel`}
+                                    />
+                                  }
+                                  required
+                                >
                                   <input
                                     type="text"
                                     value={pipeline.outputLabel}
@@ -790,13 +879,17 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="Назва, що відображається користувачу"
+                                    placeholder={t(
+                                      `${I18N_NS}.pipelineNamePlaceholder`,
+                                    )}
                                     className={inputClassName}
                                   />
                                 </Field>
                               </div>
                               <Field
-                                label="Регулярний вираз для пошуку"
+                                label={
+                                  <Trans i18nKey={`${I18N_NS}.patternLabel`} />
+                                }
                                 required
                               >
                                 <input
@@ -810,13 +903,19 @@ const FPDModalParserConfigSettings = ({
                                       e.target.value,
                                     )
                                   }
-                                  placeholder="напр. \d{4}-\d{2}-\d{2}; якщо порожньо — береться весь фрагмент"
+                                  placeholder={t(
+                                    `${I18N_NS}.patternPlaceholder`,
+                                  )}
                                   className={`${inputClassName} font-mono`}
                                 />
                               </Field>
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                 <Select
-                                  label={requiredLabel('Починати пошук від')}
+                                  label={requiredLabel(
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.startFromFieldLabel`}
+                                    />,
+                                  )}
                                   value={pipeline.startFrom}
                                   onChange={(value) =>
                                     updatePipelineField(
@@ -826,10 +925,14 @@ const FPDModalParserConfigSettings = ({
                                       value,
                                     )
                                   }
-                                  options={Object.values(START_FROM_OPTIONS)}
+                                  options={Object.values(startFromOptions)}
                                 />
                                 <Select
-                                  label={requiredLabel('Напрямок сканування')}
+                                  label={requiredLabel(
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.directionFieldLabel`}
+                                    />,
+                                  )}
                                   value={pipeline.direction}
                                   onChange={(value) =>
                                     updatePipelineField(
@@ -839,10 +942,14 @@ const FPDModalParserConfigSettings = ({
                                       value,
                                     )
                                   }
-                                  options={Object.values(DIRECTION_OPTIONS)}
+                                  options={Object.values(directionOptions)}
                                 />
                                 <Select
-                                  label={requiredLabel('Сканувати по')}
+                                  label={requiredLabel(
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.unitFieldLabel`}
+                                    />,
+                                  )}
                                   value={pipeline.unit}
                                   onChange={(value) =>
                                     updatePipelineField(
@@ -852,11 +959,13 @@ const FPDModalParserConfigSettings = ({
                                       value,
                                     )
                                   }
-                                  options={Object.values(UNIT_OPTIONS)}
+                                  options={Object.values(unitOptions)}
                                 />
                                 <div className="min-w-0">
                                   <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                                    Максимум одиниць
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.maxUnitsLabel`}
+                                    />
                                   </label>
                                   <input
                                     type="number"
@@ -869,13 +978,19 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="необмежено"
+                                    placeholder={t(
+                                      `${I18N_NS}.maxUnitsPlaceholder`,
+                                    )}
                                     className="block w-full truncate border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
                                   />
                                 </div>
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                                <Field label="Зупинити збір на фрагменті">
+                                <Field
+                                  label={
+                                    <Trans i18nKey={`${I18N_NS}.stopAtLabel`} />
+                                  }
+                                >
                                   <input
                                     type="text"
                                     value={pipeline.stopAt}
@@ -887,7 +1002,9 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="—"
+                                    placeholder={t(
+                                      `${I18N_NS}.stopAtPlaceholder`,
+                                    )}
                                     className={`${inputClassName} font-mono`}
                                   />
                                 </Field>
@@ -907,7 +1024,11 @@ const FPDModalParserConfigSettings = ({
                                         checked,
                                       )
                                     }
-                                    label="Прибрати текст із поля «content»"
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.consumeLabel`}
+                                      />
+                                    }
                                   />
                                 </div>
                               </div>
@@ -932,7 +1053,11 @@ const FPDModalParserConfigSettings = ({
                                       checked,
                                     )
                                   }
-                                  label="Показувати як основний текст результату пошуку"
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.isPrimaryLabel`}
+                                    />
+                                  }
                                 />
                               </div>
                             </div>
@@ -942,7 +1067,7 @@ const FPDModalParserConfigSettings = ({
                               type="button"
                               onClick={() => addPipeline(configEntry.clientId)}
                               className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
-                              title="Додати правило"
+                              title={t(`${I18N_NS}.addPipelineTitle`)}
                             >
                               +
                             </button>
@@ -952,7 +1077,9 @@ const FPDModalParserConfigSettings = ({
                         {/* Compounds */}
                         <div className="space-y-3">
                           <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                            Комбіновані поля
+                            <Trans
+                              i18nKey={`${I18N_NS}.compoundsSectionTitle`}
+                            />
                           </h4>
                           {configEntry.compounds.map((compound) => (
                             <div
@@ -968,12 +1095,19 @@ const FPDModalParserConfigSettings = ({
                                   )
                                 }
                                 className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
-                                title="Видалити складове поле"
+                                title={t(`${I18N_NS}.removeCompoundTitle`)}
                               >
                                 −
                               </button>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
-                                <Field label="Ідентифікатор поля" required>
+                                <Field
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.fieldIdLabel`}
+                                    />
+                                  }
+                                  required
+                                >
                                   <input
                                     type="text"
                                     value={compound.id}
@@ -985,13 +1119,17 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="напр. SUMMARY"
+                                    placeholder={t(
+                                      `${I18N_NS}.fieldIdPlaceholderCompound`,
+                                    )}
                                     className={inputClassName}
                                   />
                                   <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                                     {compound.id && (
                                       <>
-                                        У шаблоні документа:{' '}
+                                        <Trans
+                                          i18nKey={`${I18N_NS}.templateHint`}
+                                        />{' '}
                                         <code className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-1.5 py-0.5">
                                           {`{{${compound.id}}}`}
                                         </code>
@@ -999,7 +1137,14 @@ const FPDModalParserConfigSettings = ({
                                     )}
                                   </p>
                                 </Field>
-                                <Field label="Назва для відображення" required>
+                                <Field
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.compoundOutputLabelLabel`}
+                                    />
+                                  }
+                                  required
+                                >
                                   <input
                                     type="text"
                                     value={compound.outputLabel}
@@ -1011,13 +1156,19 @@ const FPDModalParserConfigSettings = ({
                                         e.target.value,
                                       )
                                     }
-                                    placeholder="Назва, що покажеться користувачу"
+                                    placeholder={t(
+                                      `${I18N_NS}.compoundOutputLabelPlaceholder`,
+                                    )}
                                     className={inputClassName}
                                   />
                                 </Field>
                               </div>
                               <Field
-                                label="Шаблон тексту (об'єднання полів)"
+                                label={
+                                  <Trans
+                                    i18nKey={`${I18N_NS}.compoundValueLabel`}
+                                  />
+                                }
                                 required
                               >
                                 <textarea
@@ -1031,9 +1182,16 @@ const FPDModalParserConfigSettings = ({
                                     )
                                   }
                                   rows={4}
-                                  placeholder={
-                                    'Кожен рядок — це один рядок тексту.\nЩоб підставити значення іншого поля, напишіть {{ідентифікатор_поля}} (той самий формат, що й у шаблоні документа)\n(рядок додається лише якщо те поле має значення).'
-                                  }
+                                  placeholder={t(
+                                    `${I18N_NS}.compoundValuePlaceholder`,
+                                    // This translation contains a literal
+                                    // "{{field_identifier}}" example token —
+                                    // skip interpolation so it isn't treated
+                                    // as an actual (and missing) variable.
+                                    {
+                                      interpolation: { skipOnVariables: true },
+                                    },
+                                  )}
                                   className={`${inputClassName} font-mono resize-y`}
                                 />
                               </Field>
@@ -1058,7 +1216,11 @@ const FPDModalParserConfigSettings = ({
                                       checked,
                                     )
                                   }
-                                  label="Показувати як основний текст результату пошуку"
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.isPrimaryLabel`}
+                                    />
+                                  }
                                 />
                               </div>
                             </div>
@@ -1068,7 +1230,7 @@ const FPDModalParserConfigSettings = ({
                               type="button"
                               onClick={() => addCompound(configEntry.clientId)}
                               className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
-                              title="Додати складове поле"
+                              title={t(`${I18N_NS}.addCompoundTitle`)}
                             >
                               +
                             </button>
@@ -1084,7 +1246,7 @@ const FPDModalParserConfigSettings = ({
                 onClick={addParserConfig}
                 className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
               >
-                + Додати конфігурацію
+                + <Trans i18nKey={`${I18N_NS}.addConfigButton`} />
               </button>
             </div>
           )}
@@ -1095,7 +1257,7 @@ const FPDModalParserConfigSettings = ({
               htmlFor="parserConfigJson"
               className="block text-sm font-medium text-gray-900 dark:text-white"
             >
-              Конфігурація JSON (масив парсерів)
+              <Trans i18nKey={`${I18N_NS}.jsonConfigLabel`} />
             </label>
             <textarea
               id="parserConfigJson"

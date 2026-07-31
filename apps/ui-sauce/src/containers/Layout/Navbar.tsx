@@ -1,9 +1,24 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
-import { Checkbox, Modal } from '../../components';
+import { Badge, Checkbox, Modal, Select } from '../../components';
+import { LANGUAGE_LABELS, RESOURCES } from '../../i18n';
+import { useSecretKeyCombo } from './use-secret-key-combo';
+
+const LANGUAGE_OPTIONS = Object.keys(RESOURCES).map((language) => ({
+  value: language,
+  label: LANGUAGE_LABELS[language as keyof typeof RESOURCES],
+}));
 
 const THEME_CURRENT_MODE__DEFAULT = 'dark';
+
+// Undocumented on purpose: holding these four keys at once flips a
+// localStorage flag that reveals the utilities-panel toggle below. There's
+// no per-user auth in this app (published globally via the MS Store with no
+// accounts/emails collected), so this is obscurity, not real access control.
+const INSIDER_MODE_STORAGE_KEY = 'docNinja_isInsiderModeEnabled';
+const INSIDER_MODE_KEY_COMBO = ['2', '4', '8', '0'];
 
 interface NavbarProps {
   onBtnToggleSidebarClick: () => void;
@@ -16,10 +31,37 @@ const Navbar = ({
   isSidebarVisible,
   onSidebarVisibleChange,
 }: NavbarProps) => {
+  const { t, i18n } = useTranslation();
   const [themeCurrentMode, setThemeCurrentMode] = React.useState(
     THEME_CURRENT_MODE__DEFAULT,
   );
   const [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
+  const [isInsiderModeEnabled, setIsInsiderModeEnabled] = React.useState(false);
+
+  // Read on mount rather than in the initializer so server and first client
+  // render both start from `false` — localStorage doesn't exist on the
+  // server, and reading it in the initializer would cause a hydration
+  // mismatch for anyone who already unlocked insider mode.
+  React.useEffect(() => {
+    setIsInsiderModeEnabled(
+      window.localStorage.getItem(INSIDER_MODE_STORAGE_KEY) === 'true',
+    );
+  }, []);
+
+  useSecretKeyCombo(
+    INSIDER_MODE_KEY_COMBO,
+    React.useCallback(() => {
+      setIsInsiderModeEnabled((prevEnabled) => {
+        const nextEnabled = !prevEnabled;
+        window.localStorage.setItem(
+          INSIDER_MODE_STORAGE_KEY,
+          String(nextEnabled),
+        );
+        return nextEnabled;
+      });
+    }, []),
+    isSettingsModalOpen,
+  );
 
   const handleThemeModeSwitch = React.useCallback(() => {
     setThemeCurrentMode((prevMode) => {
@@ -50,7 +92,9 @@ const Navbar = ({
                   className="mr-3 cursor-pointer rounded p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white lg:inline"
                   onClick={onBtnToggleSidebarClick}
                 >
-                  <span className="sr-only">Toggle sidebar</span>
+                  <span className="sr-only">
+                    <Trans i18nKey="container.layout.navbar.toggleSidebar" />
+                  </span>
                   <svg
                     stroke="currentColor"
                     fill="currentColor"
@@ -69,7 +113,7 @@ const Navbar = ({
                   </svg>
                 </button>
               )}
-              <Link className="flex items-center" to="/">
+              <Link className="relative flex items-center" to="/">
                 <img
                   alt=""
                   src="/static-assets/images/doc-ninja--logo.png"
@@ -77,6 +121,13 @@ const Navbar = ({
                 />
                 <span className="self-center whitespace-nowrap text-2xl font-semibold dark:text-white">
                   DocNinja
+                </span>
+                <span className="absolute -top-2 -end-10">
+                  <Badge
+                    label=""
+                    value={t('container.layout.navbar.beta')}
+                    hideLabel
+                  />
                 </span>
               </Link>
               {/*
@@ -639,7 +690,7 @@ const Navbar = ({
                   className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
                   data-testid="settings-open"
                   type="button"
-                  aria-label="Налаштування"
+                  aria-label={t('container.layout.navbar.settings')}
                   onClick={() => setIsSettingsModalOpen(true)}
                 >
                   <svg
@@ -663,7 +714,7 @@ const Navbar = ({
                   className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
                   data-testid="dark-theme-toggle"
                   type="button"
-                  aria-label="Toggle dark mode"
+                  aria-label={t('container.layout.navbar.toggleDarkMode')}
                   onClick={handleThemeModeSwitch}
                 >
                   {themeCurrentMode === 'dark' ? (
@@ -771,17 +822,31 @@ const Navbar = ({
       </div>
 
       <Modal
-        title="Налаштування"
+        title={<Trans i18nKey="container.layout.navbar.settings" />}
         isOpen={isSettingsModalOpen}
         onBtnCloseClick={() => setIsSettingsModalOpen(false)}
         maxWidthClassName="max-w-lg"
       >
-        <Checkbox
-          theme="toggle"
-          checked={isSidebarVisible}
-          onChange={onSidebarVisibleChange}
-          label='Відображати "Утиліти для документів"'
+        <Select
+          value={i18n.resolvedLanguage ?? i18n.language}
+          onChange={(language) => i18n.changeLanguage(language)}
+          options={LANGUAGE_OPTIONS}
+          label={<Trans i18nKey="container.layout.navbar.language" />}
         />
+
+        {isInsiderModeEnabled && (
+          <>
+            <hr className="my-4 border-gray-200 dark:border-gray-700" />
+            <Checkbox
+              theme="toggle"
+              checked={isSidebarVisible}
+              onChange={onSidebarVisibleChange}
+              label={
+                <Trans i18nKey="container.layout.navbar.showUtilitiesPanel" />
+              }
+            />
+          </>
+        )}
       </Modal>
     </nav>
   );

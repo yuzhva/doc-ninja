@@ -13,8 +13,11 @@
   },
   "dependencies": {
     "flowbite": "^4.0.2",
+    "i18next": "^26.3.6",
+    "i18next-browser-languagedetector": "^8.2.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-i18next": "^17.0.11",
     "react-router": "^8.3.0",
     "tailwindcss": "^4.3.3",
     "toolkit--local": "workspace:^"

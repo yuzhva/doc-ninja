@@ -1,0 +1,118 @@
+{
+  "container": {
+    "layout": {
+      "navbar": {
+        "toggleSidebar": "Перемкнути бічну панель",
+        "settings": "Налаштування",
+        "toggleDarkMode": "Перемкнути темну тему",
+        "showUtilitiesPanel": "Відображати \"Утиліти для документів\"",
+        "language": "Мова",
+        "beta": "Бета"
+      }
+    }
+  },
+  "page": {
+    "search": {
+      "component": {
+        "fpdModalSearchHistory": {
+          "title": "Історія пошуку",
+          "maxSizeLabel": "К-сть запитів для збереження",
+          "description": "Оберіть попередній запит зі списку та натисніть «Застосувати».",
+          "emptyState": "Історія пошуку порожня",
+          "deleteEntryAriaLabel": "Видалити запит з історії",
+          "applyButton": "Застосувати"
+        },
+        "fpdModalFilterSettings": {
+          "title": "Налаштування фільтрів",
+          "importJsonButton": "Імпортувати з JSON",
+          "exportJsonButton": "Завантажити як JSON",
+          "saveButton": "Зберегти",
+          "formTabTitle": "Форма",
+          "noCategoriesMessage": "Немає жодної категорії фільтрів.",
+          "addFilterButton": "Додати фільтр",
+          "removeFilterButton": "Видалити фільтр",
+          "categoryTitleLabel": "Назва фільтру",
+          "categoryTitlePlaceholder": "напр. \"По структурі документа\"",
+          "categoryDescriptionLabel": "Опис",
+          "categoryDescriptionPlaceholder": "напр. \"Фільтрувати документи за структурою\"",
+          "expandTitle": "Розгорнути",
+          "collapseTitle": "Згорнути",
+          "removeFilterTitle": "Видалити фільтр",
+          "ruleLabelLabel": "Назва мітки в таблиці",
+          "ruleLabelPlaceholder": "напр. \"Посилання на пункт\"",
+          "ruleContainsLabel": "Застосувати за початком слів (через кому):",
+          "ruleContainsPlaceholder": "відповідн, до, пункт",
+          "addFilterTitle": "Додати фільтр",
+          "jsonConfigLabel": "Конфігурація JSON",
+          "invalidJsonAlert": "Помилка: Невалідний JSON формат",
+          "importErrorAlert": "Помилка імпорту: Невалідний файл або формат JSON",
+          "exportErrorAlert": "Помилка експорту: Невалідний JSON у редакторі",
+          "jsonConfigFileTypeDescription": "Конфігурація JSON",
+          "jsonFileTypeDescription": "Файл JSON"
+        },
+        "fpdModalParserConfigSettings": {
+          "title": "Налаштування обробки даних із документів",
+          "importJsonButton": "Імпортувати з JSON",
+          "exportJsonButton": "Завантажити як JSON",
+          "saveButton": "Зберегти",
+          "formTabTitle": "Форма",
+          "noConfigsMessage": "Ще немає жодної схеми вилучення даних.",
+          "addConfigButton": "Додати конфігурацію",
+          "removeConfigTitle": "Видалити конфігурацію",
+          "configNamePlaceholder": "Назва конфігурації",
+          "expandTitle": "Розгорнути",
+          "collapseTitle": "Згорнути",
+          "pipelinesSectionTitle": "Правила обрізання тексту",
+          "removePipelineTitle": "Видалити правило",
+          "fieldIdLabel": "Ідентифікатор поля",
+          "fieldIdPlaceholderPipeline": "напр. \"DOCUMENT_NUMBER\"",
+          "fieldIdPlaceholderCompound": "напр. \"SUMMARY\"",
+          "templateHint": "У шаблоні документа:",
+          "pipelineNameLabel": "Назва",
+          "pipelineNamePlaceholder": "Назва, що відображається користувачу",
+          "patternLabel": "Регулярний вираз для пошуку",
+          "patternPlaceholder": "напр. \"\\d{4}-\\d{2}-\\d{2}\" // якщо порожньо — береться весь фрагмент",
+          "startFromOptions": {
+            "docStart": "Від початку документа",
+            "docContent": "Від місця, де знайдено збіг",
+            "docEnd": "Від кінця документа"
+          },
+          "startFromFieldLabel": "Починати пошук від",
+          "directionOptions": {
+            "top": "Вгору (до початку документа)",
+            "bottom": "Вниз (до кінця документа)"
+          },
+          "directionFieldLabel": "Напрямок сканування",
+          "unitOptions": {
+            "paragraph": "Абзацами",
+            "line": "Рядками"
+          },
+          "unitFieldLabel": "Сканувати по",
+          "maxUnitsLabel": "Максимум одиниць",
+          "maxUnitsPlaceholder": "необмежено",
+          "stopAtLabel": "Зупинити подальшу обробку на фрагменті",
+          "stopAtPlaceholder": "напр. \"Висновок:\"",
+          "consumeLabel": "Прибрати цей текст з \"Комбінованого поля\"",
+          "useInLabel": "Використовувати вирізаний текст у:",
+          "useInTableLabel": "Таблиця результатів",
+          "isPrimaryLabel": "Показувати як основний текст результату пошуку",
+          "addPipelineTitle": "Додати правило",
+          "compoundsSectionTitle": "Комбіновані поля",
+          "removeCompoundTitle": "Видалити складове поле",
+          "compoundOutputLabelLabel": "Назва для відображення",
+          "compoundOutputLabelPlaceholder": "Назва, що покажеться користувачу",
+          "compoundValueLabel": "Шаблон тексту (об'єднання полів)",
+          "compoundValuePlaceholder": "напр.\nНаступний результат знайдено в документі {{DOCUMENT_NUMBER}}\n\n{{SUMMARY}}\n\n*Кожен рядок стає рядком тексту; рядок з посиланням на порожнє поле пропускається.",
+          "addCompoundTitle": "Додати складове поле",
+          "jsonConfigLabel": "Конфігурація JSON (масив парсерів)",
+          "invalidConfigArrayAlert": "Помилка: Конфігурація повинна бути масивом",
+          "invalidJsonAlert": "Помилка: Невалідний JSON формат",
+          "importErrorAlert": "Помилка імпорту: Невалідний файл або формат JSON",
+          "exportErrorAlert": "Помилка експорту: Невалідний JSON у редакторі",
+          "jsonConfigFileTypeDescription": "Конфігурація JSON",
+          "jsonFileTypeDescription": "Файл JSON"
+        }
+      }
+    }
+  }
+}
