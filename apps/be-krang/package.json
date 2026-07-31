@@ -15,11 +15,11 @@
   },
   "devDependencies": {
     "@mainset/builder-rslib": "^0.3.2",
-    "@mainset/cli": "^0.6.0",
+    "@mainset/cli": "^0.6.1",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/textract": "^2.4.5",
     "cross-env": "^10.1.0",
     "nodemon": "^3.1.14",
@@ -40,5 +40,5 @@
     "toolkit--local": "workspace:^",
     "xlsx": "^0.18.5"
   },
-  "packageManager": "pnpm@11.15.1"
+  "packageManager": "pnpm@11.18.0"
 }

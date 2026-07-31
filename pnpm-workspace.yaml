@@ -15,13 +15,15 @@ minimumReleaseAgeExclude:
   - '@dotenvx/dotenvx@2.17.1'
   - '@dotenvx/tooling@1.0.3'
   - '@mainset/builder-rslib@0.3.2'
-  - '@mainset/bundler-webpack@0.3.4'
-  - '@mainset/cli@0.6.0'
+  - '@mainset/bundler-webpack@0.3.5'
+  - '@mainset/cli@0.6.1'
   - '@mainset/dev-stack-fe@0.2.2'
   - electron@43.2.0
-  - lint-staged@17.1.1
+  - lint-staged@17.3.0
   - react-dom@19.2.8
   - react@19.2.8
+  - '@types/react-dom@19.2.4'
+  - '@types/react@19.2.18'
 
 allowBuilds:
   '@parcel/watcher': true

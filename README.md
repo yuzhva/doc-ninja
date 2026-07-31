@@ -11,7 +11,11 @@ Examples for documents preparation and procession on local env.
 ## Quick Start
 
 ```bash
+// Step 1. Install dependencies
 pnpm i
+
+// Step 2. Launch app via Docker
+docker compose --profile dev up
 ```
 
 ### Document procession
