@@ -171,7 +171,7 @@ const SearchForm = ({
                       />
                     </div>
 
-                    <div className="flex items-center">
+                    <div className="flex-1 flex items-center">
                       <Checkbox
                         theme="toggle"
                         checked={allowFuzzyMatch}
@@ -226,7 +226,7 @@ const SearchForm = ({
                     </div>
 
                     {/* Toggle - Swapped place with input */}
-                    <div className="flex items-center">
+                    <div className="flex-1 flex items-center">
                       <Checkbox
                         theme="toggle"
                         checked={isPageSizeAll}

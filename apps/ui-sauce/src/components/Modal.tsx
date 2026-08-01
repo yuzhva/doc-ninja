@@ -47,7 +47,7 @@ const Modal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center w-full h-full bg-black/50 backdrop-blur-sm p-4 overflow-x-hidden overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center w-full h-full bg-black/50 backdrop-blur-sm p-4 overflow-hidden"
       tabIndex={-1}
       aria-hidden="true"
     >
@@ -84,7 +84,7 @@ const Modal = ({
           </div>
           {/* Modal body */}
           <div
-            className={`${bodyClassName} text-gray-600 dark:text-gray-400 overflow-y-auto`}
+            className={`${bodyClassName} text-gray-600 dark:text-gray-400 overflow-y-auto overscroll-contain`}
           >
             {children}
           </div>
