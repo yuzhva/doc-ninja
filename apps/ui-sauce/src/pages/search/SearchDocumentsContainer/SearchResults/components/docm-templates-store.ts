@@ -9,17 +9,31 @@ import {
 } from '../../../../../utils/template-store';
 import type { StoredTemplateRecord } from '../../../../../utils/template-store';
 
-type ToastFn = (type: 'success' | 'error' | 'warning', content: string) => void;
+// Thrown instead of a plain Error so the UI layer (which owns translation
+// and toast display) can recognize this specific case and render its own
+// localized message from `templateName`, rather than the store baking in
+// user-facing text — see FPDDocmTemplatesDropdown's catch of getFileContent.
+class TemplatePermissionDeniedError extends Error {
+  constructor(readonly templateName: string) {
+    super(`Access denied to template file "${templateName}"`);
+    this.name = 'TemplatePermissionDeniedError';
+  }
+}
+
+interface TemplateContentResult {
+  blob: Blob;
+  // True when the live file was unreachable (deleted/moved) and this is the
+  // last cached copy instead — callers use this to decide whether to warn
+  // the user, keeping that (translated, UI-owned) decision out of the store.
+  usedCachedFallback: boolean;
+}
 
 interface DocmTemplate {
   id: string;
   name: string;
   // Dedup key — see StoredTemplateRecord.path.
   path: string;
-  // addToast is only used to surface a "used the last cached copy" warning
-  // for templates rehydrated from a previous session — a freshly-picked
-  // template's read never needs it, so callers may omit it.
-  getFileContent: (addToast?: ToastFn) => Promise<Blob>;
+  getFileContent: () => Promise<TemplateContentResult>;
 }
 
 // FileSystemFileHandle.getFile() throws this DOMException when the
@@ -28,8 +42,6 @@ interface DocmTemplate {
 const isFileNotFoundError = (error: any): boolean =>
   error?.name === 'NotFoundError';
 
-// Adds the one bit of template-specific, localized context (the name) that
-// a generic bridge method has no business knowing about.
 const readLiveTemplateContent = async (
   record: StoredTemplateRecord,
 ): Promise<Blob> => {
@@ -37,7 +49,7 @@ const readLiveTemplateContent = async (
     return await FileSystemBridge.readStoredFile(record.browserFileHandle);
   } catch (error: any) {
     if (error?.name === 'NotAllowedError') {
-      throw new Error(`Доступ до файлу шаблону "${record.name}" відхилено.`);
+      throw new TemplatePermissionDeniedError(record.name);
     }
     throw error;
   }
@@ -66,7 +78,7 @@ const buildTemplateFromStoredRecord = (
     id: record.id,
     name: record.name,
     path: record.path,
-    getFileContent: async (addToast) => {
+    getFileContent: async () => {
       try {
         const liveBlob = await readLiveTemplateContent(record);
         // A File from FileSystemFileHandle.getFile() isn't necessarily fully
@@ -89,14 +101,10 @@ const buildTemplateFromStoredRecord = (
         }).catch((error) => {
           console.warn('Failed to refresh cached docm template', error);
         });
-        return materializedBlob;
+        return { blob: materializedBlob, usedCachedFallback: false };
       } catch (error: any) {
         if (isFileNotFoundError(error) && cachedContent) {
-          addToast?.(
-            'warning',
-            `Файл шаблону "${record.name}" не знайдено на диску — використано останню збережену копію.`,
-          );
-          return cachedContent;
+          return { blob: cachedContent, usedCachedFallback: true };
         }
         throw error;
       }
@@ -333,9 +341,10 @@ const useSharedOutputDirectory = (): SharedOutputDirectory | null =>
 export {
   DocmTemplatesStore,
   isFileNotFoundError,
+  TemplatePermissionDeniedError,
   useDocmTemplates,
   useSelectedDocmTemplateId,
   useUnavailableDocmTemplateIds,
   useSharedOutputDirectory,
 };
-export type { DocmTemplate, SharedOutputDirectory, ToastFn };
+export type { DocmTemplate, SharedOutputDirectory, TemplateContentResult };

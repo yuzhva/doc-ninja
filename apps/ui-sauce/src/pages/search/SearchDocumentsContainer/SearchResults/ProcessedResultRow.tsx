@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Badge, ButtonCopyToClipboard, Tooltip } from '../../../../components';
 import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
@@ -7,6 +8,8 @@ import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown'
 import { FPDDocmTemplatesDropdown } from './components/FPDDocmTemplatesDropdown';
 import { calculateDynamicValues } from './result-helpers';
 import type { ExtractedTableField } from './result-helpers';
+
+const I18N_NS = 'page.search.component.processedResultRow';
 
 // Component for individual expandable row
 const ProcessedResultRow = ({
@@ -34,6 +37,7 @@ const ProcessedResultRow = ({
   onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
+  const { t } = useTranslation();
   // Aggregate data from items in the group
   const items = result.items;
   const firstItem = items[0];
@@ -79,7 +83,11 @@ const ProcessedResultRow = ({
               type="button"
               onClick={onToggleExpand}
               className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors focus:outline-none"
-              title={isExpanded ? 'Згорнути' : 'Розгорнути'}
+              title={
+                isExpanded
+                  ? t(`${I18N_NS}.collapseTitle`)
+                  : t(`${I18N_NS}.expandTitle`)
+              }
             >
               <svg
                 className={`w-4 h-4 transition-transform duration-200 ${
@@ -103,7 +111,7 @@ const ProcessedResultRow = ({
               <div
                 className="flex items-center text-blue-600 dark:text-blue-400 cursor-pointer hover:underline font-medium"
                 onClick={() => onViewContent(result)}
-                title="Переглянути контекст"
+                title={t(`${I18N_NS}.viewContextTitle`)}
               >
                 <span>{docName}</span>
                 {items.length > 1 && (
@@ -125,7 +133,7 @@ const ProcessedResultRow = ({
                 : 'text-gray-600 dark:text-gray-400 cursor-pointer'
             } text-xs truncate dir-rtl`}
             onClick={() => onOpenFile(result)}
-            title={filePath || 'File path'}
+            title={filePath || t(`${I18N_NS}.filePathFallback`)}
             style={{ direction: 'rtl', textAlign: 'left' }} // RTL trick for left truncation
           >
             {/* Force LTR inside so text reads correctly but truncates from the left */}
@@ -224,7 +232,11 @@ const ProcessedResultRow = ({
                       highlights={[item.extracted.matchedText]}
                     />
                     <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Tooltip content="Скопіювати" placement="top" align="end">
+                      <Tooltip
+                        content={<Trans i18nKey={`${I18N_NS}.copyTooltip`} />}
+                        placement="top"
+                        align="end"
+                      >
                         <ButtonCopyToClipboard
                           textToCopy={
                             (primaryFieldId &&
@@ -245,7 +257,11 @@ const ProcessedResultRow = ({
                         renderTrigger={({ toggle }) => (
                           <div className="flex">
                             <Tooltip
-                              content="Зберегти .doc*"
+                              content={
+                                <Trans
+                                  i18nKey={`${I18N_NS}.generateDocmTooltip`}
+                                />
+                              }
                               placement="top"
                               align="end"
                             >
