@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from 'react';
 
-import type { UseDirectoryPicker } from '../../../../hooks/use-file-system';
-import { FileSystemBridge } from '../../../../utils/file-system-bridge';
+import type { UseDirectoryPicker } from '../../../../../hooks/use-file-system';
+import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
 import {
   listStoredTemplates,
   removeStoredTemplate,
   saveStoredTemplate,
-} from '../../../../utils/template-store';
-import type { StoredTemplateRecord } from '../../../../utils/template-store';
+} from '../../../../../utils/template-store';
+import type { StoredTemplateRecord } from '../../../../../utils/template-store';
 
 type ToastFn = (type: 'success' | 'error' | 'warning', content: string) => void;
 

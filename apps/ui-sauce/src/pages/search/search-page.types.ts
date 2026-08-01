@@ -38,8 +38,9 @@ interface SearchResultSet {
 // present, set by the BE regardless of schema); every schema-defined field
 // (documentNumber, summary, ...) is nested under extractedFieldById instead
 // of being spread onto this object, so it can't be typed as a fixed set of
-// keys — see getExtractedFieldOutputs() in FormProcessDocumentTabItem.components.tsx
-// for how the FE discovers which fields exist and where to show them.
+// keys — see getExtractedFieldOutputs() in
+// SearchDocumentsContainer/SearchResults/result-helpers.ts for how the FE
+// discovers which fields exist and where to show them.
 interface ExtractedResultItem {
   searchQuery: string;
   foundInDocument: string;
@@ -59,7 +60,7 @@ interface RichProcessedResultItem {
 
 // One doc-identifier-deduped group of matches within a search query — the
 // actual per-key array element built by the reducer in
-// FormProcessDocumentTabItem.tsx (never a bare RichProcessedResultItem).
+// SearchDocumentsContainer.tsx (never a bare RichProcessedResultItem).
 interface ProcessedResultGroup {
   docName: string;
   uniqueId?: string;

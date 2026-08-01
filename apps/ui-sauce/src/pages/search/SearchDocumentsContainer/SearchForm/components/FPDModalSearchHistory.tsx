@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { Modal } from '../../../../components';
+import { Modal } from '../../../../../components';
 
 const SEARCH_HISTORY_STORAGE_KEY = 'docNinja_searchHistory';
 const SEARCH_HISTORY_MAX_SIZE_STORAGE_KEY = 'docNinja_searchHistoryMaxSize';

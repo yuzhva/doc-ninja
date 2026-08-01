@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { fetchRequest } from '../../../utils';
+import { fetchRequest } from '../../../../utils';
 
 // Helper to highlight text inside the large file content
 // Optimized version that supports multiple phrases

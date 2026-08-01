@@ -2,12 +2,12 @@ import React from 'react';
 
 import { LoadingSpinner, Tabs, Toast } from '../../components';
 import type { ToastMessage } from '../../components';
+import { useBatchProcessor } from '../../hooks/use-batch-processor';
+import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
 import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
-import { FormPageSectionProps } from './process-page.types';
-import { useBatchProcessor } from './use-batch-processor';
 
 const ProcessPage = () => {
   // --- Toast Management ---
@@ -47,7 +47,9 @@ const ProcessPage = () => {
 
   const initSubmitHandler = React.useCallback(
     (
-      apiCallFunction: Parameters<FormPageSectionProps['initSubmitHandler']>[0],
+      apiCallFunction: Parameters<
+        BatchFileProcessingSectionProps['initSubmitHandler']
+      >[0],
     ) => {
       return (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();

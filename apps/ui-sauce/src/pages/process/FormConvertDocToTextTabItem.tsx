@@ -1,11 +1,8 @@
 import React from 'react';
 
+import { ButtonProcessing, FormInputFileSelect } from '../../components';
+import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
-import {
-  FormInputFileSelect,
-  ProcessingButton,
-} from './process-page.components';
-import type { FormPageSectionProps } from './process-page.types';
 
 const FormConvertDocToTextTabItem = ({
   onSelectSourceDirectory,
@@ -18,7 +15,7 @@ const FormConvertDocToTextTabItem = ({
   progress,
   isFileSystemAccessSupported,
   isProcessing,
-}: FormPageSectionProps) => {
+}: BatchFileProcessingSectionProps) => {
   const [subFolderPath, setSubFolderPath] = React.useState('doc-to-text');
 
   const postConvertDocToText = React.useCallback<
@@ -111,7 +108,7 @@ const FormConvertDocToTextTabItem = ({
           </div>
 
           <div className="mt-8">
-            <ProcessingButton
+            <ButtonProcessing
               type="submit"
               isLoading={isProcessing}
               disabled={!sourceDirectory || !outputDirectory}
@@ -119,7 +116,7 @@ const FormConvertDocToTextTabItem = ({
               {isProcessing
                 ? `Конвертую... (${progress.current}/${progress.total})`
                 : 'Конвертувати Документи в Текст'}
-            </ProcessingButton>
+            </ButtonProcessing>
             <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               💡 Конвертовані файли будуть збережені в папці "{subFolderPath}"
               всередині вибраної папки.
