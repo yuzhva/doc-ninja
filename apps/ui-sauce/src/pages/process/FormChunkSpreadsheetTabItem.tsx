@@ -1,11 +1,8 @@
 import React from 'react';
 
+import { ButtonProcessing, FormInputFileSelect } from '../../components';
+import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
-import {
-  FormInputFileSelect,
-  ProcessingButton,
-} from './process-page.components';
-import type { FormPageSectionProps } from './process-page.types';
 
 const FormChunkSpreadsheetTabItem = ({
   onSelectFile,
@@ -19,7 +16,7 @@ const FormChunkSpreadsheetTabItem = ({
   // progress,
   isFileSystemAccessSupported,
   isProcessing,
-}: FormPageSectionProps) => {
+}: BatchFileProcessingSectionProps) => {
   // Monotonic counter for additional sheet ids — Date.now() can return the
   // same value across two synchronous calls, which previously caused rows
   // to share an id and edits to leak between them.
@@ -487,7 +484,7 @@ const FormChunkSpreadsheetTabItem = ({
           </div>
 
           <div className="mt-8">
-            <ProcessingButton
+            <ButtonProcessing
               type="submit"
               isLoading={isProcessing}
               disabled={!selectedFile || !outputDirectory}
@@ -495,7 +492,7 @@ const FormChunkSpreadsheetTabItem = ({
               {isProcessing
                 ? 'Нарізаю таблицю...'
                 : 'Нарізати табличку частинами'}
-            </ProcessingButton>
+            </ButtonProcessing>
           </div>
           <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             💡 Нарізані частини будуть збережені в папці "

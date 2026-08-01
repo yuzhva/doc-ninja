@@ -2,8 +2,8 @@ import type { TFunction } from 'i18next';
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { Checkbox, Modal, Select, Tabs } from '../../../../components';
-import { FileSystemBridge } from '../../../../utils/file-system-bridge';
+import { Checkbox, Modal, Select, Tabs } from '../../../../../components';
+import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
 
 const I18N_NS = 'page.search.component.fpdModalParserConfigSettings';
 

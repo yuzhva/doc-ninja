@@ -1,14 +1,14 @@
 import React from 'react';
 import type { FileSystemProcessedResult } from 'toolkit--local/browser';
 
-import { Checkbox, Dropdown } from '../../../../components';
+import { Checkbox, Dropdown } from '../../../../../components';
 import {
   useDirectoryPicker,
   useFilePicker,
-} from '../../../../hooks/use-file-system';
-import { FileSystemBridge } from '../../../../utils/file-system-bridge';
-import type { WriteFilesViaDestinationHandle } from '../../../../utils/file-system-processor';
-import type { StoredTemplateRecord } from '../../../../utils/template-store';
+} from '../../../../../hooks/use-file-system';
+import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
+import type { WriteFilesViaDestinationHandle } from '../../../../../utils/file-system-processor';
+import type { StoredTemplateRecord } from '../../../../../utils/template-store';
 import {
   DocmTemplatesStore,
   isFileNotFoundError,

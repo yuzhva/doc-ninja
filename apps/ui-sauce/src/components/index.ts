@@ -1,8 +1,10 @@
 export { Badge } from './Badge';
 export { ButtonCopyToClipboard } from './ButtonCopyToClipboard';
+export { ButtonProcessing } from './ButtonProcessing';
 export { Checkbox } from './Checkbox';
 export { Dropdown } from './Dropdown';
 export { FilterDropdown } from './FilterDropdown';
+export { FormInputFileSelect } from './FormInputFileSelect';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Modal } from './Modal';
 export { Select } from './Select';

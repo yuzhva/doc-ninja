@@ -1,11 +1,8 @@
 import React from 'react';
 
+import { ButtonProcessing, FormInputFileSelect } from '../../components';
+import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
-import {
-  FormInputFileSelect,
-  ProcessingButton,
-} from './process-page.components';
-import type { FormPageSectionProps } from './process-page.types';
 
 const FormConvertSpreadsheetToStatic = ({
   onSelectFile,
@@ -19,7 +16,7 @@ const FormConvertSpreadsheetToStatic = ({
   // progress,
   isFileSystemAccessSupported,
   isProcessing,
-}: FormPageSectionProps) => {
+}: BatchFileProcessingSectionProps) => {
   const [fileNameSuffix, setFileNameSuffix] = React.useState('_без_формул');
 
   const previewFileName = React.useMemo(() => {
@@ -132,13 +129,13 @@ const FormConvertSpreadsheetToStatic = ({
           </div>
 
           <div className="mt-8">
-            <ProcessingButton
+            <ButtonProcessing
               type="submit"
               isLoading={isProcessing}
               disabled={!selectedFile || !outputDirectory}
             >
               {isProcessing ? 'Конвертую...' : 'Конвертувати в Статику'}
-            </ProcessingButton>
+            </ButtonProcessing>
             {previewFileName && (
               <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                 💡 Результат буде збережено до файлу з назвою "{previewFileName}

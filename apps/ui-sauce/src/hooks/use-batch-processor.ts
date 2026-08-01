@@ -1,12 +1,13 @@
+import type { FormEvent } from 'react';
 import { useCallback, useState } from 'react';
 
-import type { UseDirectoryPicker } from '../../hooks/use-file-system';
 import type {
   BatchFile,
   FSBatchProcessorOptions,
   WriteFilesViaDestinationHandle,
-} from '../../utils/file-system-processor';
-import { FileSystemAPIProcessor } from '../../utils/file-system-processor';
+} from '../utils/file-system-processor';
+import { FileSystemAPIProcessor } from '../utils/file-system-processor';
+import type { UseDirectoryPicker, UseFilePicker } from './use-file-system';
 
 interface BatchProcessorHookOptions extends Pick<
   FSBatchProcessorOptions,
@@ -20,6 +21,37 @@ interface BatchProcessorHookOptions extends Pick<
   destinationHandle: WriteFilesViaDestinationHandle;
   validationMessage: string;
   successMessage: string;
+}
+
+// The prop contract handed down to a page section that wires up
+// useDirectoryPicker + useFilePicker + useBatchProcessor together (both
+// ProcessPage and SearchPage's tab items/panes follow this same pattern).
+interface BatchFileProcessingSectionProps {
+  sourceDirectory: UseDirectoryPicker['processedDir'];
+  outputDirectory: UseDirectoryPicker['processedDir'];
+  selectedFile: UseFilePicker['processedDir'];
+  progress: {
+    current: number;
+    total: number;
+    batch: number;
+  };
+  isFileSystemAccessSupported: boolean;
+  isProcessing: boolean;
+  onSelectFile: () => void;
+  onSelectSourceDirectory: () => void;
+  onSelectOutputDirectory: () => void;
+  executeBatch: (
+    options: BatchProcessorHookOptions,
+    apiCall: (
+      batchFiles: BatchFile[],
+      batchIndex: number,
+      totalBatches: number,
+      structure: any,
+    ) => Promise<any>,
+  ) => Promise<void>;
+  initSubmitHandler: (
+    fn: (data: { [k: string]: FormDataEntryValue }) => Promise<any>,
+  ) => (e: FormEvent<HTMLFormElement>) => void;
 }
 
 function useBatchProcessor(
@@ -92,4 +124,4 @@ function useBatchProcessor(
 }
 
 export { useBatchProcessor };
-export type { BatchProcessorHookOptions };
+export type { BatchFileProcessingSectionProps, BatchProcessorHookOptions };

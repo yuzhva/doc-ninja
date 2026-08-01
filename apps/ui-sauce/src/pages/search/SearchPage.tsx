@@ -2,10 +2,10 @@ import React from 'react';
 
 import { LoadingSpinner, Toast } from '../../components';
 import type { ToastMessage } from '../../components';
+import { useBatchProcessor } from '../../hooks/use-batch-processor';
+import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
-import { FormPageSectionProps } from '../process/process-page.types';
-import { useBatchProcessor } from '../process/use-batch-processor';
-import { FormProcessDocumentTabItem } from './FormProcessDocumentTabItem/index';
+import { SearchDocumentsContainer } from './SearchDocumentsContainer';
 
 const SearchPage = () => {
   // --- Toast Management ---
@@ -51,7 +51,9 @@ const SearchPage = () => {
 
   const initSubmitHandler = React.useCallback(
     (
-      apiCallFunction: Parameters<FormPageSectionProps['initSubmitHandler']>[0],
+      apiCallFunction: Parameters<
+        BatchFileProcessingSectionProps['initSubmitHandler']
+      >[0],
     ) => {
       return (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -85,7 +87,7 @@ const SearchPage = () => {
         </div>
       )}
 
-      <FormProcessDocumentTabItem
+      <SearchDocumentsContainer
         onSelectFile={filePicker.selectFile}
         onSelectSourceDirectory={sourceDir.selectDirectory}
         onSelectOutputDirectory={outputDir.selectDirectory}
