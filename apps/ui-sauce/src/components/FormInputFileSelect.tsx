@@ -1,6 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { UseFilePicker } from '../hooks/use-file-system';
+
+const I18N_NS = 'component.formInputFileSelect';
 
 interface FormInputFileSelectProps {
   id: string;
@@ -15,7 +18,7 @@ interface FormInputFileSelectProps {
   >;
   directory?: string;
   isFileSystemAccessSupported: boolean;
-  label: string;
+  label: React.ReactNode;
   icon?: 'file' | 'folder';
 }
 
@@ -32,14 +35,15 @@ const FormInputFileSelect = ({
   label,
   icon = 'file', // "file" or "folder"
 }: FormInputFileSelectProps) => {
+  const { t } = useTranslation();
   const displayName = React.useMemo(() => {
     // Check if selectedItem exists AND if its structure property exists
-    if (!selectedItem?.structure) return 'Натисніть, щоб обрати ...';
+    if (!selectedItem?.structure) return t(`${I18N_NS}.clickToSelect`);
 
     const name = selectedItem.structure.name;
     const kind = selectedItem.structure.fsItemType;
     return `${kind}://${name}`;
-  }, [selectedItem]);
+  }, [selectedItem, t]);
 
   const FileIcon = () => (
     <svg

@@ -1,4 +1,6 @@
+import type { TFunction } from 'i18next';
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import type { FileSystemProcessedResult } from 'toolkit--local/browser';
 
 import { Checkbox, Dropdown } from '../../../../../components';
@@ -11,6 +13,7 @@ import type { WriteFilesViaDestinationHandle } from '../../../../../utils/file-s
 import type { StoredTemplateRecord } from '../../../../../utils/template-store';
 import {
   DocmTemplatesStore,
+  TemplatePermissionDeniedError,
   isFileNotFoundError,
   useDocmTemplates,
   useSelectedDocmTemplateId,
@@ -18,6 +21,8 @@ import {
   useUnavailableDocmTemplateIds,
 } from './docm-templates-store';
 import type { DocmTemplate } from './docm-templates-store';
+
+const I18N_NS = 'page.search.component.fpdDocmTemplatesDropdown';
 
 interface DocmGeneratePayload {
   // Already-resolved bytes, not a lazy DocmTemplate — the read (and its
@@ -59,13 +64,14 @@ const buildJobFileName = (extracted: any): string => {
 // message instead of a confusing error deep inside the write loop.
 const verifyOutputDirectoryIsWritable = async (
   handle: WriteFilesViaDestinationHandle,
+  t: TFunction,
 ): Promise<void> => {
   const hasPermission = await FileSystemBridge.ensurePermission(
     handle,
     'readwrite',
   );
   if (!hasPermission) {
-    throw new Error('Немає дозволу на запис у обрану папку.');
+    throw new Error(t(`${I18N_NS}.noWritePermissionError`));
   }
 };
 
@@ -81,16 +87,13 @@ const isPickerAlreadyActiveError = (error: any): boolean =>
   error?.name === 'NotAllowedError' &&
   /already active/i.test(String(error?.message ?? ''));
 
-const describeDirectoryPickError = (error: any): string => {
+const describeDirectoryPickError = (error: any, t: TFunction): string => {
   if (isPickerAlreadyActiveError(error)) {
-    return (
-      'Не вдалося обрати папку: попереднє вікно вибору, ймовірно, ще не ' +
-      'закрилося (могло зависнути, якщо ви обрали кореневу папку Downloads, ' +
-      'Desktop чи Documents). Оберіть підпапку замість кореневої, або ' +
-      'перезапустіть застосунок.'
-    );
+    return t(`${I18N_NS}.pickerAlreadyActiveError`);
   }
-  return `Не вдалося обрати папку: ${error.message || error}`;
+  return t(`${I18N_NS}.pickDirectoryFailedError`, {
+    message: error.message || error,
+  });
 };
 
 interface DropdownTriggerArgs {
@@ -131,7 +134,7 @@ const defaultRenderTrigger = ({
           d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
         />
       </svg>
-      Зберегти .doc*
+      <Trans i18nKey={`${I18N_NS}.saveTriggerLabel`} />
       <svg
         className={`-mr-1 ml-1.5 w-5 h-5 transition-transform duration-200 ${
           isOpen ? 'rotate-180' : ''
@@ -171,6 +174,7 @@ const FPDDocmTemplatesDropdown = ({
   renderTrigger?: (args: DropdownTriggerArgs) => React.ReactNode;
   openDirection?: 'down' | 'up';
 }) => {
+  const { t } = useTranslation();
   const hasResults = items.length > 0;
   // All shared across every dropdown instance on the page (one per results
   // row, plus the toolbar one) — see docm-templates-store. There's exactly
@@ -187,7 +191,7 @@ const FPDDocmTemplatesDropdown = ({
   const templateFilePicker = useFilePicker({
     types: [
       {
-        description: 'Word Templates',
+        description: t(`${I18N_NS}.wordTemplatesFileTypeDescription`),
         accept: {
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
             ['.docx'],
@@ -266,7 +270,7 @@ const FPDDocmTemplatesDropdown = ({
       // click, so it'd show last attempt's failure, one click behind.
       const error = outputDirPicker.errorRef.current;
       if (error) {
-        addToast('error', describeDirectoryPickError(error));
+        addToast('error', describeDirectoryPickError(error, t));
       }
       return;
     }
@@ -283,17 +287,29 @@ const FPDDocmTemplatesDropdown = ({
     // one) — means a bad folder never gets stuck reused forever; the next
     // click, anywhere, always re-prompts.
     try {
-      await verifyOutputDirectoryIsWritable(outputDirectoryHandle);
+      await verifyOutputDirectoryIsWritable(outputDirectoryHandle, t);
     } catch (error: any) {
       outputDirPicker.reset();
       DocmTemplatesStore.setOutputDirectory(null);
-      addToast('error', `${error.message || error} Оберіть іншу папку.`);
+      addToast(
+        'error',
+        `${error.message || error} ${t(`${I18N_NS}.chooseAnotherFolderSuffix`)}`,
+      );
       return;
     }
 
     let templateFile: Blob;
     try {
-      templateFile = await selectedTemplate.getFileContent(addToast);
+      const content = await selectedTemplate.getFileContent();
+      if (content.usedCachedFallback) {
+        addToast(
+          'warning',
+          t(`${I18N_NS}.usedCachedTemplateWarning`, {
+            name: selectedTemplate.name,
+          }),
+        );
+      }
+      templateFile = content.blob;
       // Reading succeeded — clear a stale "unavailable" flag from an
       // earlier failed attempt (the file may have come back), in every
       // dropdown instance showing this template, not just this one.
@@ -304,8 +320,17 @@ const FPDDocmTemplatesDropdown = ({
       addToast(
         'error',
         isFileNotFoundError(error)
-          ? `Файл шаблону "${selectedTemplate.name}" не знайдено. Оберіть інший шаблон або додайте його ще раз.`
-          : `Не вдалося прочитати шаблон "${selectedTemplate.name}": ${error.message || error}`,
+          ? t(`${I18N_NS}.templateNotFoundError`, {
+              name: selectedTemplate.name,
+            })
+          : error instanceof TemplatePermissionDeniedError
+            ? t(`${I18N_NS}.templatePermissionDeniedError`, {
+                name: selectedTemplate.name,
+              })
+            : t(`${I18N_NS}.templateReadFailedError`, {
+                name: selectedTemplate.name,
+                message: error.message || error,
+              }),
       );
       return;
     }
@@ -354,7 +379,7 @@ const FPDDocmTemplatesDropdown = ({
     }
     const error = outputDirPicker.errorRef.current;
     if (error) {
-      addToast('error', describeDirectoryPickError(error));
+      addToast('error', describeDirectoryPickError(error, t));
     }
   };
 
@@ -368,13 +393,13 @@ const FPDDocmTemplatesDropdown = ({
     >
       <div className="mb-3 flex items-center justify-between">
         <h6 className="text-sm font-medium text-gray-900 dark:text-white">
-          Шаблони
+          <Trans i18nKey={`${I18N_NS}.templatesHeading`} />
         </h6>
         <button
           type="button"
           onClick={templateFilePicker.selectFile}
           disabled={!templateFilePicker.isSupported}
-          title="Додати шаблон"
+          title={t(`${I18N_NS}.addTemplateTitle`)}
           className="flex items-center justify-center w-6 h-6 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           +
@@ -383,7 +408,7 @@ const FPDDocmTemplatesDropdown = ({
 
       {templates.length === 0 ? (
         <div className="py-6 text-xs text-center text-gray-500 dark:text-gray-400">
-          Немає шаблонів. Натисніть «+», щоб додати.
+          <Trans i18nKey={`${I18N_NS}.noTemplatesMessage`} />
         </div>
       ) : (
         <div className="-mx-3 mb-3 divide-y divide-gray-100 dark:divide-gray-700">
@@ -398,7 +423,7 @@ const FPDDocmTemplatesDropdown = ({
                 onClick={() => DocmTemplatesStore.selectTemplate(template.id)}
                 title={
                   isUnavailable
-                    ? 'Файл шаблону не знайдено на диску — спробуйте ще раз або оберіть інший'
+                    ? t(`${I18N_NS}.templateUnavailableTitle`)
                     : undefined
                 }
                 className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
@@ -448,7 +473,7 @@ const FPDDocmTemplatesDropdown = ({
                 </label>
                 <button
                   type="button"
-                  aria-label="Видалити шаблон"
+                  aria-label={t(`${I18N_NS}.removeTemplateAriaLabel`)}
                   onClick={(e) => handleRemoveTemplate(e, template.id)}
                   className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
                 >
@@ -483,7 +508,7 @@ const FPDDocmTemplatesDropdown = ({
             theme="toggle"
             checked={generateSeparateFiles}
             onChange={setGenerateSeparateFiles}
-            label="Створювати окремі файли"
+            label={<Trans i18nKey={`${I18N_NS}.generateSeparateFilesLabel`} />}
           />
         </div>
       )}
@@ -494,20 +519,23 @@ const FPDDocmTemplatesDropdown = ({
         disabled={!selectedTemplateId || !hasResults}
         className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 cursor-pointer"
       >
-        Завантажити .doc*
+        <Trans i18nKey={`${I18N_NS}.generateButton`} />
       </button>
 
       {sharedOutputDirectory && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
           <span className="truncate">
-            Зберегти в: {sharedOutputDirectory.structure.name}
+            <Trans
+              i18nKey={`${I18N_NS}.savedToLabel`}
+              values={{ name: sharedOutputDirectory.structure.name }}
+            />
           </span>
           <button
             type="button"
             onClick={handleChangeOutputDirectory}
             className="shrink-0 text-blue-600 hover:underline dark:text-blue-500 cursor-pointer"
           >
-            Змінити
+            <Trans i18nKey={`${I18N_NS}.changeFolderButton`} />
           </button>
         </div>
       )}

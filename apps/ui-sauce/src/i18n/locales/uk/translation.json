@@ -11,9 +11,81 @@
       }
     }
   },
+  "component": {
+    "formInputFileSelect": {
+      "clickToSelect": "Натисніть, щоб обрати ..."
+    }
+  },
   "page": {
     "search": {
+      "container": {
+        "searchForm": {
+          "selectSourceFolderFirstWarning": "Спочатку оберіть папку з документами.",
+          "reindexSuccessToast": "Переіндексацію завершено.",
+          "deleteCacheSuccessToast": "Кеш індексації видалено.",
+          "actionFailedToast": "Не вдалося виконати дію: {{message}}",
+          "searchTextLabel": "Текст для пошуку",
+          "searchTextPlaceholder": "Введіть ключове слово або фразу...",
+          "maxTypoDistanceLabel": "К-сть символів одруківки",
+          "allowFuzzyMatchLabelLine1": "Дозволити",
+          "allowFuzzyMatchLabelLine2": "співпадіння",
+          "pageSizeLabel": "К-сть результатів запиту",
+          "findAllLabel": "Знайти все",
+          "sortOrderLabel": "Сортування (дата)",
+          "sortOrderOptions": {
+            "desc": "Новіші спочатку",
+            "asc": "Старіші спочатку"
+          },
+          "searchHistoryButton": "Історія пошуку",
+          "searchButton": "Пошук",
+          "expandSettingsTitle": "Показати параметри",
+          "collapseSettingsTitle": "Згорнути параметри",
+          "sourceFolderLabel": "Папка з документами для пошуку",
+          "documentsIndexActionsTitle": "Налаштування індексації документів",
+          "reindexAction": "Переіндексувати",
+          "deleteCacheAction": "Видалити кеш",
+          "parserConfigLabel": "Обробка знайденого тексту",
+          "noParsingOption": "Без обробки",
+          "parserSettingsTitle": "Налаштування парсера документів",
+          "searchFoldersLabel": "Папки для пошуку"
+        },
+        "searchResults": {
+          "excelFileTypeDescription": "Файл Excel",
+          "inputNameColumnHeader": "Назва запиту",
+          "foundInDocumentColumnHeader": "Знайдено в документі",
+          "foundDeclensionColumnHeader": "Знайдена словоформа",
+          "summaryColumnHeader": "Підсумок",
+          "generateSuccessToast": "Успішно створено {{count}} файл(ів) у обраній папці.",
+          "generateFailedToast": "Помилка створення файлу: {{message}}",
+          "documentDetailsTitle": "Деталі документу",
+          "queryLabel": "Запит:",
+          "matchLabel": "Збіг #{{number}}",
+          "filterLabel": "Фільтр",
+          "clearSearchLabel": "Очистити пошук",
+          "allResultsPlaceholder": "Всі",
+          "saveXlsxButton": "Зберегти .xlsx",
+          "addFiltersButton": "Додайте фільтри",
+          "noResultsForFiltersMessage": "Нічого не знайдено за обраними фільтрами",
+          "resultsPlaceholderMessage": "Результати пошуку з'являться тут..."
+        }
+      },
       "component": {
+        "processedResultGroup": {
+          "resultsForLabel": "Результати для:",
+          "copyTooltip": "Скопіювати",
+          "expandAllTitle": "Розгорнути всі",
+          "collapseAllTitle": "Згорнути всі",
+          "fileNameHeader": "Назва файлу",
+          "pathHeader": "Шлях"
+        },
+        "processedResultRow": {
+          "expandTitle": "Розгорнути",
+          "collapseTitle": "Згорнути",
+          "viewContextTitle": "Переглянути контекст",
+          "filePathFallback": "Шлях до файлу",
+          "copyTooltip": "Скопіювати",
+          "generateDocmTooltip": "Зберегти .doc*"
+        },
         "fpdModalSearchHistory": {
           "title": "Історія пошуку",
           "maxSizeLabel": "К-сть запитів для збереження",
@@ -111,6 +183,31 @@
           "exportErrorAlert": "Помилка експорту: Невалідний JSON у редакторі",
           "jsonConfigFileTypeDescription": "Конфігурація JSON",
           "jsonFileTypeDescription": "Файл JSON"
+        },
+        "fpdDirectoryTreeItem": {
+          "expandLabel": "Розгорнути",
+          "collapseLabel": "Згорнути"
+        },
+        "fpdDocmTemplatesDropdown": {
+          "wordTemplatesFileTypeDescription": "Шаблони Word",
+          "templatesHeading": "Шаблони",
+          "addTemplateTitle": "Додати шаблон",
+          "noTemplatesMessage": "Немає шаблонів. Натисніть «+», щоб додати.",
+          "templateUnavailableTitle": "Файл шаблону не знайдено на диску — спробуйте ще раз або оберіть інший",
+          "usedCachedTemplateWarning": "Файл шаблону \"{{name}}\" не знайдено на диску — використано останню збережену копію.",
+          "removeTemplateAriaLabel": "Видалити шаблон",
+          "generateSeparateFilesLabel": "Створювати окремі файли",
+          "generateButton": "Завантажити .doc*",
+          "savedToLabel": "Зберегти в: {{name}}",
+          "changeFolderButton": "Змінити",
+          "saveTriggerLabel": "Зберегти .doc*",
+          "noWritePermissionError": "Немає дозволу на запис у обрану папку.",
+          "chooseAnotherFolderSuffix": "Оберіть іншу папку.",
+          "pickerAlreadyActiveError": "Не вдалося обрати папку: попереднє вікно вибору, ймовірно, ще не закрилося (могло зависнути, якщо ви обрали кореневу папку Downloads, Desktop чи Documents). Оберіть підпапку замість кореневої, або перезапустіть застосунок.",
+          "pickDirectoryFailedError": "Не вдалося обрати папку: {{message}}",
+          "templateNotFoundError": "Файл шаблону \"{{name}}\" не знайдено. Оберіть інший шаблон або додайте його ще раз.",
+          "templateReadFailedError": "Не вдалося прочитати шаблон \"{{name}}\": {{message}}",
+          "templatePermissionDeniedError": "Немає дозволу на доступ до файлу шаблону \"{{name}}\"."
         }
       }
     }

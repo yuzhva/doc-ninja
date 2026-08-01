@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Badge, FilterDropdown } from '../../../../components';
 import { fetchRequest } from '../../../../utils';
@@ -18,12 +19,15 @@ import {
   truncateRowForXlsx,
 } from './result-helpers';
 
+const I18N_NS = 'page.search.container.searchResults';
+
 const SearchResults = ({
   results,
   parserConfigs,
   selectedParserConfigName,
   addToast,
 }: SearchResultsProps) => {
+  const { t } = useTranslation();
   // The schema currently selected in the UI — derived locally since nothing
   // outside this pane (table columns, excel export, .docm template tags)
   // needs it; the container only needs the raw selection for its own
@@ -235,14 +239,18 @@ const SearchResults = ({
 
     // 2. Define Columns (Base + Parser Schema SPREADSHEET fields + Filter Configs)
     const baseCols = [
-      { header: 'Input Name', key: 'inputName', options: { wch: 25 } },
       {
-        header: 'Found In Document',
+        header: t(`${I18N_NS}.inputNameColumnHeader`),
+        key: 'inputName',
+        options: { wch: 25 },
+      },
+      {
+        header: t(`${I18N_NS}.foundInDocumentColumnHeader`),
         key: 'foundInDocument',
         options: { wch: 25 },
       },
       {
-        header: 'Found Declension',
+        header: t(`${I18N_NS}.foundDeclensionColumnHeader`),
         key: 'foundDeclension',
         options: { wch: 25 },
       },
@@ -262,7 +270,10 @@ const SearchResults = ({
         ? spreadsheetFields
         : [
             ...spreadsheetFields,
-            { id: exportPrimaryFieldId, label: 'Summary' },
+            {
+              id: exportPrimaryFieldId,
+              label: t(`${I18N_NS}.summaryColumnHeader`),
+            },
           ];
 
     const schemaCols = exportedSpreadsheetFields.map((field) => ({
@@ -354,7 +365,7 @@ const SearchResults = ({
               suggestedName: fileName,
               types: [
                 {
-                  description: 'Excel File',
+                  description: t(`${I18N_NS}.excelFileTypeDescription`),
                   accept: {
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
                       ['.xlsx'],
@@ -410,11 +421,16 @@ const SearchResults = ({
 
       addToast(
         'success',
-        `Успішно створено ${result.files.length} файл(ів) у обраній папці.`,
+        t(`${I18N_NS}.generateSuccessToast`, { count: result.files.length }),
       );
     } catch (error: any) {
       console.error('Failed to generate .doc* files', error);
-      addToast('error', `Помилка створення файлу: ${error.message || error}`);
+      addToast(
+        'error',
+        t(`${I18N_NS}.generateFailedToast`, {
+          message: error.message || error,
+        }),
+      );
     }
   };
 
@@ -449,7 +465,7 @@ const SearchResults = ({
         <FormProcessDocumentSideOver
           isOpen={!!previewItem}
           onClose={closePreview}
-          title={previewItem?.docName || 'Деталі документу'}
+          title={previewItem?.docName || t(`${I18N_NS}.documentDetailsTitle`)}
           textFilePath={
             previewItem?.search?.doc?.textFilePath ||
             previewItem?.items[0]?.search?.doc?.textFilePath
@@ -463,7 +479,8 @@ const SearchResults = ({
               {/* Header / Metadata only - context removed to avoid duplication */}
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Запит: {previewItem.items[0]?.extracted?.searchQuery}
+                  <Trans i18nKey={`${I18N_NS}.queryLabel`} />{' '}
+                  {previewItem.items[0]?.extracted?.searchQuery}
                 </div>
 
                 {/* Show Status/Type for each match if available */}
@@ -474,7 +491,10 @@ const SearchResults = ({
                       className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded border border-gray-100 dark:border-gray-700"
                     >
                       <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Збіг #{idx + 1}
+                        <Trans
+                          i18nKey={`${I18N_NS}.matchLabel`}
+                          values={{ number: idx + 1 }}
+                        />
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {filterConfigs.map((conf) => {
@@ -514,7 +534,7 @@ const SearchResults = ({
             onSubmit={(e) => e.preventDefault()}
           >
             <label htmlFor="simple-search" className="sr-only">
-              Фільтр
+              <Trans i18nKey={`${I18N_NS}.filterLabel`} />
             </label>
             <div className="relative w-full sm:w-64 md:w-72">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -536,7 +556,7 @@ const SearchResults = ({
                 type="text"
                 id="simple-search"
                 className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                placeholder="Фільтр"
+                placeholder={t(`${I18N_NS}.filterLabel`)}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -561,7 +581,9 @@ const SearchResults = ({
                       d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
                     />
                   </svg>
-                  <span className="sr-only">Clear search</span>
+                  <span className="sr-only">
+                    <Trans i18nKey={`${I18N_NS}.clearSearchLabel`} />
+                  </span>
                 </button>
               )}
               {searchTerm && (
@@ -600,7 +622,7 @@ const SearchResults = ({
               type="text"
               id="max-results-input"
               className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-              placeholder="Всі"
+              placeholder={t(`${I18N_NS}.allResultsPlaceholder`)}
               value={maxResults}
               onChange={(e) => {
                 const val = e.target.value;
@@ -669,7 +691,7 @@ const SearchResults = ({
                 d="M10 3v4a1 1 0 0 1-1 1H5m8-2h3m-3 3h3m-4 3v6m4-3H8M19 4v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1ZM8 12v6h8v-6H8Z"
               />
             </svg>
-            Зберегти .xlsx
+            <Trans i18nKey={`${I18N_NS}.saveXlsxButton`} />
           </button>
         </div>
 
@@ -705,7 +727,7 @@ const SearchResults = ({
                     d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
                   />
                 </svg>
-                Додайте фільтри
+                <Trans i18nKey={`${I18N_NS}.addFiltersButton`} />
               </button>
             </>
           ) : (
@@ -780,9 +802,11 @@ const SearchResults = ({
         <div className="flex-1 overflow-y-auto p-4">
           {!hasResults ? (
             <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-              {results && Object.keys(results).length > 0
-                ? 'Нічого не знайдено за обраними фільтрами'
-                : "Результати пошуку з'являться тут..."}
+              {results && Object.keys(results).length > 0 ? (
+                <Trans i18nKey={`${I18N_NS}.noResultsForFiltersMessage`} />
+              ) : (
+                <Trans i18nKey={`${I18N_NS}.resultsPlaceholderMessage`} />
+              )}
             </div>
           ) : (
             <div className="space-y-6">

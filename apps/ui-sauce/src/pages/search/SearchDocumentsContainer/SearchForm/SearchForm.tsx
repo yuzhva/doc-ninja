@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import {
   ButtonProcessing,
@@ -12,6 +13,8 @@ import type { SearchFormProps } from './SearchForm.types';
 import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
 import { FPDModalParserConfigSettings } from './components/FPDModalParserConfigSettings';
 import { FPDModalSearchHistory } from './components/FPDModalSearchHistory';
+
+const I18N_NS = 'page.search.container.searchForm';
 
 const SearchForm = ({
   onSelectSourceDirectory,
@@ -33,6 +36,7 @@ const SearchForm = ({
   addToast,
   onSubmit,
 }: SearchFormProps) => {
+  const { t } = useTranslation();
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
   const [sortOrder, setSortOrder] = React.useState('desc');
@@ -68,7 +72,7 @@ const SearchForm = ({
         '';
 
       if (!sourcePath) {
-        addToast('warning', 'Спочатку оберіть папку з документами.');
+        addToast('warning', t(`${I18N_NS}.selectSourceFolderFirstWarning`));
         return;
       }
 
@@ -82,17 +86,22 @@ const SearchForm = ({
         addToast(
           'success',
           action === 'reindex'
-            ? 'Переіндексацію завершено.'
-            : 'Кеш індексації видалено.',
+            ? t(`${I18N_NS}.reindexSuccessToast`)
+            : t(`${I18N_NS}.deleteCacheSuccessToast`),
         );
       } catch (error: any) {
         console.error('Documents index action failed:', error);
-        addToast('error', `Не вдалося виконати дію: ${error.message || error}`);
+        addToast(
+          'error',
+          t(`${I18N_NS}.actionFailedToast`, {
+            message: error.message || error,
+          }),
+        );
       } finally {
         setPendingDocumentsIndexAction(null);
       }
     },
-    [sourceDirectory, directoryData, addToast],
+    [sourceDirectory, directoryData, addToast, t],
   );
 
   const handleParserConfigSettingsSave = () => {
@@ -126,7 +135,7 @@ const SearchForm = ({
                     htmlFor="bulkNamesTextArea"
                     className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
                   >
-                    Текст для пошуку
+                    <Trans i18nKey={`${I18N_NS}.searchTextLabel`} />
                   </label>
                   <textarea
                     id="bulkNamesTextArea"
@@ -135,7 +144,7 @@ const SearchForm = ({
                     value={bulkNamesValue}
                     onChange={(e) => setBulkNamesValue(e.target.value)}
                     className="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                    placeholder={`Введіть ключове слово або фразу...`}
+                    placeholder={t(`${I18N_NS}.searchTextPlaceholder`)}
                   />
                 </div>
 
@@ -145,7 +154,7 @@ const SearchForm = ({
                     htmlFor="maxTypoDistanceNumber"
                     className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
                   >
-                    К-сть символів одруківки
+                    <Trans i18nKey={`${I18N_NS}.maxTypoDistanceLabel`} />
                   </label>
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
@@ -169,8 +178,16 @@ const SearchForm = ({
                         onChange={onAllowFuzzyMatchChange}
                         label={
                           <>
-                            <span>Дозволити</span>
-                            <span>співпадіння</span>
+                            <span>
+                              <Trans
+                                i18nKey={`${I18N_NS}.allowFuzzyMatchLabelLine1`}
+                              />
+                            </span>
+                            <span>
+                              <Trans
+                                i18nKey={`${I18N_NS}.allowFuzzyMatchLabelLine2`}
+                              />
+                            </span>
                           </>
                         }
                         labelClassName="flex flex-col justify-center leading-tight whitespace-nowrap"
@@ -185,7 +202,7 @@ const SearchForm = ({
                     htmlFor="pageSizeNumber"
                     className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
                   >
-                    К-сть результатів запиту
+                    <Trans i18nKey={`${I18N_NS}.pageSizeLabel`} />
                   </label>
                   <div className="flex items-center gap-4">
                     {/* Input - Swapped place with toggle */}
@@ -214,7 +231,7 @@ const SearchForm = ({
                         theme="toggle"
                         checked={isPageSizeAll}
                         onChange={setIsPageSizeAll}
-                        label="Знайти все"
+                        label={<Trans i18nKey={`${I18N_NS}.findAllLabel`} />}
                         labelClassName="whitespace-nowrap"
                       />
                     </div>
@@ -226,12 +243,18 @@ const SearchForm = ({
                   <Select
                     id="sortOrder"
                     name="sortOrder"
-                    label="Сортування (дата)"
+                    label={<Trans i18nKey={`${I18N_NS}.sortOrderLabel`} />}
                     value={sortOrder}
                     onChange={setSortOrder}
                     options={[
-                      { value: 'desc', label: 'Новіші спочатку' },
-                      { value: 'asc', label: 'Старіші спочатку' },
+                      {
+                        value: 'desc',
+                        label: t(`${I18N_NS}.sortOrderOptions.desc`),
+                      },
+                      {
+                        value: 'asc',
+                        label: t(`${I18N_NS}.sortOrderOptions.asc`),
+                      },
                     ]}
                   />
                 </div>
@@ -242,7 +265,7 @@ const SearchForm = ({
                     onClick={() => setIsSearchHistoryOpen(true)}
                     className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-500 flex items-center justify-center cursor-pointer"
                   >
-                    Історія пошуку
+                    <Trans i18nKey={`${I18N_NS}.searchHistoryButton`} />
                   </button>
 
                   <ButtonProcessing
@@ -251,7 +274,7 @@ const SearchForm = ({
                     disabled={!directoryData?.structure}
                   >
                     {/* {isProcessing ? 'Обробляю документи...' : 'Пошук збігів'} */}
-                    Пошук
+                    <Trans i18nKey={`${I18N_NS}.searchButton`} />
                   </ButtonProcessing>
                 </div>
               </div>
@@ -263,11 +286,11 @@ const SearchForm = ({
                 type="button"
                 onClick={() => setIsSettingsExpanded(!isSettingsExpanded)}
                 className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 hover:border-blue-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-blue-400 transition-all cursor-pointer z-10"
-                title={
+                title={t(
                   isSettingsExpanded
-                    ? 'Згорнути параметри'
-                    : 'Показати параметри'
-                }
+                    ? `${I18N_NS}.collapseSettingsTitle`
+                    : `${I18N_NS}.expandSettingsTitle`,
+                )}
               >
                 <svg
                   className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform duration-300 ${
@@ -293,7 +316,7 @@ const SearchForm = ({
                   <FormInputFileSelect
                     id="processDocumentsSourceFolder"
                     name="sourceDirectory"
-                    label="Папка з документами для пошуку"
+                    label={<Trans i18nKey={`${I18N_NS}.sourceFolderLabel`} />}
                     onClick={onSelectSourceDirectory}
                     selectedItem={sourceDirectory || directoryData}
                     isFileSystemAccessSupported={isFileSystemAccessSupported}
@@ -309,7 +332,7 @@ const SearchForm = ({
                     <button
                       type="button"
                       onClick={toggle}
-                      title="Налаштування індексації документів"
+                      title={t(`${I18N_NS}.documentsIndexActionsTitle`)}
                       className={`${
                         !directoryData?.structure
                           ? 'opacity-50 cursor-not-allowed '
@@ -363,7 +386,7 @@ const SearchForm = ({
                             d="M17.651 7.65a7.131 7.131 0 0 0-12.68 3.15M18.001 4v4h-4m-7.652 8.35a7.13 7.13 0 0 0 12.68-3.15M6 20v-4h4"
                           />
                         </svg>
-                        Переіндексувати
+                        <Trans i18nKey={`${I18N_NS}.reindexAction`} />
                       </button>
                     </li>
                     <li>
@@ -391,7 +414,7 @@ const SearchForm = ({
                             d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
                           />
                         </svg>
-                        Видалити кеш
+                        <Trans i18nKey={`${I18N_NS}.deleteCacheAction`} />
                       </button>
                     </li>
                   </ul>
@@ -405,7 +428,7 @@ const SearchForm = ({
                     htmlFor="parserConfigName"
                     className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
                   >
-                    Обробка знайденого тексту
+                    <Trans i18nKey={`${I18N_NS}.parserConfigLabel`} />
                   </label>
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
@@ -415,7 +438,10 @@ const SearchForm = ({
                         value={selectedParserConfigName}
                         onChange={onSelectedParserConfigNameChange}
                         options={[
-                          { value: '', label: 'Без обробки' },
+                          {
+                            value: '',
+                            label: t(`${I18N_NS}.noParsingOption`),
+                          },
                           ...parserConfigs.map((c: any) => ({
                             value: c.name,
                             label: c.name,
@@ -426,7 +452,7 @@ const SearchForm = ({
                     <button
                       type="button"
                       onClick={() => setIsParserConfigSettingsOpen(true)}
-                      title="Налаштування парсера документів"
+                      title={t(`${I18N_NS}.parserSettingsTitle`)}
                       className="shrink-0 rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
                     >
                       <svg
@@ -460,7 +486,7 @@ const SearchForm = ({
                 directoryData.structure.fsNestedItems.length > 0 && (
                   <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
                     <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
-                      Папки для пошуку
+                      <Trans i18nKey={`${I18N_NS}.searchFoldersLabel`} />
                     </div>
                     {directoryData.structure.fsNestedItems.map(
                       (fsNestedItem: any) => (

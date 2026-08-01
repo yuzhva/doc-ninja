@@ -1,10 +1,13 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { ButtonCopyToClipboard, Tooltip } from '../../../../components';
 import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
 import { ProcessedResultRow } from './ProcessedResultRow';
 import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
 import type { ExtractedTableField } from './result-helpers';
+
+const I18N_NS = 'page.search.component.processedResultGroup';
 
 const ProcessedResultGroup = ({
   searchQuery,
@@ -27,6 +30,7 @@ const ProcessedResultGroup = ({
   onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
 
   // State to track expanded rows (using index as key for simplicity in this context)
@@ -97,11 +101,16 @@ const ProcessedResultGroup = ({
     <div className="relative overflow-hidden shadow-md sm:rounded-lg border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between bg-gray-50 px-6 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
         <h3 className="text-sm font-bold uppercase text-gray-700 dark:text-gray-200 flex items-center gap-2">
-          <span>Результати для:</span>
+          <span>
+            <Trans i18nKey={`${I18N_NS}.resultsForLabel`} />
+          </span>
           <span className="text-blue-600 dark:text-blue-400">
             {searchQuery}
           </span>
-          <Tooltip content="Скопіювати" placement="bottom">
+          <Tooltip
+            content={<Trans i18nKey={`${I18N_NS}.copyTooltip`} />}
+            placement="bottom"
+          >
             <ButtonCopyToClipboard textToCopy={searchQuery} placement="right" />
           </Tooltip>
         </h3>
@@ -135,7 +144,11 @@ const ProcessedResultGroup = ({
                       type="button"
                       onClick={handleToggleAll}
                       className="p-1 rounded-full text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 transition-colors focus:outline-none"
-                      title={areAllExpanded ? 'Згорнути всі' : 'Розгорнути всі'}
+                      title={
+                        areAllExpanded
+                          ? t(`${I18N_NS}.collapseAllTitle`)
+                          : t(`${I18N_NS}.expandAllTitle`)
+                      }
                     >
                       <svg
                         className={`w-4 h-4 transition-transform duration-200 ${
@@ -153,10 +166,12 @@ const ProcessedResultGroup = ({
                         />
                       </svg>
                     </button>
-                    Документ
+                    <Trans i18nKey={`${I18N_NS}.fileNameHeader`} />
                   </div>
                 </th>
-                <th className="px-6 py-3 whitespace-nowrap">Шлях</th>
+                <th className="px-6 py-3 whitespace-nowrap">
+                  <Trans i18nKey={`${I18N_NS}.pathHeader`} />
+                </th>
                 {/* Dynamic Headers based on Parser Schema TABLE fields */}
                 {tableFields.map((field) => (
                   <th

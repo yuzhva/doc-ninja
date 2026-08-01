@@ -11,9 +11,81 @@
       }
     }
   },
+  "component": {
+    "formInputFileSelect": {
+      "clickToSelect": "Click to select ..."
+    }
+  },
   "page": {
     "search": {
+      "container": {
+        "searchForm": {
+          "selectSourceFolderFirstWarning": "First select a folder with documents.",
+          "reindexSuccessToast": "Reindexing completed.",
+          "deleteCacheSuccessToast": "Index cache deleted.",
+          "actionFailedToast": "Failed to perform the action: {{message}}",
+          "searchTextLabel": "Text to search",
+          "searchTextPlaceholder": "Enter a keyword or phrase...",
+          "maxTypoDistanceLabel": "Allowed typo num. of chars",
+          "allowFuzzyMatchLabelLine1": "Allow",
+          "allowFuzzyMatchLabelLine2": "fuzzy match",
+          "pageSizeLabel": "Number of results",
+          "findAllLabel": "Find all",
+          "sortOrderLabel": "Sort (date)",
+          "sortOrderOptions": {
+            "desc": "Newest first",
+            "asc": "Oldest first"
+          },
+          "searchHistoryButton": "Search history",
+          "searchButton": "Search",
+          "expandSettingsTitle": "Show settings",
+          "collapseSettingsTitle": "Collapse settings",
+          "sourceFolderLabel": "Folder with documents to search",
+          "documentsIndexActionsTitle": "Document indexing settings",
+          "reindexAction": "Reindex",
+          "deleteCacheAction": "Delete cache",
+          "parserConfigLabel": "Processing for found text",
+          "noParsingOption": "No processing",
+          "parserSettingsTitle": "Document parser settings",
+          "searchFoldersLabel": "Folders to search"
+        },
+        "searchResults": {
+          "excelFileTypeDescription": "Excel File",
+          "inputNameColumnHeader": "Input Name",
+          "foundInDocumentColumnHeader": "Found In Document",
+          "foundDeclensionColumnHeader": "Found Declension",
+          "summaryColumnHeader": "Summary",
+          "generateSuccessToast": "Successfully created {{count}} file(s) in the selected folder.",
+          "generateFailedToast": "Error creating file: {{message}}",
+          "documentDetailsTitle": "Document details",
+          "queryLabel": "Query:",
+          "matchLabel": "Match #{{number}}",
+          "filterLabel": "Filter",
+          "clearSearchLabel": "Clear search",
+          "allResultsPlaceholder": "All",
+          "saveXlsxButton": "Save .xlsx",
+          "addFiltersButton": "Add filters",
+          "noResultsForFiltersMessage": "Nothing found for the selected filters",
+          "resultsPlaceholderMessage": "Search results will appear here..."
+        }
+      },
       "component": {
+        "processedResultGroup": {
+          "resultsForLabel": "Results for:",
+          "copyTooltip": "Copy",
+          "expandAllTitle": "Expand all",
+          "collapseAllTitle": "Collapse all",
+          "fileNameHeader": "File name",
+          "pathHeader": "Path"
+        },
+        "processedResultRow": {
+          "expandTitle": "Expand",
+          "collapseTitle": "Collapse",
+          "viewContextTitle": "View context",
+          "filePathFallback": "File path",
+          "copyTooltip": "Copy",
+          "generateDocmTooltip": "Save .doc*"
+        },
         "fpdModalSearchHistory": {
           "title": "Search history",
           "maxSizeLabel": "Number of queries to save",
@@ -111,6 +183,31 @@
           "exportErrorAlert": "Export error: Invalid JSON in the editor",
           "jsonConfigFileTypeDescription": "JSON Config",
           "jsonFileTypeDescription": "JSON File"
+        },
+        "fpdDirectoryTreeItem": {
+          "expandLabel": "Expand",
+          "collapseLabel": "Collapse"
+        },
+        "fpdDocmTemplatesDropdown": {
+          "wordTemplatesFileTypeDescription": "Word Templates",
+          "templatesHeading": "Templates",
+          "addTemplateTitle": "Add template",
+          "noTemplatesMessage": "No templates. Click \"+\" to add one.",
+          "templateUnavailableTitle": "Template file not found on disk — try again or choose another",
+          "usedCachedTemplateWarning": "Template file \"{{name}}\" not found on disk — used the last saved copy instead.",
+          "removeTemplateAriaLabel": "Delete template",
+          "generateSeparateFilesLabel": "Generate separate files",
+          "generateButton": "Download .doc*",
+          "savedToLabel": "Save to: {{name}}",
+          "changeFolderButton": "Change",
+          "saveTriggerLabel": "Save .doc*",
+          "noWritePermissionError": "No permission to write to the selected folder.",
+          "chooseAnotherFolderSuffix": "Choose another folder.",
+          "pickerAlreadyActiveError": "Couldn't select a folder: the previous picker window probably hasn't closed yet (it may have hung if you picked the root Downloads, Desktop, or Documents folder). Pick a subfolder instead of the root, or restart the app.",
+          "pickDirectoryFailedError": "Couldn't select a folder: {{message}}",
+          "templateNotFoundError": "Template file \"{{name}}\" not found. Choose another template or add it again.",
+          "templateReadFailedError": "Couldn't read template \"{{name}}\": {{message}}",
+          "templatePermissionDeniedError": "No permission to access template file \"{{name}}\"."
         }
       }
     }

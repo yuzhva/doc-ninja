@@ -1,5 +1,8 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileSystemItem } from 'toolkit--local/browser';
+
+const I18N_NS = 'page.search.component.fpdDirectoryTreeItem';
 
 const FPDDirectoryTreeItem = ({
   fsNestedItem,
@@ -10,6 +13,7 @@ const FPDDirectoryTreeItem = ({
   selectedPaths: Set<string>;
   onTogglePath: (path: string, checked: boolean) => void;
 }) => {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = React.useState(false);
   const isSelected = selectedPaths.has(fsNestedItem.path);
   const hasChildren =
@@ -39,6 +43,9 @@ const FPDDirectoryTreeItem = ({
           type="button"
           className={`shrink-0 w-6 h-6 flex justify-center items-center hover:bg-gray-100 rounded-md focus:outline-none focus:bg-gray-100 disabled:opacity-50 disabled:pointer-events-none dark:hover:bg-gray-700 dark:focus:bg-gray-700 ${!hasChildren ? 'invisible' : ''}`}
           onClick={handleToggleExpand}
+          aria-label={t(
+            isExpanded ? `${I18N_NS}.collapseLabel` : `${I18N_NS}.expandLabel`,
+          )}
         >
           <svg
             className={`w-4 h-4 text-gray-800 dark:text-gray-200 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}

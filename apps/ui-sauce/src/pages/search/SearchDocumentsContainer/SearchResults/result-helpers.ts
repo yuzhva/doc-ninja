@@ -99,7 +99,7 @@ const truncateForXlsxCell = (value: unknown): unknown => {
   if (typeof value !== 'string' || value.length <= MAX_XLSX_CELL_LENGTH) {
     return value;
   }
-  return `${value.slice(0, MAX_XLSX_CELL_LENGTH)}… [обрізано]`;
+  return `${value.slice(0, MAX_XLSX_CELL_LENGTH)} ...`;
 };
 const truncateRowForXlsx = (row: Record<string, unknown>) =>
   Object.fromEntries(
