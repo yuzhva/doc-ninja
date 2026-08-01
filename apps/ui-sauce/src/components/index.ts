@@ -1,4 +1,5 @@
 export { Badge } from './Badge';
+export { BadgeCounter } from './BadgeCounter';
 export { ButtonCopyToClipboard } from './ButtonCopyToClipboard';
 export { ButtonProcessing } from './ButtonProcessing';
 export { Checkbox } from './Checkbox';

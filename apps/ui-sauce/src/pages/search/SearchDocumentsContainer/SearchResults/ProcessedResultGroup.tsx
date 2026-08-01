@@ -138,7 +138,8 @@ const ProcessedResultGroup = ({
           <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400 min-w-full divide-y divide-gray-200 dark:divide-gray-600">
             <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
               <tr>
-                <th className="sticky left-0 z-20 bg-gray-100 dark:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#4b5563] px-6 py-3 whitespace-nowrap">
+                {/* z-10 */}
+                <th className="sticky left-0 bg-gray-100 dark:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#4b5563] px-6 py-3 whitespace-nowrap">
                   <div className="flex items-center gap-3">
                     <button
                       type="button"

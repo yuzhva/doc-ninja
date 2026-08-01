@@ -1,7 +1,12 @@
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { Badge, ButtonCopyToClipboard, Tooltip } from '../../../../components';
+import {
+  Badge,
+  BadgeCounter,
+  ButtonCopyToClipboard,
+  Tooltip,
+} from '../../../../components';
 import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
 import { HighlightedText } from './FormProcessDocumentSideOver';
 import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
@@ -76,7 +81,8 @@ const ProcessedResultRow = ({
   return (
     <React.Fragment>
       <tr className="group bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-        <td className="sticky left-0 z-10 bg-white dark:bg-gray-800 group-hover:bg-gray-100 dark:group-hover:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#374151] transition-colors whitespace-nowrap align-middle">
+        {/* z-10 */}
+        <td className="sticky left-0 bg-white dark:bg-gray-800 group-hover:bg-gray-100 dark:group-hover:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#374151] transition-colors whitespace-nowrap align-middle">
           <div className="flex items-center gap-3 mx-6 my-4">
             {/* Collapse/Expand Toggle */}
             <button
@@ -115,9 +121,11 @@ const ProcessedResultRow = ({
               >
                 <span>{docName}</span>
                 {items.length > 1 && (
-                  <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-yellow-900 bg-yellow-400 rounded-full shadow-sm">
-                    {items.length}
-                  </span>
+                  <BadgeCounter
+                    count={items.length}
+                    variant="yellow"
+                    className="ml-2"
+                  />
                 )}
               </div>
             </div>
@@ -185,7 +193,8 @@ const ProcessedResultRow = ({
       {isExpanded && (
         <tr className="bg-gray-50 dark:bg-gray-900/40 border-b dark:border-gray-700">
           <td colSpan={2 + tableFields.length + filterConfigs.length}>
-            <div className="sticky left-0 z-10 w-[100cqw] bg-gray-50 dark:bg-gray-900/40 py-4 pl-10 pr-6 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
+            {/* z-10 */}
+            <div className="sticky left-0 w-[100cqw] bg-gray-50 dark:bg-gray-900/40 py-4 pl-10 pr-6 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
               {enrichedItems.map(({ item, dynamicValues }, idx: number) => (
                 <div
                   key={idx}
@@ -199,9 +208,7 @@ const ProcessedResultRow = ({
                     {items.length > 1 && (
                       <>
                         {enrichedItems.length > 1 && (
-                          <span className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs font-bold">
-                            {idx + 1}
-                          </span>
+                          <BadgeCounter count={idx + 1} variant="gray" />
                         )}
 
                         {/* Dynamic Badges for item */}

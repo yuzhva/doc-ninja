@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { Badge, FilterDropdown } from '../../../../components';
+import { Badge, BadgeCounter, FilterDropdown } from '../../../../components';
 import { fetchRequest } from '../../../../utils';
 import { DocxTemplateEngine } from '../../../../utils/docx-template-engine';
 import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
@@ -587,9 +587,13 @@ const SearchResults = ({
                 </button>
               )}
               {searchTerm && (
-                <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
-                  1
-                </div>
+                <BadgeCounter
+                  count={1}
+                  variant="red"
+                  size="md"
+                  bordered
+                  className="absolute -top-2 -end-2"
+                />
               )}
             </div>
           </form>
@@ -654,9 +658,13 @@ const SearchResults = ({
               </svg>
             </button>
             {maxResults !== '' && (
-              <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
-                1
-              </div>
+              <BadgeCounter
+                count={1}
+                variant="red"
+                size="md"
+                bordered
+                className="absolute -top-2 -end-2"
+              />
             )}
           </div>
 

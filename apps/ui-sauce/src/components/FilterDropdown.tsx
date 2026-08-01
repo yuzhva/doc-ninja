@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { BadgeCounter } from './BadgeCounter';
 import { Dropdown } from './Dropdown';
 
 interface FilterDropdownProps {
@@ -77,9 +78,13 @@ const FilterDropdown = ({
             />
           </svg>
           {selectedItems.length > 0 && (
-            <div className="absolute inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 border-2 border-white rounded-full -top-2 -end-2 dark:border-gray-800">
-              {selectedItems.length}
-            </div>
+            <BadgeCounter
+              count={selectedItems.length}
+              variant="red"
+              size="md"
+              bordered
+              className="absolute -top-2 -end-2"
+            />
           )}
         </button>
       )}
