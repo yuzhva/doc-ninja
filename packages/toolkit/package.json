@@ -39,10 +39,10 @@
     "word-extractor": "^1.0.4"
   },
   "devDependencies": {
-    "@mainset/cli": "^0.6.1",
+    "@mainset/cli": "^0.7.0",
     "@types/node": "^26.1.2",
     "@types/word-extractor": "^1.0.6",
     "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@11.20.0"
 }

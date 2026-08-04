@@ -13,7 +13,7 @@
     "el:make": "pnpm --filter \"./apps/electron\" make"
   },
   "devDependencies": {
-    "@mainset/cli": "^0.6.1",
+    "@mainset/cli": "^0.7.0",
     "@mainset/dev-stack-fe": "^0.2.2",
     "cross-env": "^10.1.0",
     "eslint": "^10.8.0",
@@ -23,5 +23,5 @@
     "prettier": "^3.9.6",
     "stylelint": "^17.14.1"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@11.20.0"
 }

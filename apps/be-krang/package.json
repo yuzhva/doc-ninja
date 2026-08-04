@@ -14,8 +14,8 @@
     "nlp:demo--adaptive": "tsx ./src/examples/nlp--adaptive.example.mts"
   },
   "devDependencies": {
-    "@mainset/builder-rslib": "^0.3.2",
-    "@mainset/cli": "^0.6.1",
+    "@mainset/builder-rslib": "^0.3.3",
+    "@mainset/cli": "^0.7.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",
@@ -24,7 +24,7 @@
     "cross-env": "^10.1.0",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.5",
     "typescript": "^5.9.3"
   },
   "dependencies": {
@@ -40,5 +40,5 @@
     "toolkit--local": "workspace:^",
     "xlsx": "^0.18.5"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@11.20.0"
 }
