@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { Modal, Tabs } from '../../../../../components';
+import { Checkbox, Modal, Tabs } from '../../../../../components';
 import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
 
 const I18N_NS = 'page.search.component.fpdModalFilterSettings';
@@ -16,6 +16,10 @@ interface FilterCategory {
   id: number;
   labelFilterTitle: string;
   labelFilterDescription: string;
+  // Whether the phrases that trigger this filter get highlighted in the
+  // summary text of a search result. Opt-out rather than opt-in: configs
+  // written before this flag existed keep highlighting, as they did.
+  isHighlightedInResults: boolean;
   filterRules: FilterRule[];
 }
 
@@ -47,6 +51,7 @@ const FPDModalFilterSettings = ({
       id: createEntityId(),
       labelFilterTitle: category?.labelFilterTitle ?? '',
       labelFilterDescription: category?.labelFilterDescription ?? '',
+      isHighlightedInResults: category?.isHighlightedInResults ?? true,
       filterRules: Array.isArray(category?.filterRules)
         ? category.filterRules.map((rule: any) => ({
             id: createEntityId(),
@@ -62,9 +67,15 @@ const FPDModalFilterSettings = ({
   // Strip client-side ids and restore the persisted JSON shape.
   const serializeFilterCategories = (categories: FilterCategory[]) =>
     categories.map(
-      ({ labelFilterTitle, labelFilterDescription, filterRules }) => ({
+      ({
         labelFilterTitle,
         labelFilterDescription,
+        isHighlightedInResults,
+        filterRules,
+      }) => ({
+        labelFilterTitle,
+        labelFilterDescription,
+        isHighlightedInResults,
         filterRules: filterRules.map(({ containsText, labelOption }) => ({
           containsText,
           labelOption,
@@ -209,6 +220,19 @@ const FPDModalFilterSettings = ({
     );
   };
 
+  const updateCategoryHighlighted = (
+    categoryId: number,
+    isHighlightedInResults: boolean,
+  ) => {
+    commitFilterCategories(
+      filterCategories.map((category) =>
+        category.id === categoryId
+          ? { ...category, isHighlightedInResults }
+          : category,
+      ),
+    );
+  };
+
   const updateFilterRuleLabel = (
     categoryId: number,
     ruleId: number,
@@ -290,6 +314,7 @@ const FPDModalFilterSettings = ({
         id: createEntityId(),
         labelFilterTitle: '',
         labelFilterDescription: '',
+        isHighlightedInResults: true,
         // Prefilled with one empty rule so the category isn't blank on
         // creation — user doesn't need an extra click to add the first rule.
         filterRules: [
@@ -601,7 +626,22 @@ const FPDModalFilterSettings = ({
                             </div>
                           </div>
                         ))}
-                        <div className="flex justify-end pr-2">
+                        <div className="flex items-center justify-between gap-3 pr-2">
+                          <Checkbox
+                            theme="toggle"
+                            checked={category.isHighlightedInResults}
+                            onChange={(isHighlightedInResults) =>
+                              updateCategoryHighlighted(
+                                category.id,
+                                isHighlightedInResults,
+                              )
+                            }
+                            label={
+                              <Trans
+                                i18nKey={`${I18N_NS}.highlightInResultsLabel`}
+                              />
+                            }
+                          />
                           <button
                             type="button"
                             onClick={() => addFilterRule(category.id)}

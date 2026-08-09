@@ -46,8 +46,12 @@ const Modal = ({
   if (!isOpen) return null;
 
   return (
+    // overflow-y-auto rather than overflow-hidden: the browser scrolls this
+    // element when it needs to reveal a focused descendant, and with `hidden`
+    // the wheel can't undo that — the panel would stay parked off-screen with
+    // no way back. Background scrolling is already blocked by lockBodyScroll.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center w-full h-full bg-black/50 backdrop-blur-sm p-4 overflow-hidden"
+      className="fixed inset-0 z-50 flex items-center justify-center w-full h-full bg-black/50 backdrop-blur-sm p-4 overflow-y-auto"
       tabIndex={-1}
       aria-hidden="true"
     >
@@ -83,8 +87,13 @@ const Modal = ({
             </button>
           </div>
           {/* Modal body */}
+          {/* `relative` makes this the containing block for absolutely
+              positioned descendants — notably the `sr-only` input inside every
+              toggle Checkbox. Without it they anchor to the panel instead and
+              stay pinned at their un-scrolled offset, so focusing one far down
+              a long modal scrolls the whole panel out of view. */}
           <div
-            className={`${bodyClassName} text-gray-600 dark:text-gray-400 overflow-y-auto overscroll-contain`}
+            className={`${bodyClassName} relative min-h-0 text-gray-600 dark:text-gray-400 overflow-y-auto overscroll-contain`}
           >
             {children}
           </div>

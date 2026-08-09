@@ -2,42 +2,91 @@ import React from 'react';
 
 import { fetchRequest } from '../../../../utils';
 
+// Colour schemes a highlight can be rendered with. Written as whole class
+// strings rather than interpolated fragments so Tailwind's scanner sees them.
+const HIGHLIGHT_VARIANT_CLASS_NAME = {
+  // The extractor's own match — the long-standing look of this component.
+  yellow: 'bg-yellow-300 text-red-600 dark:bg-yellow-200 dark:text-red-500',
+  // Whatever the user typed into the results filter.
+  green: 'bg-green-300 text-green-900 dark:bg-green-200 dark:text-green-900',
+  // Why a filter badge matched — blue to tie back to the badge it explains.
+  blue: 'bg-blue-300 text-blue-900 dark:bg-blue-200 dark:text-blue-900',
+} as const;
+
+const HIGHLIGHT_VARIANT__DEFAULT = 'yellow';
+
+export type HighlightVariant = keyof typeof HIGHLIGHT_VARIANT_CLASS_NAME;
+
+export interface Highlight {
+  value: string;
+  variant?: HighlightVariant;
+}
+
+// A bare string is shorthand for `{ value, variant: 'yellow' }`.
+export type HighlightInput = string | Highlight;
+
 // Helper to highlight text inside the large file content
-// Optimized version that supports multiple phrases
+// Optimized version that supports multiple phrases, each with its own variant
 export const HighlightedText = React.memo(
-  ({ text, highlights = [] }: { text: string; highlights?: string[] }) => {
+  ({
+    text,
+    highlights = [],
+  }: {
+    text: string;
+    highlights?: HighlightInput[];
+  }) => {
     if (!text) return null;
 
-    const validHighlights = highlights?.filter(Boolean) || [];
+    const validHighlights = highlights
+      .map((highlight) =>
+        typeof highlight === 'string' ? { value: highlight } : highlight,
+      )
+      .filter((highlight) => Boolean(highlight?.value));
+
     if (validHighlights.length === 0) return <>{text}</>;
 
-    // Sort by length desc, Escape regex, Join
-    const pattern = Array.from(new Set(validHighlights))
+    // Matching is case-insensitive, so the lookup is keyed lowercased. When two
+    // highlights carry the same phrase the caller's order decides the colour.
+    const variantByValue = new Map<string, HighlightVariant>();
+    validHighlights.forEach(({ value, variant }) => {
+      const valueLower = value.toLowerCase();
+      if (!variantByValue.has(valueLower)) {
+        variantByValue.set(valueLower, variant || HIGHLIGHT_VARIANT__DEFAULT);
+      }
+    });
+
+    // Sort by length desc, Escape regex, Join. Longest first so a filter term
+    // that sits inside the extractor's match doesn't cut that match in half.
+    const pattern = Array.from(new Set(validHighlights.map((h) => h.value)))
       .sort((a, b) => b.length - a.length)
       .map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .join('|');
 
     if (!pattern) return <>{text}</>;
 
+    // A single capture group makes split() alternate [text, match, text, …],
+    // so odd indices are the matched phrases.
     const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
 
     return (
       <>
-        {parts.map((part, i) =>
-          // Check if part matches pattern (case insensitive)
-          // Using a simple regex test on the part to confirm it's a highlight
-          new RegExp(`^(${pattern})$`, 'i').test(part) ? (
+        {parts.map((part, i) => {
+          if (i % 2 === 0) return part;
+
+          const variant =
+            variantByValue.get(part.toLowerCase()) ||
+            HIGHLIGHT_VARIANT__DEFAULT;
+
+          return (
             <span
               key={i}
-              className="bg-yellow-300 text-red-600 dark:bg-yellow-200 dark:text-red-500 font-semibold"
+              className={`${HIGHLIGHT_VARIANT_CLASS_NAME[variant]} font-semibold`}
               data-highlight="true"
             >
               {part}
             </span>
-          ) : (
-            part
-          ),
-        )}
+          );
+        })}
       </>
     );
   },
@@ -299,9 +348,11 @@ const FormProcessDocumentSideOver = ({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto" ref={contentRef}>
+            {/*
             <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 shadow-sm">
               {children}
             </div>
+            */}
 
             {/* Display Processed Text File Content */}
             {textFilePath && (

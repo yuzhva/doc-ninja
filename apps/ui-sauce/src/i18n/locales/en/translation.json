@@ -123,6 +123,7 @@
           "ruleContainsLabel": "Apply by word prefix (comma-separated):",
           "ruleContainsPlaceholder": "accord, to, paragr",
           "addFilterTitle": "Add filter",
+          "highlightInResultsLabel": "Highlight the filter in search results",
           "jsonConfigLabel": "JSON configuration",
           "invalidJsonAlert": "Error: Invalid JSON format",
           "importErrorAlert": "Import error: Invalid file or JSON format",

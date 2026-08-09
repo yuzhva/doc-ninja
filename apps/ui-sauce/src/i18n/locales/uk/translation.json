@@ -123,6 +123,7 @@
           "ruleContainsLabel": "Застосувати за початком слів (через кому):",
           "ruleContainsPlaceholder": "відповідн, до, пункт",
           "addFilterTitle": "Додати фільтр",
+          "highlightInResultsLabel": "Підсвічувати фільтр у результатах пошуку",
           "jsonConfigLabel": "Конфігурація JSON",
           "invalidJsonAlert": "Помилка: Невалідний JSON формат",
           "importErrorAlert": "Помилка імпорту: Невалідний файл або формат JSON",
