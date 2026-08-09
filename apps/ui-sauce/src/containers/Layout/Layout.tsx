@@ -4,6 +4,7 @@ import { Outlet } from 'react-router';
 // import { Footer } from './Footer';
 import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
+import { WelcomeModal } from './WelcomeModal';
 
 interface LayoutProps {
   children?: React.ReactNode;
@@ -37,6 +38,8 @@ const Layout = ({ children }: LayoutProps) => {
 
   return (
     <div>
+      <WelcomeModal />
+
       <Navbar
         onBtnToggleSidebarClick={toggleSidebar}
         isSidebarVisible={isSidebarVisible}
