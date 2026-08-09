@@ -65,6 +65,7 @@ const WORD_NAMESPACE =
 const DOCUMENT_XML_PATH = 'word/document.xml';
 const HEADER_FOOTER_PATH_PATTERN = /^word\/(header|footer)\d*\.xml$/;
 const TAG_PATTERN = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
+const NEWLINE_PATTERN = /\r\n|\r|\n/;
 
 const parseXmlOrThrow = (xml: string, partPath: string): Document => {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -155,6 +156,107 @@ const replaceTagsInRun = (run: Element, tagValues: Map<string, string>) => {
   }
 };
 
+// A newline inside <w:t> is only XML whitespace — Word lays it out as a space,
+// so a filled value's line structure has to be rebuilt out of real elements.
+const isRun = (element: Element): boolean =>
+  element.localName === 'r' && element.namespaceURI === WORD_NAMESPACE;
+
+const getTextElementWithLineBreaks = (run: Element): Element | null => {
+  const textEl = getSoleTextElement(run);
+  if (!textEl) return null;
+  return NEWLINE_PATTERN.test(textEl.textContent ?? '') ? textEl : null;
+};
+
+// Rebuilds one run's line structure as real paragraphs: the host <w:p> is
+// replaced by one paragraph per line, each carrying a clone of the original's
+// <w:pPr> so spacing, indentation and alignment apply to every line the way
+// they would if the text had been typed in. Runs sitting before or after the
+// filled one stay with the first and last paragraph respectively, so an inline
+// tag ("Before {{SUMMARY}} after") still reads correctly.
+//
+// A blank line in the value becomes an empty paragraph, which is exactly how
+// Word represents one. Returns false when there was nothing to split.
+const splitParagraphAtLineBreaks = (paragraph: Element): boolean => {
+  const doc = paragraph.ownerDocument!;
+  const children = Array.from(paragraph.children);
+
+  const hasSplittableRun = children.some(
+    (child) => isRun(child) && getTextElementWithLineBreaks(child),
+  );
+  if (!hasSplittableRun) return false;
+
+  const paragraphProperties = children.find(
+    (child) =>
+      child.localName === 'pPr' && child.namespaceURI === WORD_NAMESPACE,
+  );
+
+  const createParagraph = (): Element => {
+    const created = doc.createElementNS(WORD_NAMESPACE, 'w:p');
+    if (paragraphProperties) {
+      created.appendChild(paragraphProperties.cloneNode(true));
+    }
+    return created;
+  };
+
+  const paragraphs: Element[] = [createParagraph()];
+  const currentParagraph = () => paragraphs[paragraphs.length - 1];
+
+  children.forEach((child) => {
+    if (child === paragraphProperties) return;
+
+    const textEl = isRun(child) ? getTextElementWithLineBreaks(child) : null;
+    if (!textEl) {
+      currentParagraph().appendChild(child.cloneNode(true));
+      return;
+    }
+
+    (textEl.textContent ?? '').split(NEWLINE_PATTERN).forEach((line, index) => {
+      if (index > 0) paragraphs.push(createParagraph());
+      if (!line) return;
+
+      const runClone = child.cloneNode(true) as Element;
+      const clonedTextEl = getSoleTextElement(runClone);
+      if (!clonedTextEl) return;
+
+      clonedTextEl.textContent = line;
+      clonedTextEl.setAttribute('xml:space', 'preserve');
+      currentParagraph().appendChild(runClone);
+    });
+  });
+
+  const parent = paragraph.parentNode!;
+  paragraphs.forEach((created) => parent.insertBefore(created, paragraph));
+  parent.removeChild(paragraph);
+  return true;
+};
+
+// Fallback for runs the paragraph split can't reach — ones nested inside a
+// <w:hyperlink>, <w:sdt> or similar wrapper, where splitting the host
+// paragraph would tear that wrapper in half. <w:br/> keeps the line structure
+// visible without restructuring anything around it.
+const convertRunLineBreaksToBr = (run: Element) => {
+  const textEl = getTextElementWithLineBreaks(run);
+  if (!textEl) return;
+
+  const doc = run.ownerDocument!;
+  const fragment = doc.createDocumentFragment();
+
+  (textEl.textContent ?? '').split(NEWLINE_PATTERN).forEach((line, index) => {
+    if (index > 0) {
+      fragment.appendChild(doc.createElementNS(WORD_NAMESPACE, 'w:br'));
+    }
+    if (!line) return;
+
+    const lineTextEl = doc.createElementNS(WORD_NAMESPACE, 'w:t');
+    lineTextEl.setAttribute('xml:space', 'preserve');
+    lineTextEl.textContent = line;
+    fragment.appendChild(lineTextEl);
+  });
+
+  run.insertBefore(fragment, textEl);
+  run.removeChild(textEl);
+};
+
 // Fills any WordprocessingML part's XML — word/document.xml, or a
 // word/header*.xml / word/footer*.xml part, they're all the same shape.
 const fillOoxmlPart = (
@@ -175,6 +277,19 @@ const fillOoxmlPart = (
 
   Array.from(doc.getElementsByTagNameNS(WORD_NAMESPACE, 'r')).forEach((run) =>
     replaceTagsInRun(run, tagValues),
+  );
+
+  // Filled values still hold their newlines as plain text at this point.
+  // Prefer turning them into real paragraphs; whatever the split couldn't
+  // reach (runs nested in a hyperlink/sdt) falls back to <w:br/>. The
+  // paragraphs created by the split hold one line each, so the second pass
+  // finds nothing left in them.
+  Array.from(doc.getElementsByTagNameNS(WORD_NAMESPACE, 'p')).forEach(
+    (paragraph) => splitParagraphAtLineBreaks(paragraph),
+  );
+
+  Array.from(doc.getElementsByTagNameNS(WORD_NAMESPACE, 'r')).forEach((run) =>
+    convertRunLineBreaksToBr(run),
   );
 
   return new XMLSerializer().serializeToString(doc);
@@ -236,7 +351,54 @@ const mergeFilledDocuments = (
   return new XMLSerializer().serializeToString(targetDoc);
 };
 
+// Tag the generated fallback template is built around. Deliberately not a
+// schema field id: the caller supplies its value directly, so the fallback
+// works whatever the parser schema happens to define.
+const PLAIN_TEXT_TEMPLATE_TAG = 'DOCNINJA_PRIMARY_TEXT';
+
+// The three parts Word needs for a package to open at all. Anything richer
+// (styles, fonts, settings) is optional and Word fills in its own defaults.
+const buildPlainTextTemplateEntries = (): { name: string; data: string }[] => [
+  {
+    name: '[Content_Types].xml',
+    data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+  },
+  {
+    name: '_rels/.rels',
+    data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+  },
+  {
+    name: DOCUMENT_XML_PATH,
+    // A4 portrait with the margins Word itself defaults to for the locale
+    // this app is used in. One paragraph holding the tag — the fill pass
+    // expands it into as many paragraphs as the value has lines.
+    data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="${WORD_NAMESPACE}"><w:body><w:p><w:r><w:t>{{${PLAIN_TEXT_TEMPLATE_TAG}}}</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="850" w:bottom="1134" w:left="1701" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`,
+  },
+];
+
 class DocxTemplateEngine {
+  // Tag name to fill when generating without a user-supplied template.
+  static readonly PLAIN_TEXT_TAG = PLAIN_TEXT_TEMPLATE_TAG;
+
+  // A minimal, valid .docx whose whole body is one tag — lets "no template"
+  // reuse the exact same generate/merge/name/write path as a real one.
+  static async createPlainTextTemplate(): Promise<Blob> {
+    const encoder = new TextEncoder();
+    const zippedBytes = await zip(
+      buildPlainTextTemplateEntries().map(({ name, data }) => ({
+        name,
+        data: encoder.encode(data),
+      })),
+    );
+
+    return new Blob([zippedBytes as any], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+  }
+
   static async generateBatch(
     params: GenerateDocxBatchParams,
   ): Promise<GenerateDocxBatchResult> {
