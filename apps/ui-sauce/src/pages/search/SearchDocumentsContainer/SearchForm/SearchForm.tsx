@@ -110,12 +110,14 @@ const SearchForm = ({
   };
 
   return (
-    <div className="lg:col-span-1">
+    <div className="lg:col-span-1 lg:h-full lg:min-h-0">
       <div
-        className="flex rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800 flex-col"
+        className="flex rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800 flex-col lg:h-full lg:min-h-0"
         data-testid="flowbite-card"
       >
-        <div className="flex h-full flex-col justify-center gap-4 p-6">
+        {/* Own scroll container from `lg` up — `justify-start` because a
+            centered flex child gets clipped at the top once it overflows. */}
+        <div className="flex h-full flex-col justify-center gap-4 p-6 lg:min-h-0 lg:flex-1 lg:justify-start lg:overflow-y-auto">
           {/*
           <h3 className="mb-4 text-xl font-bold dark:text-white">
             Пошук в документах

@@ -362,7 +362,9 @@ const SearchDocumentsContainer = ({
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+    // `min-h-0` stops the grid row from being sized by its content, which is
+    // what lets both columns scroll internally instead of stretching the page.
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:flex-1 lg:min-h-0">
       <SearchForm
         onSelectSourceDirectory={onSelectSourceDirectory}
         initSubmitHandler={initSubmitHandler}

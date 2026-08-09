@@ -72,7 +72,9 @@ const SearchPage = () => {
   }, []);
 
   return (
-    <div>
+    // Fills the height the Layout reserves so the form/results columns can own
+    // their own scrollbars instead of scrolling the whole page.
+    <div className="lg:flex lg:h-full lg:flex-col">
       {/* Toast Container */}
       <div className="fixed top-5 right-5 z-50 flex flex-col gap-2">
         {toasts.map((t) => (
