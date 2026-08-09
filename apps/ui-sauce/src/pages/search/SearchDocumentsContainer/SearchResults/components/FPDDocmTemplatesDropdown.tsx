@@ -8,6 +8,7 @@ import {
   useDirectoryPicker,
   useFilePicker,
 } from '../../../../../hooks/use-file-system';
+import { DocxTemplateEngine } from '../../../../../utils/docx-template-engine';
 import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
 import type { WriteFilesViaDestinationHandle } from '../../../../../utils/file-system-processor';
 import type { StoredTemplateRecord } from '../../../../../utils/template-store';
@@ -105,18 +106,17 @@ interface DropdownTriggerArgs {
 const defaultRenderTrigger = ({
   isOpen,
   toggle,
-  // hasResults,
+  hasResults,
 }: DropdownTriggerArgs) => {
-  // const dynamicClassName = !hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700';
-  const dynamicClassName =
-    'cursor-pointer hover:bg-gray-100 hover:text-blue-700';
+  const dynamicClassName = !hasResults
+    ? 'opacity-50 cursor-not-allowed'
+    : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700';
 
   return (
     <button
       type="button"
       onClick={toggle}
-      // NOTE: allow to choose template before search
-      // disabled={!hasResults}
+      disabled={!hasResults}
       className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${dynamicClassName}`}
     >
       <svg
@@ -157,6 +157,7 @@ const defaultRenderTrigger = ({
 const FPDDocmTemplatesDropdown = ({
   items,
   templateTagFieldIds,
+  primaryFieldId,
   onGenerate,
   addToast,
   renderTrigger = defaultRenderTrigger,
@@ -169,6 +170,9 @@ const FPDDocmTemplatesDropdown = ({
   // — excludes the BE's structural search fields (searchQuery, position,
   // ...), which were never meant to be filled into a document template.
   templateTagFieldIds: string[];
+  // The field whose text a row displays — what the built-in "no template"
+  // document is filled with, so its output matches what's on screen.
+  primaryFieldId: string | null;
   onGenerate: (payload: DocmGeneratePayload) => void;
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
   renderTrigger?: (args: DropdownTriggerArgs) => React.ReactNode;
@@ -251,8 +255,10 @@ const FPDDocmTemplatesDropdown = ({
   };
 
   const handleGenerateClick = async () => {
+    // No selection means the built-in plain-text document rather than a
+    // blocked action — a template is an enhancement, not a prerequisite.
     const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-    if (!selectedTemplate) return;
+    if (!hasResults) return;
 
     // Reuse the folder from a previous generate — by any dropdown instance,
     // this session; only prompt the first time anywhere (or after "Змінити
@@ -299,52 +305,74 @@ const FPDDocmTemplatesDropdown = ({
     }
 
     let templateFile: Blob;
-    try {
-      const content = await selectedTemplate.getFileContent();
-      if (content.usedCachedFallback) {
-        addToast(
-          'warning',
-          t(`${I18N_NS}.usedCachedTemplateWarning`, {
-            name: selectedTemplate.name,
-          }),
-        );
-      }
-      templateFile = content.blob;
-      // Reading succeeded — clear a stale "unavailable" flag from an
-      // earlier failed attempt (the file may have come back), in every
-      // dropdown instance showing this template, not just this one.
-      DocmTemplatesStore.markTemplateUnavailable(selectedTemplate.id, false);
-    } catch (error: any) {
-      console.error('Failed to read docm template', error);
-      DocmTemplatesStore.markTemplateUnavailable(selectedTemplate.id, true);
-      addToast(
-        'error',
-        isFileNotFoundError(error)
-          ? t(`${I18N_NS}.templateNotFoundError`, {
+    if (selectedTemplate) {
+      try {
+        const content = await selectedTemplate.getFileContent();
+        if (content.usedCachedFallback) {
+          addToast(
+            'warning',
+            t(`${I18N_NS}.usedCachedTemplateWarning`, {
               name: selectedTemplate.name,
-            })
-          : error instanceof TemplatePermissionDeniedError
-            ? t(`${I18N_NS}.templatePermissionDeniedError`, {
+            }),
+          );
+        }
+        templateFile = content.blob;
+        // Reading succeeded — clear a stale "unavailable" flag from an
+        // earlier failed attempt (the file may have come back), in every
+        // dropdown instance showing this template, not just this one.
+        DocmTemplatesStore.markTemplateUnavailable(selectedTemplate.id, false);
+      } catch (error: any) {
+        console.error('Failed to read docm template', error);
+        DocmTemplatesStore.markTemplateUnavailable(selectedTemplate.id, true);
+        addToast(
+          'error',
+          isFileNotFoundError(error)
+            ? t(`${I18N_NS}.templateNotFoundError`, {
                 name: selectedTemplate.name,
               })
-            : t(`${I18N_NS}.templateReadFailedError`, {
-                name: selectedTemplate.name,
-                message: error.message || error,
-              }),
-      );
-      return;
+            : error instanceof TemplatePermissionDeniedError
+              ? t(`${I18N_NS}.templatePermissionDeniedError`, {
+                  name: selectedTemplate.name,
+                })
+              : t(`${I18N_NS}.templateReadFailedError`, {
+                  name: selectedTemplate.name,
+                  message: error.message || error,
+                }),
+        );
+        return;
+      }
+    } else {
+      templateFile = await DocxTemplateEngine.createPlainTextTemplate();
     }
 
-    const jobs = items.map(({ extracted }, index) => ({
-      id: String(extracted.position ?? index),
-      fileName: buildJobFileName(extracted) || undefined,
-      tags: templateTagFieldIds
+    const jobs = items.map(({ extracted }, index) => {
+      const tags = templateTagFieldIds
         .filter((tag) => tag in extracted.extractedFieldById)
         .map((tag) => ({
           tag,
           value: String(extracted.extractedFieldById[tag] ?? ''),
-        })),
-    }));
+        }));
+
+      // The built-in template references one tag of its own, supplied here
+      // rather than taken from the schema — so "no template" produces the
+      // row's own text no matter how the parser config is set up.
+      if (!selectedTemplate) {
+        tags.push({
+          tag: DocxTemplateEngine.PLAIN_TEXT_TAG,
+          value: String(
+            (primaryFieldId &&
+              extracted.extractedFieldById?.[primaryFieldId]) ??
+              '',
+          ),
+        });
+      }
+
+      return {
+        id: String(extracted.position ?? index),
+        fileName: buildJobFileName(extracted) || undefined,
+        tags,
+      };
+    });
 
     // Merged output is named after the first item's own "doc - matchedText"
     // name, with a count suffix when it actually represents more than one.
@@ -361,7 +389,9 @@ const FPDDocmTemplatesDropdown = ({
 
     onGenerate({
       templateFile,
-      templateName: selectedTemplate.name,
+      // Only used to decide the output extension (.docm vs .docx) and as a
+      // last-resort base name, so the built-in template names itself .docx.
+      templateName: selectedTemplate?.name ?? 'DocNinja.docx',
       jobs,
       layout,
       outputDirectoryHandle,
@@ -406,79 +436,81 @@ const FPDDocmTemplatesDropdown = ({
         </button>
       </div>
 
-      {templates.length === 0 ? (
-        <div className="py-6 text-xs text-center text-gray-500 dark:text-gray-400">
-          <Trans i18nKey={`${I18N_NS}.noTemplatesMessage`} />
+      <div className="-mx-3 mb-3 divide-y divide-gray-100 dark:divide-gray-700">
+        {/* Always first, and selected until a template is picked — generating
+            without one is a real choice, not an empty state. */}
+        <div
+          onClick={() => DocmTemplatesStore.selectTemplate(null)}
+          className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+            !selectedTemplateId
+              ? 'bg-blue-50 dark:bg-blue-900/30'
+              : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+          }`}
+        >
+          <input
+            id="docmTemplate-none"
+            type="radio"
+            name="docmTemplate"
+            checked={!selectedTemplateId}
+            onChange={() => DocmTemplatesStore.selectTemplate(null)}
+            className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+          />
+          <label
+            htmlFor="docmTemplate-none"
+            className={`w-full select-none text-sm font-medium cursor-pointer ${
+              !selectedTemplateId
+                ? 'text-blue-700 dark:text-blue-400'
+                : 'text-gray-700 dark:text-gray-300'
+            }`}
+          >
+            <Trans i18nKey={`${I18N_NS}.noTemplateOptionLabel`} />
+            <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+              <Trans i18nKey={`${I18N_NS}.noTemplateOptionHint`} />
+            </span>
+          </label>
         </div>
-      ) : (
-        <div className="-mx-3 mb-3 divide-y divide-gray-100 dark:divide-gray-700">
-          {templates.map((template) => {
-            const isSelected = template.id === selectedTemplateId;
-            const isUnavailable = unavailableTemplateIds.has(template.id);
-            const inputId = `docmTemplate-${template.id}`;
 
-            return (
-              <div
-                key={template.id}
-                onClick={() => DocmTemplatesStore.selectTemplate(template.id)}
-                title={
+        {templates.map((template) => {
+          const isSelected = template.id === selectedTemplateId;
+          const isUnavailable = unavailableTemplateIds.has(template.id);
+          const inputId = `docmTemplate-${template.id}`;
+
+          return (
+            <div
+              key={template.id}
+              onClick={() => DocmTemplatesStore.selectTemplate(template.id)}
+              title={
+                isUnavailable
+                  ? t(`${I18N_NS}.templateUnavailableTitle`)
+                  : undefined
+              }
+              className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                isSelected
+                  ? 'bg-blue-50 dark:bg-blue-900/30'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <input
+                id={inputId}
+                type="radio"
+                name="docmTemplate"
+                checked={isSelected}
+                onChange={() => DocmTemplatesStore.selectTemplate(template.id)}
+                className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+              />
+              <label
+                htmlFor={inputId}
+                className={`w-full truncate select-none text-sm font-medium cursor-pointer flex items-center gap-1.5 ${
                   isUnavailable
-                    ? t(`${I18N_NS}.templateUnavailableTitle`)
-                    : undefined
-                }
-                className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-blue-50 dark:bg-blue-900/30'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'text-red-600 dark:text-red-400'
+                    : isSelected
+                      ? 'text-blue-700 dark:text-blue-400'
+                      : 'text-gray-700 dark:text-gray-300'
                 }`}
               >
-                <input
-                  id={inputId}
-                  type="radio"
-                  name="docmTemplate"
-                  checked={isSelected}
-                  onChange={() =>
-                    DocmTemplatesStore.selectTemplate(template.id)
-                  }
-                  className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
-                />
-                <label
-                  htmlFor={inputId}
-                  className={`w-full truncate select-none text-sm font-medium cursor-pointer flex items-center gap-1.5 ${
-                    isUnavailable
-                      ? 'text-red-600 dark:text-red-400'
-                      : isSelected
-                        ? 'text-blue-700 dark:text-blue-400'
-                        : 'text-gray-700 dark:text-gray-300'
-                  }`}
-                >
-                  {isUnavailable && (
-                    <svg
-                      className="w-3.5 h-3.5 shrink-0"
-                      aria-hidden="true"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth="2"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-                      />
-                    </svg>
-                  )}
-                  <span className="truncate">{template.name}</span>
-                </label>
-                <button
-                  type="button"
-                  aria-label={t(`${I18N_NS}.removeTemplateAriaLabel`)}
-                  onClick={(e) => handleRemoveTemplate(e, template.id)}
-                  className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
-                >
+                {isUnavailable && (
                   <svg
-                    className="w-4 h-4"
+                    className="w-3.5 h-3.5 shrink-0"
                     aria-hidden="true"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -489,15 +521,38 @@ const FPDDocmTemplatesDropdown = ({
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="M6 18 18 6M6 6l12 12"
+                      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
                     />
                   </svg>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                )}
+                <span className="truncate">{template.name}</span>
+              </label>
+              <button
+                type="button"
+                aria-label={t(`${I18N_NS}.removeTemplateAriaLabel`)}
+                onClick={(e) => handleRemoveTemplate(e, template.id)}
+                className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
+              >
+                <svg
+                  className="w-4 h-4"
+                  aria-hidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18 18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+          );
+        })}
+      </div>
 
       {/* Meaningless with a single item — separate vs. merged both produce
           exactly one file, so skip asking and just leave the toggle at its
@@ -516,7 +571,7 @@ const FPDDocmTemplatesDropdown = ({
       <button
         type="button"
         onClick={handleGenerateClick}
-        disabled={!selectedTemplateId || !hasResults}
+        disabled={!hasResults}
         className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 cursor-pointer"
       >
         <Trans i18nKey={`${I18N_NS}.generateButton`} />

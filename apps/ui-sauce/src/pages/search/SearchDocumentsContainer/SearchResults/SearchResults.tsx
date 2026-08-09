@@ -675,6 +675,7 @@ const SearchResults = ({
           <FPDDocmTemplatesDropdown
             items={flattenedItems}
             templateTagFieldIds={allFieldIds}
+            primaryFieldId={primaryFieldId}
             onGenerate={handleGenerateDocm}
             addToast={addToast}
           />

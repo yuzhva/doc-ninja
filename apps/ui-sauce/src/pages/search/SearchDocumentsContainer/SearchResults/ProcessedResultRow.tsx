@@ -281,6 +281,7 @@ const ProcessedResultRow = ({
                         <FPDDocmTemplatesDropdown
                           items={[item]}
                           templateTagFieldIds={templateTagFieldIds}
+                          primaryFieldId={primaryFieldId}
                           onGenerate={onBtnGenerateDocmClick}
                           addToast={addToast}
                           openDirection="up"
