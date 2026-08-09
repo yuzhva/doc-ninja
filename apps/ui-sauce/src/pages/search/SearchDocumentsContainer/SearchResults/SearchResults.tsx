@@ -474,6 +474,7 @@ const SearchResults = ({
             previewItem?.items.map((i) => i.extracted.matchedText) ?? []
           }
         >
+          {/* NOTE: the children has been comments and not used temporarily */}
           {previewItem && (
             <div className="space-y-4">
               {/* Header / Metadata only - context removed to avoid duplication */}
@@ -830,6 +831,7 @@ const SearchResults = ({
                     tableFields={tableFields}
                     primaryFieldId={primaryFieldId}
                     templateTagFieldIds={allFieldIds}
+                    searchTerm={searchTerm}
                     onBtnGenerateDocmClick={handleGenerateDocm}
                     addToast={addToast}
                   />

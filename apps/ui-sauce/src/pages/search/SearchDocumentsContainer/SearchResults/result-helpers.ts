@@ -1,6 +1,14 @@
 import type { RichProcessedResultItem } from '../../search-page.types';
 import { FrontendInformationExtractor } from './frontend-information-extractor';
 
+const getPrimaryText = (
+  item: RichProcessedResultItem,
+  primaryFieldId: string | null,
+) =>
+  primaryFieldId
+    ? item.extracted?.extractedFieldById[primaryFieldId]
+    : undefined;
+
 // Helper to calculate dynamic values including legacy dependencies
 const calculateDynamicValues = (
   item: RichProcessedResultItem,
@@ -8,9 +16,7 @@ const calculateDynamicValues = (
   primaryFieldId: string | null,
 ) => {
   const dynamicValues: Record<string, string | null> = {};
-  const primaryText = primaryFieldId
-    ? item.extracted?.extractedFieldById[primaryFieldId]
-    : undefined;
+  const primaryText = getPrimaryText(item, primaryFieldId);
 
   filterConfigs.forEach((conf) => {
     dynamicValues[conf.id] = FrontendInformationExtractor.determineValue(
@@ -20,6 +26,30 @@ const calculateDynamicValues = (
   });
 
   return dynamicValues;
+};
+
+// The phrases that made each filter badge appear, so a row can point back at
+// them in the summary it derived them from. Kept separate from
+// calculateDynamicValues because the filtering and export call sites only ever
+// want the resolved label, and shouldn't pay for (or unpack) the phrases.
+//
+// Filters can opt out of highlighting (see the toggle in FPDModalFilterSettings)
+// — `!== false` rather than a truthiness check, so configs saved before the
+// flag existed keep highlighting instead of silently going dark.
+const collectFilterMatchedTexts = (
+  item: RichProcessedResultItem,
+  filterConfigs: any[],
+  primaryFieldId: string | null,
+): string[] => {
+  const primaryText = getPrimaryText(item, primaryFieldId);
+
+  return filterConfigs
+    .filter((conf) => conf?.isHighlightedInResults !== false)
+    .flatMap(
+      (conf) =>
+        FrontendInformationExtractor.findMatch(primaryText, conf)
+          ?.matchedTexts ?? [],
+    );
 };
 
 // A field/compound is only relevant to a given FE surface if it opted into
@@ -111,6 +141,7 @@ const truncateRowForXlsx = (row: Record<string, unknown>) =>
 
 export {
   calculateDynamicValues,
+  collectFilterMatchedTexts,
   flattenGroupedResults,
   getExtractedFieldOutputs,
   truncateRowForXlsx,

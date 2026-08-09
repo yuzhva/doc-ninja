@@ -17,6 +17,7 @@ const ProcessedResultGroup = ({
   tableFields,
   primaryFieldId,
   templateTagFieldIds,
+  searchTerm,
   onBtnGenerateDocmClick,
   addToast,
 }: {
@@ -27,6 +28,7 @@ const ProcessedResultGroup = ({
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
   templateTagFieldIds: string[];
+  searchTerm: string;
   onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
@@ -206,6 +208,7 @@ const ProcessedResultGroup = ({
                   tableFields={tableFields}
                   primaryFieldId={primaryFieldId}
                   templateTagFieldIds={templateTagFieldIds}
+                  searchTerm={searchTerm}
                   onBtnGenerateDocmClick={onBtnGenerateDocmClick}
                   addToast={addToast}
                 />

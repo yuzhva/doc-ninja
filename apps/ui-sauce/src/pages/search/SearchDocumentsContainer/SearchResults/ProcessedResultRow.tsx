@@ -9,9 +9,13 @@ import {
 } from '../../../../components';
 import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
 import { HighlightedText } from './FormProcessDocumentSideOver';
+import type { Highlight } from './FormProcessDocumentSideOver';
 import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
 import { FPDDocmTemplatesDropdown } from './components/FPDDocmTemplatesDropdown';
-import { calculateDynamicValues } from './result-helpers';
+import {
+  calculateDynamicValues,
+  collectFilterMatchedTexts,
+} from './result-helpers';
 import type { ExtractedTableField } from './result-helpers';
 
 const I18N_NS = 'page.search.component.processedResultRow';
@@ -27,6 +31,7 @@ const ProcessedResultRow = ({
   tableFields,
   primaryFieldId,
   templateTagFieldIds,
+  searchTerm,
   onBtnGenerateDocmClick,
   addToast,
 }: {
@@ -39,6 +44,7 @@ const ProcessedResultRow = ({
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
   templateTagFieldIds: string[];
+  searchTerm: string;
   onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
@@ -58,9 +64,23 @@ const ProcessedResultRow = ({
         filterConfigs,
         primaryFieldId,
       );
-      return { item, dynamicValues };
+
+      // The phrase the extractor matched keeps its yellow; the term typed into
+      // the results filter is layered on top in green, and the keywords behind
+      // each filter badge are annotated in blue. Earlier entries win when two
+      // of them resolve to the same phrase. Built here so the array identity
+      // stays stable and `HighlightedText`'s memo keeps holding.
+      const highlights: Highlight[] = [
+        { value: item.extracted.matchedText, variant: 'yellow' },
+        { value: searchTerm, variant: 'green' },
+        ...collectFilterMatchedTexts(item, filterConfigs, primaryFieldId).map(
+          (value): Highlight => ({ value, variant: 'blue' }),
+        ),
+      ];
+
+      return { item, dynamicValues, highlights };
     });
-  }, [items, filterConfigs, primaryFieldId]);
+  }, [items, filterConfigs, primaryFieldId, searchTerm]);
 
   // Aggregate unique values for the closed row view (e.g. show all statuses found in group)
   const aggregatedValues = React.useMemo(() => {
@@ -195,112 +215,116 @@ const ProcessedResultRow = ({
           <td colSpan={2 + tableFields.length + filterConfigs.length}>
             {/* z-10 */}
             <div className="sticky left-0 w-[100cqw] bg-gray-50 dark:bg-gray-900/40 py-4 pl-10 pr-6 text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
-              {enrichedItems.map(({ item, dynamicValues }, idx: number) => (
-                <div
-                  key={idx}
-                  className={
-                    idx > 0
-                      ? 'mt-4 pt-4 border-t border-gray-200 dark:border-gray-700'
-                      : ''
-                  }
-                >
-                  <div className="flex flex-wrap items-center gap-3 mb-2">
-                    {items.length > 1 && (
-                      <>
-                        {enrichedItems.length > 1 && (
-                          <BadgeCounter count={idx + 1} variant="gray" />
-                        )}
+              {enrichedItems.map(
+                ({ item, dynamicValues, highlights }, idx: number) => (
+                  <div
+                    key={idx}
+                    className={
+                      idx > 0
+                        ? 'mt-4 pt-4 border-t border-gray-200 dark:border-gray-700'
+                        : ''
+                    }
+                  >
+                    <div className="flex flex-wrap items-center gap-3 mb-2">
+                      {items.length > 1 && (
+                        <>
+                          {enrichedItems.length > 1 && (
+                            <BadgeCounter count={idx + 1} variant="gray" />
+                          )}
 
-                        {/* Dynamic Badges for item */}
-                        {filterConfigs.map((conf) => {
-                          const val = dynamicValues[conf.id];
-                          if (!val) return null;
-                          return (
-                            <Badge
-                              key={conf.id}
-                              label={conf.labelFilterTitle}
-                              value={val}
-                              // variant="purple"
-                              variant="blue"
-                            />
-                          );
-                        })}
-                      </>
-                    )}
-                  </div>
+                          {/* Dynamic Badges for item */}
+                          {filterConfigs.map((conf) => {
+                            const val = dynamicValues[conf.id];
+                            if (!val) return null;
+                            return (
+                              <Badge
+                                key={conf.id}
+                                label={conf.labelFilterTitle}
+                                value={val}
+                                // variant="purple"
+                                variant="blue"
+                              />
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
 
-                  <div className="relative group">
-                    <HighlightedText
-                      text={
-                        (primaryFieldId &&
-                          item.extracted.extractedFieldById[primaryFieldId]) ??
-                        ''
-                      }
-                      highlights={[item.extracted.matchedText]}
-                    />
-                    <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Tooltip
-                        content={<Trans i18nKey={`${I18N_NS}.copyTooltip`} />}
-                        placement="top"
-                        align="end"
-                      >
-                        <ButtonCopyToClipboard
-                          textToCopy={
-                            (primaryFieldId &&
-                              item.extracted.extractedFieldById[
-                                primaryFieldId
-                              ]) ??
-                            ''
-                          }
-                          placement="left"
-                        />
-                      </Tooltip>
-                      <FPDDocmTemplatesDropdown
-                        items={[item]}
-                        templateTagFieldIds={templateTagFieldIds}
-                        onGenerate={onBtnGenerateDocmClick}
-                        addToast={addToast}
-                        openDirection="up"
-                        renderTrigger={({ toggle }) => (
-                          <div className="flex">
-                            <Tooltip
-                              content={
-                                <Trans
-                                  i18nKey={`${I18N_NS}.generateDocmTooltip`}
-                                />
-                              }
-                              placement="top"
-                              align="end"
-                            >
-                              <button
-                                type="button"
-                                onClick={toggle}
-                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                              >
-                                <svg
-                                  className="w-4 h-4"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  strokeWidth="2"
-                                  stroke="currentColor"
-                                  aria-hidden="true"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
-                                  />
-                                </svg>
-                              </button>
-                            </Tooltip>
-                          </div>
-                        )}
+                    <div className="relative group">
+                      <HighlightedText
+                        text={
+                          (primaryFieldId &&
+                            item.extracted.extractedFieldById[
+                              primaryFieldId
+                            ]) ??
+                          ''
+                        }
+                        highlights={highlights}
                       />
+                      <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Tooltip
+                          content={<Trans i18nKey={`${I18N_NS}.copyTooltip`} />}
+                          placement="top"
+                          align="end"
+                        >
+                          <ButtonCopyToClipboard
+                            textToCopy={
+                              (primaryFieldId &&
+                                item.extracted.extractedFieldById[
+                                  primaryFieldId
+                                ]) ??
+                              ''
+                            }
+                            placement="left"
+                          />
+                        </Tooltip>
+                        <FPDDocmTemplatesDropdown
+                          items={[item]}
+                          templateTagFieldIds={templateTagFieldIds}
+                          onGenerate={onBtnGenerateDocmClick}
+                          addToast={addToast}
+                          openDirection="up"
+                          renderTrigger={({ toggle }) => (
+                            <div className="flex">
+                              <Tooltip
+                                content={
+                                  <Trans
+                                    i18nKey={`${I18N_NS}.generateDocmTooltip`}
+                                  />
+                                }
+                                placement="top"
+                                align="end"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={toggle}
+                                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    strokeWidth="2"
+                                    stroke="currentColor"
+                                    aria-hidden="true"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
+                                    />
+                                  </svg>
+                                </button>
+                              </Tooltip>
+                            </div>
+                          )}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           </td>
         </tr>
