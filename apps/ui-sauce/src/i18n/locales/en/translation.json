@@ -8,6 +8,14 @@
         "showUtilitiesPanel": "Show \"Document utilities\"",
         "language": "Language",
         "beta": "Beta"
+      },
+      "welcomeModal": {
+        "greetingLine1": "Hey hi",
+        "greetingLine2": "Thank you for choosing",
+        "description": "DocNinja is a tool for searching and processing large collections of documents using your own custom rules. Everything runs locally on your computer because PRIVACY and SECURITY are our top priorities.*",
+        "complianceNote": "*HIPAA and GDPR compliant",
+        "languageLabel": "Language",
+        "submitButton": "Let's go"
       }
     }
   },
