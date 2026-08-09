@@ -10,6 +10,12 @@ interface LayoutProps {
   children?: React.ReactNode;
 }
 
+// `min-h-0` lets pages that own the full viewport height (see `lg:h-screen`
+// below) hand a bounded height down to their own scroll containers instead of
+// growing the document and scrolling the whole page.
+const MAIN_CLASS_NAME =
+  'overflow-y-auto relative w-full h-full min-h-0 bg-gray-50 dark:bg-gray-900';
+
 const Layout = ({ children }: LayoutProps) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
@@ -46,18 +52,21 @@ const Layout = ({ children }: LayoutProps) => {
         onSidebarVisibleChange={setIsSidebarVisible}
       />
 
-      <div className="flex items-start pt-16">
+      {/* From `lg` up the shell is pinned to the viewport (100vh minus the
+          fixed navbar) so pages can scroll their own sections. Below `lg` it
+          keeps growing with its content and the document scrolls as before. */}
+      <div className="flex items-start pt-16 lg:h-screen lg:items-stretch">
         {isSidebarVisible && <Sidebar isSidebarOpen={isSidebarOpen} />}
         <main
           className={
             isSidebarVisible
               ? isSidebarOpen
-                ? 'overflow-y-auto relative w-full h-full bg-gray-50 dark:bg-gray-900 lg:ml-64'
-                : 'overflow-y-auto relative w-full h-full bg-gray-50 dark:bg-gray-900 lg:ml-16'
-              : 'overflow-y-auto relative w-full h-full bg-gray-50 dark:bg-gray-900'
+                ? `${MAIN_CLASS_NAME} lg:ml-64`
+                : `${MAIN_CLASS_NAME} lg:ml-16`
+              : MAIN_CLASS_NAME
           }
         >
-          <div className="px-4 pt-6">
+          <div className="px-4 pt-6 lg:h-full lg:pb-6">
             <Outlet />
             {/* {children} */}
           </div>
