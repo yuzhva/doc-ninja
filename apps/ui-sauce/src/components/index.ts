@@ -10,6 +10,8 @@ export { LoadingSpinner } from './LoadingSpinner';
 export { Modal } from './Modal';
 export { Select } from './Select';
 export type { SelectOption } from './Select';
+export { SortableList } from './SortableList';
+export type { SortableItemRenderArgs } from './SortableList';
 export { Tabs } from './Tabs';
 export { Toast } from './Toast';
 export { Tooltip } from './Tooltip';

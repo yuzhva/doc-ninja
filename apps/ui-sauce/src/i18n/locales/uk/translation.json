@@ -22,6 +22,9 @@
   "component": {
     "formInputFileSelect": {
       "clickToSelect": "Натисніть, щоб обрати ..."
+    },
+    "sortableList": {
+      "dragHandleTitle": "Перетягніть, щоб змінити порядок (або ↑ / ↓)"
     }
   },
   "page": {

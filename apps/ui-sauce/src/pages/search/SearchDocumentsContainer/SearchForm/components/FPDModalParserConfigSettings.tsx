@@ -2,7 +2,13 @@ import type { TFunction } from 'i18next';
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { Checkbox, Modal, Select, Tabs } from '../../../../../components';
+import {
+  Checkbox,
+  Modal,
+  Select,
+  SortableList,
+  Tabs,
+} from '../../../../../components';
 import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
 
 const I18N_NS = 'page.search.component.fpdModalParserConfigSettings';
@@ -721,526 +727,547 @@ const FPDModalParserConfigSettings = ({
             </div>
           ) : (
             <div className="space-y-4 p-4">
-              {parserConfigEntries.map((configEntry) => {
-                const isCollapsed = collapsedConfigClientIds.has(
-                  configEntry.clientId,
-                );
+              <SortableList
+                items={parserConfigEntries}
+                getItemKey={(configEntry) => configEntry.clientId}
+                onReorder={commitParserConfigEntries}
+                className="space-y-4"
+                itemClassName="rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden"
+                renderItem={(configEntry, { dragHandle }) => {
+                  const isCollapsed = collapsedConfigClientIds.has(
+                    configEntry.clientId,
+                  );
 
-                return (
-                  <div
-                    key={configEntry.clientId}
-                    className="rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden"
-                  >
-                    <div className="flex items-center justify-between gap-3 bg-gray-50 px-4 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                      <button
-                        type="button"
-                        onClick={() => removeParserConfig(configEntry.clientId)}
-                        className="flex items-center justify-center w-9 h-9 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 shrink-0 cursor-pointer"
-                        title={t(`${I18N_NS}.removeConfigTitle`)}
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          aria-hidden="true"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-3 bg-gray-50 px-4 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                        {dragHandle}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeParserConfig(configEntry.clientId)
+                          }
+                          className="flex items-center justify-center w-9 h-9 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 shrink-0 cursor-pointer"
+                          title={t(`${I18N_NS}.removeConfigTitle`)}
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-                          />
-                        </svg>
-                      </button>
-                      <input
-                        type="text"
-                        value={configEntry.name}
-                        onChange={(e) =>
-                          updateParserConfigName(
-                            configEntry.clientId,
-                            e.target.value,
-                          )
-                        }
-                        placeholder={t(`${I18N_NS}.configNamePlaceholder`)}
-                        className="flex-1 block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm font-semibold"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          toggleParserConfigCollapsed(configEntry.clientId)
-                        }
-                        className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 focus:outline-none cursor-pointer shrink-0"
-                        title={t(
-                          isCollapsed
-                            ? `${I18N_NS}.expandTitle`
-                            : `${I18N_NS}.collapseTitle`,
-                        )}
-                      >
-                        <svg
-                          className={`w-4 h-4 transition-transform duration-200 ${
-                            isCollapsed ? '' : 'rotate-180'
-                          }`}
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          ></path>
-                        </svg>
-                      </button>
-                    </div>
-
-                    {!isCollapsed && (
-                      <div className="p-4 space-y-6">
-                        {/* Pipelines */}
-                        <div className="space-y-3">
-                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                            <Trans
-                              i18nKey={`${I18N_NS}.pipelinesSectionTitle`}
+                          <svg
+                            className="w-4 h-4"
+                            aria-hidden="true"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
                             />
-                          </h4>
-                          {configEntry.pipelines.map((pipeline) => (
-                            <div
-                              key={pipeline.clientId}
-                              className="relative rounded-lg border border-gray-200 dark:border-gray-600 p-4 space-y-4"
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removePipeline(
-                                    configEntry.clientId,
-                                    pipeline.clientId,
-                                  )
-                                }
-                                className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
-                                title={t(`${I18N_NS}.removePipelineTitle`)}
+                          </svg>
+                        </button>
+                        <input
+                          type="text"
+                          value={configEntry.name}
+                          onChange={(e) =>
+                            updateParserConfigName(
+                              configEntry.clientId,
+                              e.target.value,
+                            )
+                          }
+                          placeholder={t(`${I18N_NS}.configNamePlaceholder`)}
+                          className="flex-1 block w-full border bg-white border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2 text-sm font-semibold"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleParserConfigCollapsed(configEntry.clientId)
+                          }
+                          className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-600 focus:outline-none cursor-pointer shrink-0"
+                          title={t(
+                            isCollapsed
+                              ? `${I18N_NS}.expandTitle`
+                              : `${I18N_NS}.collapseTitle`,
+                          )}
+                        >
+                          <svg
+                            className={`w-4 h-4 transition-transform duration-200 ${
+                              isCollapsed ? '' : 'rotate-180'
+                            }`}
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            ></path>
+                          </svg>
+                        </button>
+                      </div>
+
+                      {!isCollapsed && (
+                        <div className="p-4 space-y-6">
+                          {/* Pipelines */}
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                              <Trans
+                                i18nKey={`${I18N_NS}.pipelinesSectionTitle`}
+                              />
+                            </h4>
+                            {configEntry.pipelines.map((pipeline) => (
+                              <div
+                                key={pipeline.clientId}
+                                className="relative rounded-lg border border-gray-200 dark:border-gray-600 p-4 space-y-4"
                               >
-                                −
-                              </button>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
-                                <Field
-                                  label={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.fieldIdLabel`}
-                                    />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removePipeline(
+                                      configEntry.clientId,
+                                      pipeline.clientId,
+                                    )
                                   }
-                                  required
+                                  className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
+                                  title={t(`${I18N_NS}.removePipelineTitle`)}
                                 >
-                                  <input
-                                    type="text"
-                                    value={pipeline.id}
-                                    onChange={(e) =>
-                                      updatePipelineField(
-                                        configEntry.clientId,
-                                        pipeline.clientId,
-                                        'id',
-                                        e.target.value,
-                                      )
+                                  −
+                                </button>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
+                                  <Field
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.fieldIdLabel`}
+                                      />
                                     }
-                                    placeholder={t(
-                                      `${I18N_NS}.fieldIdPlaceholderPipeline`,
-                                    )}
-                                    className={inputClassName}
-                                  />
-                                  <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                                    {pipeline.id && (
-                                      <>
-                                        <Trans
-                                          i18nKey={`${I18N_NS}.templateHint`}
-                                        />{' '}
-                                        <code className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-1.5 py-0.5">
-                                          {`{{${pipeline.id}}}`}
-                                        </code>
-                                      </>
-                                    )}
-                                  </p>
-                                </Field>
-                                <Field
-                                  label={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.pipelineNameLabel`}
+                                    required
+                                  >
+                                    <input
+                                      type="text"
+                                      value={pipeline.id}
+                                      onChange={(e) =>
+                                        updatePipelineField(
+                                          configEntry.clientId,
+                                          pipeline.clientId,
+                                          'id',
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={t(
+                                        `${I18N_NS}.fieldIdPlaceholderPipeline`,
+                                      )}
+                                      className={inputClassName}
                                     />
-                                  }
-                                  required
-                                >
-                                  <input
-                                    type="text"
-                                    value={pipeline.outputLabel}
-                                    onChange={(e) =>
-                                      updatePipelineField(
-                                        configEntry.clientId,
-                                        pipeline.clientId,
-                                        'outputLabel',
-                                        e.target.value,
-                                      )
+                                    <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                      {pipeline.id && (
+                                        <>
+                                          <Trans
+                                            i18nKey={`${I18N_NS}.templateHint`}
+                                          />{' '}
+                                          <code className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-1.5 py-0.5">
+                                            {`{{${pipeline.id}}}`}
+                                          </code>
+                                        </>
+                                      )}
+                                    </p>
+                                  </Field>
+                                  <Field
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.pipelineNameLabel`}
+                                      />
                                     }
-                                    placeholder={t(
-                                      `${I18N_NS}.pipelineNamePlaceholder`,
-                                    )}
-                                    className={inputClassName}
-                                  />
-                                </Field>
-                              </div>
-                              <Field
-                                label={
-                                  <Trans i18nKey={`${I18N_NS}.patternLabel`} />
-                                }
-                                required
-                              >
-                                <input
-                                  type="text"
-                                  value={pipeline.pattern}
-                                  onChange={(e) =>
-                                    updatePipelineField(
-                                      configEntry.clientId,
-                                      pipeline.clientId,
-                                      'pattern',
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder={t(
-                                    `${I18N_NS}.patternPlaceholder`,
-                                  )}
-                                  className={`${inputClassName} font-mono`}
-                                />
-                              </Field>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                <Select
-                                  label={requiredLabel(
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.startFromFieldLabel`}
-                                    />,
-                                  )}
-                                  value={pipeline.startFrom}
-                                  onChange={(value) =>
-                                    updatePipelineField(
-                                      configEntry.clientId,
-                                      pipeline.clientId,
-                                      'startFrom',
-                                      value,
-                                    )
-                                  }
-                                  options={Object.values(startFromOptions)}
-                                />
-                                <Select
-                                  label={requiredLabel(
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.directionFieldLabel`}
-                                    />,
-                                  )}
-                                  value={pipeline.direction}
-                                  onChange={(value) =>
-                                    updatePipelineField(
-                                      configEntry.clientId,
-                                      pipeline.clientId,
-                                      'direction',
-                                      value,
-                                    )
-                                  }
-                                  options={Object.values(directionOptions)}
-                                />
-                                <Select
-                                  label={requiredLabel(
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.unitFieldLabel`}
-                                    />,
-                                  )}
-                                  value={pipeline.unit}
-                                  onChange={(value) =>
-                                    updatePipelineField(
-                                      configEntry.clientId,
-                                      pipeline.clientId,
-                                      'unit',
-                                      value,
-                                    )
-                                  }
-                                  options={Object.values(unitOptions)}
-                                />
-                                <div className="min-w-0">
-                                  <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.maxUnitsLabel`}
+                                    required
+                                  >
+                                    <input
+                                      type="text"
+                                      value={pipeline.outputLabel}
+                                      onChange={(e) =>
+                                        updatePipelineField(
+                                          configEntry.clientId,
+                                          pipeline.clientId,
+                                          'outputLabel',
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={t(
+                                        `${I18N_NS}.pipelineNamePlaceholder`,
+                                      )}
+                                      className={inputClassName}
                                     />
-                                  </label>
-                                  <input
-                                    type="number"
-                                    value={pipeline.limit}
-                                    onChange={(e) =>
-                                      updatePipelineField(
-                                        configEntry.clientId,
-                                        pipeline.clientId,
-                                        'limit',
-                                        e.target.value,
-                                      )
-                                    }
-                                    placeholder={t(
-                                      `${I18N_NS}.maxUnitsPlaceholder`,
-                                    )}
-                                    className="block w-full truncate border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                                  />
+                                  </Field>
                                 </div>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                                 <Field
                                   label={
-                                    <Trans i18nKey={`${I18N_NS}.stopAtLabel`} />
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.patternLabel`}
+                                    />
                                   }
+                                  required
                                 >
                                   <input
                                     type="text"
-                                    value={pipeline.stopAt}
+                                    value={pipeline.pattern}
                                     onChange={(e) =>
                                       updatePipelineField(
                                         configEntry.clientId,
                                         pipeline.clientId,
-                                        'stopAt',
+                                        'pattern',
                                         e.target.value,
                                       )
                                     }
                                     placeholder={t(
-                                      `${I18N_NS}.stopAtPlaceholder`,
+                                      `${I18N_NS}.patternPlaceholder`,
                                     )}
                                     className={`${inputClassName} font-mono`}
                                   />
                                 </Field>
-                                <div>
-                                  <div
-                                    className="h-5 mb-2"
-                                    aria-hidden="true"
-                                  />
-                                  <Checkbox
-                                    theme="toggle"
-                                    checked={pipeline.consume}
-                                    onChange={(checked) =>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                  <Select
+                                    label={requiredLabel(
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.startFromFieldLabel`}
+                                      />,
+                                    )}
+                                    value={pipeline.startFrom}
+                                    onChange={(value) =>
                                       updatePipelineField(
                                         configEntry.clientId,
                                         pipeline.clientId,
-                                        'consume',
+                                        'startFrom',
+                                        value,
+                                      )
+                                    }
+                                    options={Object.values(startFromOptions)}
+                                  />
+                                  <Select
+                                    label={requiredLabel(
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.directionFieldLabel`}
+                                      />,
+                                    )}
+                                    value={pipeline.direction}
+                                    onChange={(value) =>
+                                      updatePipelineField(
+                                        configEntry.clientId,
+                                        pipeline.clientId,
+                                        'direction',
+                                        value,
+                                      )
+                                    }
+                                    options={Object.values(directionOptions)}
+                                  />
+                                  <Select
+                                    label={requiredLabel(
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.unitFieldLabel`}
+                                      />,
+                                    )}
+                                    value={pipeline.unit}
+                                    onChange={(value) =>
+                                      updatePipelineField(
+                                        configEntry.clientId,
+                                        pipeline.clientId,
+                                        'unit',
+                                        value,
+                                      )
+                                    }
+                                    options={Object.values(unitOptions)}
+                                  />
+                                  <div className="min-w-0">
+                                    <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.maxUnitsLabel`}
+                                      />
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={pipeline.limit}
+                                      onChange={(e) =>
+                                        updatePipelineField(
+                                          configEntry.clientId,
+                                          pipeline.clientId,
+                                          'limit',
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={t(
+                                        `${I18N_NS}.maxUnitsPlaceholder`,
+                                      )}
+                                      className="block w-full truncate border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                                  <Field
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.stopAtLabel`}
+                                      />
+                                    }
+                                  >
+                                    <input
+                                      type="text"
+                                      value={pipeline.stopAt}
+                                      onChange={(e) =>
+                                        updatePipelineField(
+                                          configEntry.clientId,
+                                          pipeline.clientId,
+                                          'stopAt',
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={t(
+                                        `${I18N_NS}.stopAtPlaceholder`,
+                                      )}
+                                      className={`${inputClassName} font-mono`}
+                                    />
+                                  </Field>
+                                  <div>
+                                    <div
+                                      className="h-5 mb-2"
+                                      aria-hidden="true"
+                                    />
+                                    <Checkbox
+                                      theme="toggle"
+                                      checked={pipeline.consume}
+                                      onChange={(checked) =>
+                                        updatePipelineField(
+                                          configEntry.clientId,
+                                          pipeline.clientId,
+                                          'consume',
+                                          checked,
+                                        )
+                                      }
+                                      label={
+                                        <Trans
+                                          i18nKey={`${I18N_NS}.consumeLabel`}
+                                        />
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                  {useInCheckboxes(pipeline, (field, value) =>
+                                    updatePipelineField(
+                                      configEntry.clientId,
+                                      pipeline.clientId,
+                                      field as keyof PipelineEntry,
+                                      value,
+                                    ),
+                                  )}
+                                </div>
+                                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                  <Checkbox
+                                    checked={
+                                      pipeline.isPrimarySearchResponseText
+                                    }
+                                    onChange={(checked) =>
+                                      setPrimarySearchResponseText(
+                                        configEntry.clientId,
+                                        'pipeline',
+                                        pipeline.clientId,
                                         checked,
                                       )
                                     }
                                     label={
                                       <Trans
-                                        i18nKey={`${I18N_NS}.consumeLabel`}
+                                        i18nKey={`${I18N_NS}.isPrimaryLabel`}
                                       />
                                     }
                                   />
                                 </div>
                               </div>
-                              <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
-                                {useInCheckboxes(pipeline, (field, value) =>
-                                  updatePipelineField(
-                                    configEntry.clientId,
-                                    pipeline.clientId,
-                                    field as keyof PipelineEntry,
-                                    value,
-                                  ),
-                                )}
-                              </div>
-                              <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
-                                <Checkbox
-                                  checked={pipeline.isPrimarySearchResponseText}
-                                  onChange={(checked) =>
-                                    setPrimarySearchResponseText(
-                                      configEntry.clientId,
-                                      'pipeline',
-                                      pipeline.clientId,
-                                      checked,
-                                    )
-                                  }
-                                  label={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.isPrimaryLabel`}
-                                    />
-                                  }
-                                />
-                              </div>
-                            </div>
-                          ))}
-                          <div className="flex justify-end pr-2">
-                            <button
-                              type="button"
-                              onClick={() => addPipeline(configEntry.clientId)}
-                              className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
-                              title={t(`${I18N_NS}.addPipelineTitle`)}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Compounds */}
-                        <div className="space-y-3">
-                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                            <Trans
-                              i18nKey={`${I18N_NS}.compoundsSectionTitle`}
-                            />
-                          </h4>
-                          {configEntry.compounds.map((compound) => (
-                            <div
-                              key={compound.clientId}
-                              className="relative rounded-lg border border-gray-200 dark:border-gray-600 p-4 space-y-4"
-                            >
+                            ))}
+                            <div className="flex justify-end pr-2">
                               <button
                                 type="button"
                                 onClick={() =>
-                                  removeCompound(
-                                    configEntry.clientId,
-                                    compound.clientId,
-                                  )
+                                  addPipeline(configEntry.clientId)
                                 }
-                                className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
-                                title={t(`${I18N_NS}.removeCompoundTitle`)}
+                                className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
+                                title={t(`${I18N_NS}.addPipelineTitle`)}
                               >
-                                −
+                                +
                               </button>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
-                                <Field
-                                  label={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.fieldIdLabel`}
-                                    />
-                                  }
-                                  required
-                                >
-                                  <input
-                                    type="text"
-                                    value={compound.id}
-                                    onChange={(e) =>
-                                      updateCompoundField(
-                                        configEntry.clientId,
-                                        compound.clientId,
-                                        'id',
-                                        e.target.value,
-                                      )
-                                    }
-                                    placeholder={t(
-                                      `${I18N_NS}.fieldIdPlaceholderCompound`,
-                                    )}
-                                    className={inputClassName}
-                                  />
-                                  <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                                    {compound.id && (
-                                      <>
-                                        <Trans
-                                          i18nKey={`${I18N_NS}.templateHint`}
-                                        />{' '}
-                                        <code className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-1.5 py-0.5">
-                                          {`{{${compound.id}}}`}
-                                        </code>
-                                      </>
-                                    )}
-                                  </p>
-                                </Field>
-                                <Field
-                                  label={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.compoundOutputLabelLabel`}
-                                    />
-                                  }
-                                  required
-                                >
-                                  <input
-                                    type="text"
-                                    value={compound.outputLabel}
-                                    onChange={(e) =>
-                                      updateCompoundField(
-                                        configEntry.clientId,
-                                        compound.clientId,
-                                        'outputLabel',
-                                        e.target.value,
-                                      )
-                                    }
-                                    placeholder={t(
-                                      `${I18N_NS}.compoundOutputLabelPlaceholder`,
-                                    )}
-                                    className={inputClassName}
-                                  />
-                                </Field>
-                              </div>
-                              <Field
-                                label={
-                                  <Trans
-                                    i18nKey={`${I18N_NS}.compoundValueLabel`}
-                                  />
-                                }
-                                required
+                            </div>
+                          </div>
+
+                          {/* Compounds */}
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                              <Trans
+                                i18nKey={`${I18N_NS}.compoundsSectionTitle`}
+                              />
+                            </h4>
+                            {configEntry.compounds.map((compound) => (
+                              <div
+                                key={compound.clientId}
+                                className="relative rounded-lg border border-gray-200 dark:border-gray-600 p-4 space-y-4"
                               >
-                                <textarea
-                                  value={compound.valueText}
-                                  onChange={(e) =>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeCompound(
+                                      configEntry.clientId,
+                                      compound.clientId,
+                                    )
+                                  }
+                                  className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 text-red-600 bg-white border border-red-600 hover:bg-red-600 hover:text-white focus:ring-4 focus:ring-red-200 font-medium rounded-lg text-sm dark:bg-gray-800 dark:text-red-500 dark:border-red-500 dark:hover:text-white dark:hover:bg-red-600 dark:focus:ring-red-900 cursor-pointer"
+                                  title={t(`${I18N_NS}.removeCompoundTitle`)}
+                                >
+                                  −
+                                </button>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
+                                  <Field
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.fieldIdLabel`}
+                                      />
+                                    }
+                                    required
+                                  >
+                                    <input
+                                      type="text"
+                                      value={compound.id}
+                                      onChange={(e) =>
+                                        updateCompoundField(
+                                          configEntry.clientId,
+                                          compound.clientId,
+                                          'id',
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={t(
+                                        `${I18N_NS}.fieldIdPlaceholderCompound`,
+                                      )}
+                                      className={inputClassName}
+                                    />
+                                    <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                      {compound.id && (
+                                        <>
+                                          <Trans
+                                            i18nKey={`${I18N_NS}.templateHint`}
+                                          />{' '}
+                                          <code className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-1.5 py-0.5">
+                                            {`{{${compound.id}}}`}
+                                          </code>
+                                        </>
+                                      )}
+                                    </p>
+                                  </Field>
+                                  <Field
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.compoundOutputLabelLabel`}
+                                      />
+                                    }
+                                    required
+                                  >
+                                    <input
+                                      type="text"
+                                      value={compound.outputLabel}
+                                      onChange={(e) =>
+                                        updateCompoundField(
+                                          configEntry.clientId,
+                                          compound.clientId,
+                                          'outputLabel',
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={t(
+                                        `${I18N_NS}.compoundOutputLabelPlaceholder`,
+                                      )}
+                                      className={inputClassName}
+                                    />
+                                  </Field>
+                                </div>
+                                <Field
+                                  label={
+                                    <Trans
+                                      i18nKey={`${I18N_NS}.compoundValueLabel`}
+                                    />
+                                  }
+                                  required
+                                >
+                                  <textarea
+                                    value={compound.valueText}
+                                    onChange={(e) =>
+                                      updateCompoundField(
+                                        configEntry.clientId,
+                                        compound.clientId,
+                                        'valueText',
+                                        e.target.value,
+                                      )
+                                    }
+                                    rows={4}
+                                    placeholder={t(
+                                      `${I18N_NS}.compoundValuePlaceholder`,
+                                      // This translation contains a literal
+                                      // "{{field_identifier}}" example token —
+                                      // skip interpolation so it isn't treated
+                                      // as an actual (and missing) variable.
+                                      {
+                                        interpolation: {
+                                          skipOnVariables: true,
+                                        },
+                                      },
+                                    )}
+                                    className={`${inputClassName} font-mono resize-y`}
+                                  />
+                                </Field>
+                                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                  {useInCheckboxes(compound, (field, value) =>
                                     updateCompoundField(
                                       configEntry.clientId,
                                       compound.clientId,
-                                      'valueText',
-                                      e.target.value,
-                                    )
-                                  }
-                                  rows={4}
-                                  placeholder={t(
-                                    `${I18N_NS}.compoundValuePlaceholder`,
-                                    // This translation contains a literal
-                                    // "{{field_identifier}}" example token —
-                                    // skip interpolation so it isn't treated
-                                    // as an actual (and missing) variable.
-                                    {
-                                      interpolation: { skipOnVariables: true },
-                                    },
+                                      field as keyof CompoundEntry,
+                                      value,
+                                    ),
                                   )}
-                                  className={`${inputClassName} font-mono resize-y`}
-                                />
-                              </Field>
-                              <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
-                                {useInCheckboxes(compound, (field, value) =>
-                                  updateCompoundField(
-                                    configEntry.clientId,
-                                    compound.clientId,
-                                    field as keyof CompoundEntry,
-                                    value,
-                                  ),
-                                )}
+                                </div>
+                                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                  <Checkbox
+                                    checked={
+                                      compound.isPrimarySearchResponseText
+                                    }
+                                    onChange={(checked) =>
+                                      setPrimarySearchResponseText(
+                                        configEntry.clientId,
+                                        'compound',
+                                        compound.clientId,
+                                        checked,
+                                      )
+                                    }
+                                    label={
+                                      <Trans
+                                        i18nKey={`${I18N_NS}.isPrimaryLabel`}
+                                      />
+                                    }
+                                  />
+                                </div>
                               </div>
-                              <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
-                                <Checkbox
-                                  checked={compound.isPrimarySearchResponseText}
-                                  onChange={(checked) =>
-                                    setPrimarySearchResponseText(
-                                      configEntry.clientId,
-                                      'compound',
-                                      compound.clientId,
-                                      checked,
-                                    )
-                                  }
-                                  label={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.isPrimaryLabel`}
-                                    />
-                                  }
-                                />
-                              </div>
+                            ))}
+                            <div className="flex justify-end pr-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  addCompound(configEntry.clientId)
+                                }
+                                className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
+                                title={t(`${I18N_NS}.addCompoundTitle`)}
+                              >
+                                +
+                              </button>
                             </div>
-                          ))}
-                          <div className="flex justify-end pr-2">
-                            <button
-                              type="button"
-                              onClick={() => addCompound(configEntry.clientId)}
-                              className="flex items-center justify-center w-8 h-8 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
-                              title={t(`${I18N_NS}.addCompoundTitle`)}
-                            >
-                              +
-                            </button>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      )}
+                    </>
+                  );
+                }}
+              />
               <button
                 type="button"
                 onClick={addParserConfig}
