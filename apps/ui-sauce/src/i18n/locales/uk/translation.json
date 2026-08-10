@@ -101,7 +101,9 @@
           "expandAllTitle": "Розгорнути всі",
           "collapseAllTitle": "Згорнути всі",
           "fileNameHeader": "Назва файлу",
-          "pathHeader": "Шлях"
+          "pathHeader": "Шлях",
+          "sortAscendingTitle": "Сортувати за зростанням",
+          "sortDescendingTitle": "Сортувати за спаданням"
         },
         "processedResultRow": {
           "expandTitle": "Розгорнути",

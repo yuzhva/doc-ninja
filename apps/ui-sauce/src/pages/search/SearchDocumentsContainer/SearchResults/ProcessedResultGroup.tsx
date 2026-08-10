@@ -9,8 +9,98 @@ import type {
 import { ProcessedResultRow } from './ProcessedResultRow';
 import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
 import type { ExtractedTableField } from './result-helpers';
+import {
+  DOC_NAME_SORT_COLUMN_ID,
+  FILE_PATH_SORT_COLUMN_ID,
+} from './results-sorting';
+import type { SortDirection } from './results-sorting';
 
 const I18N_NS = 'page.search.component.processedResultGroup';
+
+// Rows are identified by the path they were grouped under, so expand/collapse
+// state sticks to a document rather than to a table position — re-sorting moves
+// the rows around underneath it. The `#n` suffix only ever kicks in for results
+// the BE sent no path for, where `docName` alone can repeat.
+const buildRowIds = (items: ResultGroup[]): string[] => {
+  const timesSeen = new Map<string, number>();
+
+  return items.map((item, index) => {
+    const base =
+      item.uniqueId || item.search?.doc?.originalFilePath || item.docName;
+    if (!base) return `row-${index}`;
+
+    const seen = timesSeen.get(base) ?? 0;
+    timesSeen.set(base, seen + 1);
+
+    return seen === 0 ? base : `${base}#${seen}`;
+  });
+};
+
+const getAriaSort = (
+  columnId: string,
+  sortColumnId: string,
+  sortDirection: SortDirection,
+) => {
+  if (columnId !== sortColumnId) return 'none';
+  return sortDirection === 'asc' ? 'ascending' : 'descending';
+};
+
+// Drawn only for the column currently doing the sorting — the arrow points up
+// for ascending and is flipped for descending, so one glyph covers both.
+const SortIcon = ({ direction }: { direction: SortDirection }) => (
+  <svg
+    className={`w-3.5 h-3.5 shrink-0 text-gray-800 dark:text-white transition-transform duration-200 ${
+      direction === 'desc' ? 'rotate-180' : ''
+    }`}
+    aria-hidden="true"
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    fill="none"
+    viewBox="0 0 24 24"
+  >
+    <path
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      d="M12 6v13m0-13 4 4m-4-4-4 4"
+    />
+  </svg>
+);
+
+const SortableHeaderLabel = ({
+  columnId,
+  sortColumnId,
+  sortDirection,
+  onSortChange,
+  children,
+}: {
+  columnId: string;
+  sortColumnId: string;
+  sortDirection: SortDirection;
+  onSortChange: (columnId: string) => void;
+  children: React.ReactNode;
+}) => {
+  const { t } = useTranslation();
+  const isActive = columnId === sortColumnId;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSortChange(columnId)}
+      title={t(
+        isActive && sortDirection === 'asc'
+          ? `${I18N_NS}.sortDescendingTitle`
+          : `${I18N_NS}.sortAscendingTitle`,
+      )}
+      className="inline-flex items-center gap-1.5 cursor-pointer hover:text-gray-900 dark:hover:text-gray-200 transition-colors focus:outline-none"
+    >
+      {children}
+      {isActive && <SortIcon direction={sortDirection} />}
+    </button>
+  );
+};
 
 const ProcessedResultGroup = ({
   searchQuery,
@@ -23,6 +113,9 @@ const ProcessedResultGroup = ({
   primaryFieldId,
   templateTagFieldIds,
   searchTerm,
+  sortColumnId,
+  sortDirection,
+  onSortChange,
   onBtnGenerateDocmClick,
   addToast,
 }: {
@@ -38,16 +131,21 @@ const ProcessedResultGroup = ({
   primaryFieldId: string | null;
   templateTagFieldIds: string[];
   searchTerm: string;
+  sortColumnId: string;
+  sortDirection: SortDirection;
+  onSortChange: (columnId: string) => void;
   onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
 
-  // State to track expanded rows (using index as key for simplicity in this context)
+  const rowIds = React.useMemo(() => buildRowIds(items), [items]);
+
+  // State to track expanded rows (keyed by document, not by table position)
   // Initialize with all expanded (true)
-  const [expandedRows, setExpandedRows] = React.useState<Set<number>>(
-    () => new Set(items.map((_, i) => i)),
+  const [expandedRows, setExpandedRows] = React.useState<Set<string>>(
+    () => new Set(rowIds),
   );
 
   const areAllExpanded = expandedRows.size === items.length;
@@ -58,17 +156,17 @@ const ProcessedResultGroup = ({
       setExpandedRows(new Set());
     } else {
       // Expand all
-      setExpandedRows(new Set(items.map((_, i) => i)));
+      setExpandedRows(new Set(rowIds));
     }
   };
 
-  const handleToggleRow = (index: number) => {
+  const handleToggleRow = (rowId: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
+      if (next.has(rowId)) {
+        next.delete(rowId);
       } else {
-        next.add(index);
+        next.add(rowId);
       }
       return next;
     });
@@ -178,7 +276,14 @@ const ProcessedResultGroup = ({
             <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
               <tr>
                 {/* z-10 */}
-                <th className="sticky left-0 bg-gray-100 dark:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#4b5563] px-6 py-3 whitespace-nowrap">
+                <th
+                  className="sticky left-0 bg-gray-100 dark:bg-gray-700 shadow-[inset_-1px_0_0_0_#e5e7eb] dark:shadow-[inset_-1px_0_0_0_#4b5563] px-6 py-3 whitespace-nowrap"
+                  aria-sort={getAriaSort(
+                    DOC_NAME_SORT_COLUMN_ID,
+                    sortColumnId,
+                    sortDirection,
+                  )}
+                >
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -206,19 +311,52 @@ const ProcessedResultGroup = ({
                         />
                       </svg>
                     </button>
-                    <Trans i18nKey={`${I18N_NS}.fileNameHeader`} />
+                    <SortableHeaderLabel
+                      columnId={DOC_NAME_SORT_COLUMN_ID}
+                      sortColumnId={sortColumnId}
+                      sortDirection={sortDirection}
+                      onSortChange={onSortChange}
+                    >
+                      <Trans i18nKey={`${I18N_NS}.fileNameHeader`} />
+                    </SortableHeaderLabel>
                   </div>
                 </th>
-                <th className="px-6 py-3 whitespace-nowrap">
-                  <Trans i18nKey={`${I18N_NS}.pathHeader`} />
+                <th
+                  className="px-6 py-3 whitespace-nowrap"
+                  aria-sort={getAriaSort(
+                    FILE_PATH_SORT_COLUMN_ID,
+                    sortColumnId,
+                    sortDirection,
+                  )}
+                >
+                  <SortableHeaderLabel
+                    columnId={FILE_PATH_SORT_COLUMN_ID}
+                    sortColumnId={sortColumnId}
+                    sortDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  >
+                    <Trans i18nKey={`${I18N_NS}.pathHeader`} />
+                  </SortableHeaderLabel>
                 </th>
                 {/* Dynamic Headers based on Parser Schema TABLE fields */}
                 {tableFields.map((field) => (
                   <th
                     key={field.id}
                     className="px-6 py-3 whitespace-nowrap w-px text-center"
+                    aria-sort={getAriaSort(
+                      field.id,
+                      sortColumnId,
+                      sortDirection,
+                    )}
                   >
-                    {field.label}
+                    <SortableHeaderLabel
+                      columnId={field.id}
+                      sortColumnId={sortColumnId}
+                      sortDirection={sortDirection}
+                      onSortChange={onSortChange}
+                    >
+                      {field.label}
+                    </SortableHeaderLabel>
                   </th>
                 ))}
                 {/* Dynamic Headers */}
@@ -226,8 +364,20 @@ const ProcessedResultGroup = ({
                   <th
                     key={conf.id || idx}
                     className="px-6 py-3 whitespace-nowrap w-px text-center"
+                    aria-sort={getAriaSort(
+                      conf.id,
+                      sortColumnId,
+                      sortDirection,
+                    )}
                   >
-                    {conf.labelFilterTitle}
+                    <SortableHeaderLabel
+                      columnId={conf.id}
+                      sortColumnId={sortColumnId}
+                      sortDirection={sortDirection}
+                      onSortChange={onSortChange}
+                    >
+                      {conf.labelFilterTitle}
+                    </SortableHeaderLabel>
                   </th>
                 ))}
               </tr>
@@ -235,10 +385,10 @@ const ProcessedResultGroup = ({
             <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
               {items.map((result, index) => (
                 <ProcessedResultRow
-                  key={index}
+                  key={rowIds[index]}
                   result={result}
-                  isExpanded={expandedRows.has(index)}
-                  onToggleExpand={() => handleToggleRow(index)}
+                  isExpanded={expandedRows.has(rowIds[index])}
+                  onToggleExpand={() => handleToggleRow(rowIds[index])}
                   onOpenFile={handleOpenFile}
                   onViewContent={onViewContent}
                   filterConfigs={filterConfigs} // Pass config
