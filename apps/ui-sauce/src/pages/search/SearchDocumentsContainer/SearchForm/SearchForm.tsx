@@ -9,6 +9,11 @@ import {
   Select,
 } from '../../../../components';
 import { fetchRequest } from '../../../../utils';
+import {
+  asPerLineSearchQueries,
+  asSingleSearchQuery,
+  joinSearchQueries,
+} from '../search-queries';
 import type { SearchFormProps } from './SearchForm.types';
 import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
 import { FPDModalParserConfigSettings } from './components/FPDModalParserConfigSettings';
@@ -25,6 +30,8 @@ const SearchForm = ({
   directoryData,
   selectedPaths,
   onTogglePath,
+  searchQueries,
+  onSearchQueriesChange,
   allowFuzzyMatch,
   onAllowFuzzyMatchChange,
   maxTypoDistance,
@@ -40,7 +47,11 @@ const SearchForm = ({
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
   const [sortOrder, setSortOrder] = React.useState('desc');
-  const [bulkNamesValue, setBulkNamesValue] = React.useState('');
+  // A paste out of Excel turns into several separate searches, which the plain
+  // textarea gives no sign of — this splits it into one visible row per query.
+  // Deliberately not persisted: it's a way to look at the current input, not a
+  // preference about how the form should open.
+  const [isPerLineMode, setIsPerLineMode] = React.useState(false);
   const [isSearchHistoryOpen, setIsSearchHistoryOpen] = React.useState(false);
   const [isParserConfigSettingsOpen, setIsParserConfigSettingsOpen] =
     React.useState(false);
@@ -109,6 +120,39 @@ const SearchForm = ({
     onParserConfigsSaved();
   };
 
+  const handlePerLineModeChange = (isEnabled: boolean) => {
+    // The toggle decides what counts as one query, not just how the input is
+    // drawn: the textarea searches its whole content as a single phrase (a
+    // quote spanning several lines stays one search), while the per-line editor
+    // searches each row on its own. Converting here rather than at submit keeps
+    // what gets sent identical to what's on screen.
+    onSearchQueriesChange(
+      isEnabled
+        ? asPerLineSearchQueries(searchQueries)
+        : asSingleSearchQuery(searchQueries),
+    );
+
+    setIsPerLineMode(isEnabled);
+  };
+
+  const handleSearchQueryChange = (index: number, value: string) => {
+    onSearchQueriesChange(
+      searchQueries.map((query, i) => (i === index ? value : query)),
+    );
+  };
+
+  const handleSearchQueryRemove = (index: number) => {
+    const remaining = searchQueries.filter((_, i) => i !== index);
+
+    // Clearing the last row rather than dropping it — an empty editor would
+    // leave nothing on screen to type into.
+    onSearchQueriesChange(remaining.length > 0 ? remaining : ['']);
+  };
+
+  const handleSearchQueryAdd = () => {
+    onSearchQueriesChange([...searchQueries, '']);
+  };
+
   return (
     <div className="lg:col-span-1 lg:h-full lg:min-h-0">
       <div
@@ -127,27 +171,113 @@ const SearchForm = ({
             <div
               className={`transition-all duration-500 ease-in-out ${
                 isSettingsExpanded
-                  ? 'max-h-[1000px] opacity-100 pb-4'
+                  ? 'max-h-full opacity-100 pb-4'
                   : 'max-h-0 opacity-0 overflow-hidden'
               }`}
             >
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <label
-                    htmlFor="bulkNamesTextArea"
-                    className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
-                  >
-                    <Trans i18nKey={`${I18N_NS}.searchTextLabel`} />
-                  </label>
-                  <textarea
-                    id="bulkNamesTextArea"
-                    name="bulkNames"
-                    rows={4}
-                    value={bulkNamesValue}
-                    onChange={(e) => setBulkNamesValue(e.target.value)}
-                    className="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                    placeholder={t(`${I18N_NS}.searchTextPlaceholder`)}
-                  />
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <label
+                      htmlFor={
+                        isPerLineMode
+                          ? 'searchQueryInput-0'
+                          : 'bulkNamesTextArea'
+                      }
+                      className="text-sm font-medium text-gray-900 dark:text-white"
+                    >
+                      <Trans i18nKey={`${I18N_NS}.searchTextLabel`} />
+                    </label>
+                    <Checkbox
+                      theme="toggle"
+                      labelPlacement="start"
+                      checked={isPerLineMode}
+                      onChange={handlePerLineModeChange}
+                      label={<Trans i18nKey={`${I18N_NS}.perLineModeLabel`} />}
+                      labelClassName="whitespace-nowrap"
+                    />
+                  </div>
+
+                  {isPerLineMode ? (
+                    <div className="flex flex-col gap-2">
+                      {/* Keyed by position on purpose: the rows are plain
+                          strings with no identity of their own, and they carry
+                          no state beyond the value shown. */}
+                      {searchQueries.map((query, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          {/*
+                          <span className="w-5 shrink-0 text-right text-xs text-gray-400 dark:text-gray-500">
+                            {index + 1}
+                          </span>
+                          */}
+                          <input
+                            id={`searchQueryInput-${index}`}
+                            type="text"
+                            value={query}
+                            onChange={(e) =>
+                              handleSearchQueryChange(index, e.target.value)
+                            }
+                            className="block flex-1 min-w-0 p-2.5 text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                            placeholder={t(`${I18N_NS}.searchTextPlaceholder`)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSearchQueryRemove(index)}
+                            title={t(`${I18N_NS}.removeSearchQueryTitle`)}
+                            className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600 focus:outline-none dark:hover:bg-gray-700 dark:hover:text-red-400 transition-colors cursor-pointer"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              aria-hidden="true"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth="2"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M6 18 17.94 6M18 18 6.06 6"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={handleSearchQueryAdd}
+                        className="self-start flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-500 cursor-pointer"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth="2"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 12h14m-7 7V5"
+                          />
+                        </svg>
+                        <Trans i18nKey={`${I18N_NS}.addSearchQueryButton`} />
+                      </button>
+                    </div>
+                  ) : (
+                    <textarea
+                      id="bulkNamesTextArea"
+                      rows={4}
+                      value={joinSearchQueries(searchQueries)}
+                      // Whatever is typed here is one query, newlines and all.
+                      onChange={(e) => onSearchQueriesChange([e.target.value])}
+                      className="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                      placeholder={t(`${I18N_NS}.searchTextPlaceholder`)}
+                    />
+                  )}
                 </div>
 
                 {/* Max Typo Distance & Fuzzy Toggle */}
@@ -533,7 +663,13 @@ const SearchForm = ({
         isOpen={isSearchHistoryOpen}
         onClose={() => setIsSearchHistoryOpen(false)}
         onSelectQuery={(query) => {
-          setBulkNamesValue(query);
+          // History keeps the multi-line string the textarea showed, so it has
+          // to be re-read through whichever editor is currently open.
+          onSearchQueriesChange(
+            isPerLineMode
+              ? asPerLineSearchQueries([query])
+              : asSingleSearchQuery([query]),
+          );
           setIsSearchHistoryOpen(false);
         }}
       />

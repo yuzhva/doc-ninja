@@ -13,6 +13,12 @@ interface SearchFormProps {
   selectedPaths: Set<string>;
   onTogglePath: (path: string, checked: boolean) => void;
 
+  // One search query per entry. Owned by the container because the payload
+  // sends it as an array, and FormData can't carry one through the
+  // Object.fromEntries() the submit handler builds `formDataJSON` with.
+  searchQueries: string[];
+  onSearchQueriesChange: (queries: string[]) => void;
+
   // Typo tolerance — read directly from state (not FormData) when building
   // the search payload, so the container owns it.
   allowFuzzyMatch: boolean;
