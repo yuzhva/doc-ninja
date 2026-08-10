@@ -488,8 +488,24 @@ const SearchForm = ({
                 directoryData.structure.fsNestedItems.length > 0 && (
                   <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
                     <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
-                      <Trans i18nKey={`${I18N_NS}.searchFoldersLabel`} />
+                      <Trans
+                        i18nKey={`${I18N_NS}.${
+                          selectedPaths.size === 0
+                            ? 'searchFoldersLabelAll'
+                            : 'searchFoldersLabelScoped'
+                        }`}
+                      />
                     </div>
+                    {/* An empty selection searches everything — without saying
+                        so, the unchecked boxes read as "nothing is included"
+                        and users tick every folder by hand. */}
+                    {/*
+                    <div className={`text-xs text-gray-400 dark:text-gray-500 mb-2 ${selectedPaths.size === 0 ? '' : 'opacity-0'}`}>
+                        <Trans
+                          i18nKey={`${I18N_NS}.searchFoldersHintAll`}
+                        />
+                    </div>
+                    */}
                     {directoryData.structure.fsNestedItems.map(
                       (fsNestedItem: any) => (
                         <FPDDirectoryTreeItem

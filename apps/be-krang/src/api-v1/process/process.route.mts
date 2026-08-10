@@ -13,6 +13,10 @@ const ProcessRoute = expressRouter
     ApiV1ProcessController.postReadFileContent,
   )
   .post(
+    '/process/directory-structure',
+    ApiV1ProcessController.postReadDirectoryStructure,
+  )
+  .post(
     '/process/documents-index',
     ApiV1ProcessController.postManageDocumentsIndex,
   )

@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import * as fs from 'fs';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 import * as path from 'path';
 import { FileScannerNode } from 'toolkit--local/node';
@@ -207,6 +208,76 @@ const postReadFileContent = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Re-scans an already-picked source folder so the UI can refresh its directory
+ * tree (new subfolders, changed file counts) without making the user re-open
+ * the folder picker.
+ *
+ * Deliberately mirrors Electron's directory-picker handler: the same
+ * `FileScannerNode.scanDirectory` defaults and the same
+ * `{ name, filePath, files }` DTO. That parity matters — the UI compares a
+ * refreshed tree against the stored one to decide whether anything changed, so
+ * any scan-option drift here would make every refresh look like a change.
+ */
+const postReadDirectoryStructure = async (req: Request, res: Response) => {
+  try {
+    const { sourcePath } = req.body;
+
+    if (!sourcePath || typeof sourcePath !== 'string') {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'INVALID_PARAMETERS',
+          message: 'sourcePath is required and must be a string.',
+        },
+      });
+    }
+
+    // A source folder can be renamed, moved or deleted between two runs, so
+    // this is an expected outcome rather than a server fault — hence 404 and
+    // not the catch-all 500 below.
+    let stats: fs.Stats;
+    try {
+      stats = await fs.promises.stat(sourcePath);
+    } catch {
+      return res.status(StatusCodes.NOT_FOUND).json({
+        error: {
+          code: 'SOURCE_PATH_NOT_FOUND',
+          message: `Source folder not found: ${sourcePath}`,
+        },
+      });
+    }
+
+    if (!stats.isDirectory()) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: {
+          code: 'INVALID_PARAMETERS',
+          message: `Source path is not a directory: ${sourcePath}`,
+        },
+      });
+    }
+
+    const files = await FileScannerNode.scanDirectory(sourcePath);
+
+    res.status(StatusCodes.OK).json({
+      name: path.basename(sourcePath),
+      filePath: sourcePath,
+      files,
+    });
+  } catch (error) {
+    console.error('Read directory structure error:', error);
+
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message:
+          error instanceof Error
+            ? error.message
+            : ReasonPhrases.INTERNAL_SERVER_ERROR,
+      },
+    });
+  }
+};
+
 type DocumentsIndexAction = 'reindex' | 'delete-cache';
 
 const DOCUMENTS_INDEX_ACTIONS: DocumentsIndexAction[] = [
@@ -272,5 +343,6 @@ export {
   postGenerateFilteredSpreadsheet,
   postManageDocumentsIndex,
   postProcessDocuments,
+  postReadDirectoryStructure,
   postReadFileContent,
 };

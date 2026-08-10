@@ -58,7 +58,9 @@
           "parserConfigLabel": "Processing for found text",
           "noParsingOption": "No processing",
           "parserSettingsTitle": "Document parser settings",
-          "searchFoldersLabel": "Folders to search"
+          "searchFoldersLabelAll": "Searching all folder",
+          "searchFoldersLabelScoped": "Searching selected only",
+          "searchFoldersHintAll": "(if none selected)"
         },
         "searchResults": {
           "excelFileTypeDescription": "Excel File",
