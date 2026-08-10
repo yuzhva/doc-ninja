@@ -35,9 +35,9 @@
           "reindexSuccessToast": "Переіндексацію завершено.",
           "deleteCacheSuccessToast": "Кеш індексації видалено.",
           "actionFailedToast": "Не вдалося виконати дію: {{message}}",
-          "searchTextLabel": "Текст для пошуку",
+          "searchTextLabel": "Текст пошуку",
           "searchTextPlaceholder": "Введіть ключове слово або фразу...",
-          "perLineModeLabel": "По рядках",
+          "perLineModeLabel": "Мульти пошук",
           "removeSearchQueryTitle": "Видалити запит",
           "addSearchQueryButton": "Додати запит",
           "maxTypoDistanceLabel": "К-сть символів одруківки",
@@ -45,7 +45,7 @@
           "allowFuzzyMatchLabelLine2": "співпадіння",
           "pageSizeLabel": "К-сть результатів запиту",
           "findAllLabel": "Знайти все",
-          "sortOrderLabel": "Сортування (дата)",
+          "sortOrderLabel": "Сортування",
           "sortOrderOptions": {
             "desc": "Новіші спочатку",
             "asc": "Старіші спочатку"
@@ -82,6 +82,8 @@
           "saveXlsxButton": "Зберегти .xlsx",
           "addFiltersButton": "Додайте фільтри",
           "noResultsForFiltersMessage": "Нічого не знайдено за обраними фільтрами",
+          "noMatchesMessage": "За цим запитом нічого не знайдено",
+          "searchingMessage": "Пошук ...",
           "resultsPlaceholderMessage": "Результати пошуку з'являться тут..."
         }
       },

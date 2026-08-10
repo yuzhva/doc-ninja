@@ -37,7 +37,7 @@
           "actionFailedToast": "Failed to perform the action: {{message}}",
           "searchTextLabel": "Text to search",
           "searchTextPlaceholder": "Enter a keyword or phrase...",
-          "perLineModeLabel": "Line by line",
+          "perLineModeLabel": "Multi search",
           "removeSearchQueryTitle": "Remove query",
           "addSearchQueryButton": "Add query",
           "maxTypoDistanceLabel": "Allowed typo num. of chars",
@@ -45,7 +45,7 @@
           "allowFuzzyMatchLabelLine2": "fuzzy match",
           "pageSizeLabel": "Number of results",
           "findAllLabel": "Find all",
-          "sortOrderLabel": "Sort (date)",
+          "sortOrderLabel": "Sort",
           "sortOrderOptions": {
             "desc": "Newest first",
             "asc": "Oldest first"
@@ -82,6 +82,8 @@
           "saveXlsxButton": "Save .xlsx",
           "addFiltersButton": "Add filters",
           "noResultsForFiltersMessage": "Nothing found for the selected filters",
+          "noMatchesMessage": "No matches found for this search",
+          "searchingMessage": "Searching...",
           "resultsPlaceholderMessage": "Search results will appear here..."
         }
       },

@@ -124,7 +124,7 @@ const ProcessedResultGroup = ({
   // Absent for a group the engine reported no pagination for — both counters
   // below are then hidden rather than guessed at.
   totals?: SearchQueryTotals;
-  maxResults?: number;
+  maxResults?: string;
   onViewContent: (item: ResultGroup) => void;
   filterConfigs: any[]; // Add prop type
   tableFields: ExtractedTableField[];

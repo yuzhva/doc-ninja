@@ -44,6 +44,12 @@ const SearchForm = ({
   onSubmit,
 }: SearchFormProps) => {
   const { t } = useTranslation();
+
+  // Whether a source folder is configured at all — checked in one place so
+  // every gate below (submit button, index actions, parser/tree sections, the
+  // card's own height) reads the same signal instead of re-deriving it.
+  const isSourceDirectorySelected = !!directoryData?.structure;
+
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
   const [sortOrder, setSortOrder] = React.useState('desc');
@@ -57,7 +63,7 @@ const SearchForm = ({
     React.useState(false);
 
   const [isSettingsExpanded, setIsSettingsExpanded] = React.useState(
-    !!directoryData?.structure, // Check structure existence
+    isSourceDirectorySelected,
   );
 
   // Auto-expand whenever a new directory arrives from the container (i.e.
@@ -156,7 +162,9 @@ const SearchForm = ({
   return (
     <div className="lg:col-span-1 lg:h-full lg:min-h-0">
       <div
-        className="flex rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800 flex-col lg:h-full lg:min-h-0"
+        className={`flex rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800 flex-col ${
+          isSourceDirectorySelected ? 'lg:h-full lg:min-h-0' : ''
+        }`}
         data-testid="flowbite-card"
       >
         {/* Own scroll container from `lg` up — `justify-start` because a
@@ -403,9 +411,8 @@ const SearchForm = ({
                   <ButtonProcessing
                     type="submit"
                     isLoading={isProcessing}
-                    disabled={!directoryData?.structure}
+                    disabled={!isSourceDirectorySelected}
                   >
-                    {/* {isProcessing ? 'Обробляю документи...' : 'Пошук збігів'} */}
                     <Trans i18nKey={`${I18N_NS}.searchButton`} />
                   </ButtonProcessing>
                 </div>
@@ -466,11 +473,11 @@ const SearchForm = ({
                       onClick={toggle}
                       title={t(`${I18N_NS}.documentsIndexActionsTitle`)}
                       className={`${
-                        !directoryData?.structure
+                        !isSourceDirectorySelected
                           ? 'opacity-50 cursor-not-allowed '
                           : 'cursor-pointer '
                       }shrink-0 rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700`}
-                      disabled={!directoryData?.structure}
+                      disabled={!isSourceDirectorySelected}
                     >
                       <svg
                         className="w-5 h-5"
@@ -554,7 +561,7 @@ const SearchForm = ({
               </div>
 
               {/* Parser Config Selection */}
-              {directoryData?.structure && (
+              {isSourceDirectorySelected && (
                 <div className="sm:col-span-2">
                   <label
                     htmlFor="parserConfigName"
@@ -613,7 +620,7 @@ const SearchForm = ({
               )}
 
               {/* Directory Tree View */}
-              {directoryData?.structure &&
+              {isSourceDirectorySelected &&
                 directoryData.structure.fsNestedItems &&
                 directoryData.structure.fsNestedItems.length > 0 && (
                   <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
