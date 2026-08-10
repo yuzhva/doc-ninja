@@ -11,14 +11,21 @@ import {
 import { InformationExtractor } from '../../features/document-intelligence-service/information-extractor.mjs';
 import type { ExtractorSchema } from '../../features/document-intelligence-service/information-extractor.mjs';
 
+// One entry per search, as decided by the client: the search form sends its
+// whole textarea as a single entry, or one entry per row from its per-line
+// editor. Nothing is cut up here — a newline inside an entry belongs to the
+// phrase being searched for, so splitting on it would break a quote that spans
+// several lines. Only trimming and dropping the blanks is this layer's job.
+const normalizeSearchQueries = (bulkNames: unknown): string[] =>
+  (Array.isArray(bulkNames) ? bulkNames : [bulkNames])
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+
 const postProcessDocuments = async (req: Request, res: Response) => {
   try {
     // Get queries from bulkNames payload
-    const bulkNames: string = req.body.bulkNames || '';
-    const queries = bulkNames
-      .split(/[,\n]/)
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
+    const queries = normalizeSearchQueries(req.body.bulkNames);
 
     if (queries.length === 0) {
       return res.status(StatusCodes.BAD_REQUEST).json({

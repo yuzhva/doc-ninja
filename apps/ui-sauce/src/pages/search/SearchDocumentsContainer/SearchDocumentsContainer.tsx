@@ -21,6 +21,7 @@ import {
   reconcileSelectedPaths,
   rescanDirectoryStructure,
 } from './directory-structure';
+import { joinSearchQueries, normalizeSearchQueries } from './search-queries';
 
 const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
   'docNinja_selectedParserConfigName';
@@ -71,6 +72,10 @@ const SearchDocumentsContainer = ({
       return new Set();
     }
   });
+
+  // One query per entry — the payload sends them as an array, which is why
+  // they're held here rather than read back out of the form's FormData.
+  const [searchQueries, setSearchQueries] = React.useState<string[]>(['']);
 
   const [allowFuzzyMatch, setAllowFuzzyMatch] = React.useState(true);
   const [maxTypoDistance, setMaxTypoDistance] = React.useState('1');
@@ -326,7 +331,9 @@ const SearchDocumentsContainer = ({
     Parameters<typeof initSubmitHandler>[0]
   >(
     async (formDataJSON) => {
-      addSearchHistoryEntry(String(formDataJSON.bulkNames || ''));
+      // History is stored as the one multi-line string the textarea shows, so
+      // restoring an entry drops straight back into either editor.
+      addSearchHistoryEntry(joinSearchQueries(searchQueries));
 
       // Pick up folders created/removed since the tree was last read, so the
       // scope sent below matches what is actually on disk right now.
@@ -340,6 +347,9 @@ const SearchDocumentsContainer = ({
 
       const payload = {
         ...formDataJSON,
+        // Blank rows and stray padding are the user's editing leftovers, not
+        // queries — the request carries only what's actually searchable.
+        bulkNames: normalizeSearchQueries(searchQueries),
         sourcePath:
           sourceDirectory?.structure?.path ||
           directoryData?.structure?.path ||
@@ -479,6 +489,7 @@ const SearchDocumentsContainer = ({
       sourceDirectory,
       directoryData, // Updated dependency
       refreshDirectoryStructure,
+      searchQueries,
       allowFuzzyMatch,
       maxTypoDistance,
       parserConfigs,
@@ -499,6 +510,8 @@ const SearchDocumentsContainer = ({
         directoryData={directoryData}
         selectedPaths={selectedPaths}
         onTogglePath={handleTogglePath}
+        searchQueries={searchQueries}
+        onSearchQueriesChange={setSearchQueries}
         allowFuzzyMatch={allowFuzzyMatch}
         onAllowFuzzyMatchChange={setAllowFuzzyMatch}
         maxTypoDistance={maxTypoDistance}
