@@ -8,6 +8,7 @@ import type {
   GroupedProcessedResults,
   ProcessDocumentsApiResponse,
   ProcessedResultGroup,
+  SearchQueryTotals,
   SearchResultItem,
 } from '../search-page.types';
 import { SearchForm } from './SearchForm/SearchForm';
@@ -41,6 +42,13 @@ const SearchDocumentsContainer = ({
 }) => {
   const [processedResults, setProcessedResults] =
     React.useState<GroupedProcessedResults>({});
+
+  // What the engine found per query, kept beside the grouped results: the
+  // groups below are built from `extractedResults`, which is already capped by
+  // `pageSize` and so cannot report the real totals.
+  const [searchTotalsByQuery, setSearchTotalsByQuery] = React.useState<
+    Record<string, SearchQueryTotals>
+  >({});
 
   // Initialize from LocalStorage if available
   // Store the entire processed result object instead of just the structure
@@ -365,9 +373,29 @@ const SearchDocumentsContainer = ({
               // This allows us to link the extracted results with full file metadata accurately
               const searchResultLookup = new Map<string, SearchResultItem>();
 
+              // Engine totals per query, collected in the same pass — they are
+              // reported to the user as "N of M", so they have to come from
+              // pagination rather than from the (page-capped) result arrays.
+              const totalsByQuery: Record<string, SearchQueryTotals> = {};
+
               // Handle nested structure: results is an array of SearchResultSet (one per query term)
               if (Array.isArray(resAsJson.results)) {
                 for (const resultSet of resAsJson.results) {
+                  // A query the engine failed on comes back with a stub
+                  // pagination that has no totalMatches, so both counts are
+                  // checked — a half-known total would render as a literal
+                  // "{{count}}" in the summary.
+                  if (
+                    resultSet.query &&
+                    typeof resultSet.pagination?.totalMatches === 'number' &&
+                    typeof resultSet.pagination?.totalResults === 'number'
+                  ) {
+                    totalsByQuery[resultSet.query] = {
+                      totalMatches: resultSet.pagination.totalMatches,
+                      totalResults: resultSet.pagination.totalResults,
+                    };
+                  }
+
                   if (resultSet.results && Array.isArray(resultSet.results)) {
                     for (const searchResult of resultSet.results) {
                       // Use originalFilePath as key if available
@@ -437,6 +465,7 @@ const SearchDocumentsContainer = ({
                 {} as GroupedProcessedResults,
               );
               setProcessedResults(groupedResults);
+              setSearchTotalsByQuery(totalsByQuery);
             }
             return resAsJson;
           });
@@ -484,6 +513,7 @@ const SearchDocumentsContainer = ({
 
       <SearchResults
         results={processedResults}
+        totalsByQuery={searchTotalsByQuery}
         parserConfigs={parserConfigs}
         selectedParserConfigName={selectedParserConfigName}
         addToast={addToast}
