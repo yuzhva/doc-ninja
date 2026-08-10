@@ -12,6 +12,8 @@ import type { SearchResultsProps } from './SearchResults.types';
 import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
 import { FPDDocmTemplatesDropdown } from './components/FPDDocmTemplatesDropdown';
 import { FPDModalFilterSettings } from './components/FPDModalFilterSettings';
+import { SearchPlaceholderIllustration } from './components/SearchPlaceholderIllustration';
+import { ToolbarSkeleton } from './components/ToolbarSkeleton';
 import {
   calculateDynamicValues,
   flattenGroupedResults,
@@ -35,6 +37,8 @@ const SearchResults = ({
   totalsByQuery,
   parserConfigs,
   selectedParserConfigName,
+  isProcessing,
+  isSourceDirectorySelected,
   addToast,
 }: SearchResultsProps) => {
   const { t } = useTranslation();
@@ -232,6 +236,32 @@ const SearchResults = ({
   );
 
   const hasResults = sortedResults && Object.keys(sortedResults).length > 0;
+
+  // The pane has four things to say, and `hasResults` alone can't tell them
+  // apart: an empty table reads as "nothing searched for yet" on first load,
+  // but as "the filters excluded everything" once a search has come back. The
+  // toolbars stay up for the latter — hiding them there would take away the
+  // very controls needed to widen the filters again.
+  //
+  // A run in flight outranks results already on screen, because those answer
+  // the *previous* query: leaving them up (with a live export button) invites
+  // walking away with the wrong rows.
+  //
+  // A completed search reports totals for every query it ran, even ones that
+  // matched nothing — which is the only thing separating "searched, found
+  // nothing" from "hasn't searched yet". `results` is empty in both cases.
+  const hasSearched = Object.keys(totalsByQuery).length > 0;
+  const hasResultsBeforeFiltering = Boolean(
+    results && Object.keys(results).length > 0,
+  );
+
+  const paneState: 'idle' | 'searching' | 'empty' | 'results' = isProcessing
+    ? 'searching'
+    : hasResults
+      ? 'results'
+      : hasSearched || hasResultsBeforeFiltering
+        ? 'empty'
+        : 'idle';
 
   // Shared by the table-level export dropdown and (per-row) the individual
   // download button — both just need the flat item list, not the grouping.
@@ -525,9 +555,16 @@ const SearchResults = ({
     setConfigVersion((v) => v + 1);
   };
 
+  const isPlaceholderVisible =
+    ['idle', 'searching', 'empty'].includes(paneState) && !hasResults;
+
   return (
     <div className="lg:col-span-3 lg:h-full lg:min-h-0">
-      <div className="relative bg-white shadow-md dark:bg-gray-800 sm:rounded-lg h-full flex flex-col lg:min-h-0">
+      <div
+        className={`relative bg-white shadow-md dark:bg-gray-800 sm:rounded-lg h-full flex flex-col lg:min-h-0 ${
+          isSourceDirectorySelected ? '' : 'opacity-40'
+        }`}
+      >
         {/* Sideover for Content Preview */}
         <FormProcessDocumentSideOver
           isOpen={!!previewItem}
@@ -594,283 +631,295 @@ const SearchResults = ({
           onSave={handleSaveSettings}
         />
 
-        {/* Toolbar - Row 1: Search, Max Results, Export */}
-        <div className="flex flex-wrap items-center gap-2 p-4">
-          {/* Search Input */}
-          <form
-            className="flex items-center w-full sm:w-auto"
-            onSubmit={(e) => e.preventDefault()}
-          >
-            <label htmlFor="simple-search" className="sr-only">
-              <Trans i18nKey={`${I18N_NS}.filterLabel`} />
-            </label>
-            <div className="relative w-full sm:w-64 md:w-72">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg
-                  aria-hidden="true"
-                  className="w-5 h-5 text-gray-500 dark:text-gray-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                    clipRule="evenodd"
+        {/* Every control up here acts on results, so the real ones only appear
+            once there are some to act on — no row of dead inputs on first load.
+            Until then the same bars stand in for them, pulsing while a search
+            runs and still before one has been asked for. */}
+        {isPlaceholderVisible ? (
+          <ToolbarSkeleton tempo={isProcessing ? 'loading' : 'ghost'} />
+        ) : (
+          <>
+            {/* Toolbar - Row 1: Search, Max Results, Export */}
+            <div className="flex flex-wrap items-center gap-2 p-4">
+              {/* Search Input */}
+              <form
+                className="flex items-center w-full sm:w-auto"
+                onSubmit={(e) => e.preventDefault()}
+              >
+                <label htmlFor="simple-search" className="sr-only">
+                  <Trans i18nKey={`${I18N_NS}.filterLabel`} />
+                </label>
+                <div className="relative w-full sm:w-64 md:w-72">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <svg
+                      aria-hidden="true"
+                      className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    id="simple-search"
+                    className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                    placeholder={t(`${I18N_NS}.filterLabel`)}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                   />
-                </svg>
-              </div>
-              <input
-                type="text"
-                id="simple-search"
-                className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                placeholder={t(`${I18N_NS}.filterLabel`)}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
+                      onClick={() => setSearchTerm('')}
+                    >
+                      <svg
+                        className="w-3 h-3"
+                        aria-hidden="true"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 14 14"
+                      >
+                        <path
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                        />
+                      </svg>
+                      <span className="sr-only">
+                        <Trans i18nKey={`${I18N_NS}.clearSearchLabel`} />
+                      </span>
+                    </button>
+                  )}
+                  {searchTerm && (
+                    <BadgeCounter
+                      count={1}
+                      variant="red"
+                      size="md"
+                      bordered
+                      className="absolute -top-2 -end-2"
+                    />
+                  )}
+                </div>
+              </form>
+
+              {/* Max Results Counter */}
+              <div className="relative flex items-center max-w-[8rem]">
                 <button
                   type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
-                  onClick={() => setSearchTerm('')}
+                  id="decrement-button"
+                  onClick={handleDecrementMaxResults}
+                  className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-s-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
                 >
                   <svg
-                    className="w-3 h-3"
+                    className="w-3 h-3 text-gray-900 dark:text-white"
                     aria-hidden="true"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
-                    viewBox="0 0 14 14"
+                    viewBox="0 0 18 2"
                   >
                     <path
                       stroke="currentColor"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth="2"
-                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                      d="M1 1h16"
                     />
                   </svg>
-                  <span className="sr-only">
-                    <Trans i18nKey={`${I18N_NS}.clearSearchLabel`} />
-                  </span>
                 </button>
-              )}
-              {searchTerm && (
-                <BadgeCounter
-                  count={1}
-                  variant="red"
-                  size="md"
-                  bordered
-                  className="absolute -top-2 -end-2"
+                <input
+                  type="text"
+                  id="max-results-input"
+                  className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                  placeholder={t(`${I18N_NS}.allResultsPlaceholder`)}
+                  value={maxResults}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^\d+$/.test(val)) {
+                      setMaxResults(val);
+                    }
+                  }}
                 />
+                <button
+                  type="button"
+                  id="increment-button"
+                  onClick={handleIncrementMaxResults}
+                  className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-e-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
+                >
+                  <svg
+                    className="w-3 h-3 text-gray-900 dark:text-white"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 18 18"
+                  >
+                    <path
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 1v16M1 9h16"
+                    />
+                  </svg>
+                </button>
+                {maxResults !== '' && (
+                  <BadgeCounter
+                    count={1}
+                    variant="red"
+                    size="md"
+                    bordered
+                    className="absolute -top-2 -end-2"
+                  />
+                )}
+              </div>
+
+              <div className="flex-grow" />
+
+              {/* Export Button */}
+              <FPDDocmTemplatesDropdown
+                items={flattenedItems}
+                templateTagFieldIds={allFieldIds}
+                primaryFieldId={primaryFieldId}
+                onGenerate={handleGenerateDocm}
+                addToast={addToast}
+              />
+
+              <button
+                type="button"
+                className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
+                onClick={handleButtonExportClick}
+                disabled={!hasResults}
+              >
+                <svg
+                  className="w-4 h-4 mr-2"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10 3v4a1 1 0 0 1-1 1H5m8-2h3m-3 3h3m-4 3v6m4-3H8M19 4v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1ZM8 12v6h8v-6H8Z"
+                  />
+                </svg>
+                <Trans i18nKey={`${I18N_NS}.saveXlsxButton`} />
+              </button>
+            </div>
+
+            {/* Divider */}
+            <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
+
+            {/* Toolbar - Row 2: Filters */}
+            <div className="flex flex-wrap items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20">
+              {filterConfigs.length === 0 ? (
+                <>
+                  <div className="flex-grow" />
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
+                  >
+                    <svg
+                      className="mr-2 w-4 h-4 text-gray-400"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                      />
+                    </svg>
+                    <Trans i18nKey={`${I18N_NS}.addFiltersButton`} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex-grow" />
+
+                  {/* Settings cog - rendered as the first item in the filters cluster */}
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
+                  >
+                    <svg
+                      className="w-4 h-4 text-gray-400"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
+                      />
+                    </svg>
+                  </button>
+
+                  {/* Dynamic Filters rendering */}
+                  {filterConfigs.map((config, index) => {
+                    // Extract unique options from rules
+                    const uniqueOptions = Array.from(
+                      new Set<string>(
+                        config.filterRules
+                          ?.map((r: any) => r.labelOption)
+                          .filter(Boolean) || [],
+                      ),
+                    );
+
+                    if (uniqueOptions.length === 0) return null;
+
+                    // Use config.id as the stable key for state
+                    // Fallback to title-index only if id is missing (though filtering won't work without id)
+                    const filterId =
+                      config.id || `${config.labelFilterTitle}-${index}`;
+
+                    return (
+                      <FilterDropdown
+                        key={filterId}
+                        label={config.labelFilterTitle}
+                        dropdownTitle={config.labelFilterDescription}
+                        items={uniqueOptions.sort()}
+                        selectedItems={selectedFilters[filterId] || []}
+                        onItemChange={(item) =>
+                          handleFilterChange(filterId, item)
+                        }
+                        idPrefix={`filter-${filterId}`}
+                      />
+                    );
+                  })}
+                </>
               )}
             </div>
-          </form>
-
-          {/* Max Results Counter */}
-          <div className="relative flex items-center max-w-[8rem]">
-            <button
-              type="button"
-              id="decrement-button"
-              onClick={handleDecrementMaxResults}
-              className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-s-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
-            >
-              <svg
-                className="w-3 h-3 text-gray-900 dark:text-white"
-                aria-hidden="true"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 18 2"
-              >
-                <path
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M1 1h16"
-                />
-              </svg>
-            </button>
-            <input
-              type="text"
-              id="max-results-input"
-              className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-              placeholder={t(`${I18N_NS}.allResultsPlaceholder`)}
-              value={maxResults}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === '' || /^\d+$/.test(val)) {
-                  setMaxResults(val);
-                }
-              }}
-            />
-            <button
-              type="button"
-              id="increment-button"
-              onClick={handleIncrementMaxResults}
-              className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-e-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
-            >
-              <svg
-                className="w-3 h-3 text-gray-900 dark:text-white"
-                aria-hidden="true"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 18 18"
-              >
-                <path
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M9 1v16M1 9h16"
-                />
-              </svg>
-            </button>
-            {maxResults !== '' && (
-              <BadgeCounter
-                count={1}
-                variant="red"
-                size="md"
-                bordered
-                className="absolute -top-2 -end-2"
-              />
-            )}
-          </div>
-
-          <div className="flex-grow" />
-
-          {/* Export Button */}
-          <FPDDocmTemplatesDropdown
-            items={flattenedItems}
-            templateTagFieldIds={allFieldIds}
-            primaryFieldId={primaryFieldId}
-            onGenerate={handleGenerateDocm}
-            addToast={addToast}
-          />
-
-          <button
-            type="button"
-            className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
-            onClick={handleButtonExportClick}
-            disabled={!hasResults}
-          >
-            <svg
-              className="w-4 h-4 mr-2"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth="2"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10 3v4a1 1 0 0 1-1 1H5m8-2h3m-3 3h3m-4 3v6m4-3H8M19 4v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1ZM8 12v6h8v-6H8Z"
-              />
-            </svg>
-            <Trans i18nKey={`${I18N_NS}.saveXlsxButton`} />
-          </button>
-        </div>
-
-        {/* Divider */}
-        <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
-
-        {/* Toolbar - Row 2: Filters */}
-        <div className="flex flex-wrap items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20">
-          {filterConfigs.length === 0 ? (
-            <>
-              <div className="flex-grow" />
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
-              >
-                <svg
-                  className="mr-2 w-4 h-4 text-gray-400"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
-                  />
-                </svg>
-                <Trans i18nKey={`${I18N_NS}.addFiltersButton`} />
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="flex-grow" />
-
-              {/* Settings cog - rendered as the first item in the filters cluster */}
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
-              >
-                <svg
-                  className="w-4 h-4 text-gray-400"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
-                  />
-                </svg>
-              </button>
-
-              {/* Dynamic Filters rendering */}
-              {filterConfigs.map((config, index) => {
-                // Extract unique options from rules
-                const uniqueOptions = Array.from(
-                  new Set<string>(
-                    config.filterRules
-                      ?.map((r: any) => r.labelOption)
-                      .filter(Boolean) || [],
-                  ),
-                );
-
-                if (uniqueOptions.length === 0) return null;
-
-                // Use config.id as the stable key for state
-                // Fallback to title-index only if id is missing (though filtering won't work without id)
-                const filterId =
-                  config.id || `${config.labelFilterTitle}-${index}`;
-
-                return (
-                  <FilterDropdown
-                    key={filterId}
-                    label={config.labelFilterTitle}
-                    dropdownTitle={config.labelFilterDescription}
-                    items={uniqueOptions.sort()}
-                    selectedItems={selectedFilters[filterId] || []}
-                    onItemChange={(item) => handleFilterChange(filterId, item)}
-                    idPrefix={`filter-${filterId}`}
-                  />
-                );
-              })}
-            </>
-          )}
-        </div>
+          </>
+        )}
 
         {/* Divider */}
         <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
@@ -878,12 +927,42 @@ const SearchResults = ({
         {/* Content Area — the only part of the results card that scrolls, so
             the toolbars above stay put while the list moves. */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          {!hasResults ? (
-            <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-              {results && Object.keys(results).length > 0 ? (
-                <Trans i18nKey={`${I18N_NS}.noResultsForFiltersMessage`} />
+          {/* A run in flight outranks results already on screen — those answer
+              the *previous* query, and showing them under a live export button
+              invites walking away with the wrong rows. So 'searching' is
+              checked before hasResults, not after. */}
+
+          {isPlaceholderVisible ? (
+            <div className="flex flex-col items-center justify-center gap-4 h-full text-gray-500 dark:text-gray-400">
+              {paneState === 'searching' ? (
+                <>
+                  <SearchPlaceholderIllustration
+                    className="w-1/6 max-w-40"
+                    isAnimationInProgress={isProcessing}
+                  />
+                  <Trans i18nKey={`${I18N_NS}.searchingMessage`} />
+                </>
+              ) : paneState === 'empty' ? (
+                <>
+                  <SearchPlaceholderIllustration
+                    className="w-1/6 max-w-40"
+                    icon="notFound"
+                  />
+                  {/* Which of the two messages applies turns on whether
+                      anything survived the engine but not the filters;
+                      blaming filters the user never set would send them
+                      hunting for a control to clear. */}
+                  {hasResultsBeforeFiltering ? (
+                    <Trans i18nKey={`${I18N_NS}.noResultsForFiltersMessage`} />
+                  ) : (
+                    <Trans i18nKey={`${I18N_NS}.noMatchesMessage`} />
+                  )}
+                </>
               ) : (
-                <Trans i18nKey={`${I18N_NS}.resultsPlaceholderMessage`} />
+                <>
+                  <SearchPlaceholderIllustration className="w-1/6 max-w-40" />
+                  <Trans i18nKey={`${I18N_NS}.resultsPlaceholderMessage`} />
+                </>
               )}
             </div>
           ) : (

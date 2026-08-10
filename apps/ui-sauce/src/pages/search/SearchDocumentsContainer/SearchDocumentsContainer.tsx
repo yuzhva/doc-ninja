@@ -529,6 +529,8 @@ const SearchDocumentsContainer = ({
         totalsByQuery={searchTotalsByQuery}
         parserConfigs={parserConfigs}
         selectedParserConfigName={selectedParserConfigName}
+        isProcessing={isProcessing}
+        isSourceDirectorySelected={!!directoryData?.structure}
         addToast={addToast}
       />
     </div>
