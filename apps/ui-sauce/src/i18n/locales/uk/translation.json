@@ -85,6 +85,18 @@
       "component": {
         "processedResultGroup": {
           "resultsForLabel": "Результати для:",
+          "matchesSummary_one": "Знайдено {{count}} співпадіння в {{files}}",
+          "matchesSummary_few": "Знайдено {{count}} співпадіння в {{files}}",
+          "matchesSummary_many": "Знайдено {{count}} співпадінь в {{files}}",
+          "matchesSummary_other": "Знайдено {{count}} співпадінь в {{files}}",
+          "matchesSummaryFiles_one": "{{count}} файлі",
+          "matchesSummaryFiles_few": "{{count}} файлах",
+          "matchesSummaryFiles_many": "{{count}} файлах",
+          "matchesSummaryFiles_other": "{{count}} файлах",
+          "previewingFiles_one": "({{count}} файл з {{total}})",
+          "previewingFiles_few": "({{count}} файли з {{total}})",
+          "previewingFiles_many": "({{count}} файлів з {{total}})",
+          "previewingFiles_other": "({{count}} файлів з {{total}})",
           "copyTooltip": "Скопіювати",
           "expandAllTitle": "Розгорнути всі",
           "collapseAllTitle": "Згорнути всі",

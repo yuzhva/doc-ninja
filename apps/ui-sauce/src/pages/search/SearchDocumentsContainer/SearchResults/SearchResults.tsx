@@ -23,6 +23,7 @@ const I18N_NS = 'page.search.container.searchResults';
 
 const SearchResults = ({
   results,
+  totalsByQuery,
   parserConfigs,
   selectedParserConfigName,
   addToast,
@@ -827,6 +828,8 @@ const SearchResults = ({
                     key={searchQuery}
                     searchQuery={searchQuery}
                     items={items}
+                    totals={totalsByQuery[searchQuery]}
+                    maxResults={maxResults}
                     onViewContent={handleViewContent}
                     filterConfigs={filterConfigs} // Pass config
                     tableFields={tableFields}

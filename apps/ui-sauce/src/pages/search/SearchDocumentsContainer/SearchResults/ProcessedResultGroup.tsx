@@ -2,7 +2,10 @@ import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { ButtonCopyToClipboard, Tooltip } from '../../../../components';
-import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
+import type {
+  ProcessedResultGroup as ResultGroup,
+  SearchQueryTotals,
+} from '../../search-page.types';
 import { ProcessedResultRow } from './ProcessedResultRow';
 import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
 import type { ExtractedTableField } from './result-helpers';
@@ -12,6 +15,8 @@ const I18N_NS = 'page.search.component.processedResultGroup';
 const ProcessedResultGroup = ({
   searchQuery,
   items,
+  totals,
+  maxResults,
   onViewContent,
   filterConfigs, // Add prop
   tableFields,
@@ -23,6 +28,10 @@ const ProcessedResultGroup = ({
 }: {
   searchQuery: string;
   items: ResultGroup[];
+  // Absent for a group the engine reported no pagination for — both counters
+  // below are then hidden rather than guessed at.
+  totals?: SearchQueryTotals;
+  maxResults?: number;
   onViewContent: (item: ResultGroup) => void;
   filterConfigs: any[]; // Add prop type
   tableFields: ExtractedTableField[];
@@ -102,20 +111,48 @@ const ProcessedResultGroup = ({
   return (
     <div className="relative overflow-hidden shadow-md sm:rounded-lg border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between bg-gray-50 px-6 py-3 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-        <h3 className="text-sm font-bold uppercase text-gray-700 dark:text-gray-200 flex items-center gap-2">
-          <span>
-            <Trans i18nKey={`${I18N_NS}.resultsForLabel`} />
-          </span>
-          <span className="text-blue-600 dark:text-blue-400">
-            {searchQuery}
-          </span>
-          <Tooltip
-            content={<Trans i18nKey={`${I18N_NS}.copyTooltip`} />}
-            placement="bottom"
-          >
-            <ButtonCopyToClipboard textToCopy={searchQuery} placement="right" />
-          </Tooltip>
-        </h3>
+        <div>
+          <div className="text-sm font-bold uppercase text-gray-700 dark:text-gray-200 flex items-center gap-2">
+            <h3>
+              <Trans i18nKey={`${I18N_NS}.resultsForLabel`} />
+            </h3>
+            <span className="text-blue-600 dark:text-blue-400">
+              {searchQuery}
+            </span>
+            <Tooltip
+              content={<Trans i18nKey={`${I18N_NS}.copyTooltip`} />}
+              placement="bottom"
+            >
+              <ButtonCopyToClipboard
+                textToCopy={searchQuery}
+                placement="right"
+              />
+            </Tooltip>
+            {/* ` items` is what survived the page cap, the filters and the
+            max-results limit — i.e. exactly the rows rendered below, which
+            neither of those inputs alone can tell the user. */}
+            {totals && maxResults && (
+              <span className="text-xs font-normal normal-case text-gray-500 dark:text-gray-400">
+                {t(`${I18N_NS}.previewingFiles`, {
+                  count: items.length,
+                  total: totals.totalResults,
+                })}
+              </span>
+            )}
+          </div>
+          <div>
+            {totals && (
+              <div className="text-xs italic text-gray-500 dark:text-gray-400">
+                {t(`${I18N_NS}.matchesSummary`, {
+                  count: totals.totalMatches,
+                  files: t(`${I18N_NS}.matchesSummaryFiles`, {
+                    count: totals.totalResults,
+                  }),
+                })}
+              </div>
+            )}
+          </div>
+        </div>
         <button
           type="button"
           className="inline-flex items-center p-2 text-sm text-gray-500 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-600 cursor-pointer"

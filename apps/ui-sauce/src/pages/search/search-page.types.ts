@@ -21,6 +21,11 @@ interface SearchResultItem {
 }
 
 interface SearchResultSet {
+  // The query this set answers — the BE sends one set per query term
+  // (DocumentIntelligenceService.searchDocuments), which is what lets the FE
+  // match a set back to its group.
+  query: string;
+  success?: boolean;
   results: SearchResultItem[];
   pagination: {
     currentPage: number;
@@ -31,6 +36,16 @@ interface SearchResultSet {
     hasNextPage: boolean;
     hasPreviousPage: boolean;
   };
+}
+
+// What the engine actually found for a query, as opposed to what came back in
+// the response: `pageSize` caps the returned documents, so these totals are the
+// only way the UI can say "showing N of M".
+interface SearchQueryTotals {
+  /** Individual matches across all documents. */
+  totalMatches: number;
+  /** Documents containing at least one match. */
+  totalResults: number;
 }
 
 // Represents an extracted information item (found in 'extractedResults').
@@ -94,6 +109,7 @@ export type {
   ProcessDocumentsApiResponse,
   ProcessedResultGroup,
   RichProcessedResultItem,
+  SearchQueryTotals,
   SearchResultItem,
   SearchResultSet,
   Snippet,

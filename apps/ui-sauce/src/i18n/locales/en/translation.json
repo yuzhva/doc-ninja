@@ -85,6 +85,12 @@
       "component": {
         "processedResultGroup": {
           "resultsForLabel": "Results for:",
+          "matchesSummary_one": "Found {{count}} match in {{files}}",
+          "matchesSummary_other": "Found {{count}} matches in {{files}}",
+          "matchesSummaryFiles_one": "{{count}} file",
+          "matchesSummaryFiles_other": "{{count}} files",
+          "previewingFiles_one": "({{count}} file of {{total}})",
+          "previewingFiles_other": "({{count}} files of {{total}})",
           "copyTooltip": "Copy",
           "expandAllTitle": "Expand all",
           "collapseAllTitle": "Collapse all",
