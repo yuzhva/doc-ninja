@@ -18,6 +18,15 @@ import {
   getExtractedFieldOutputs,
   truncateRowForXlsx,
 } from './result-helpers';
+import {
+  DEFAULT_RESULTS_SORT,
+  DOC_NAME_SORT_COLUMN_ID,
+  FILE_PATH_SORT_COLUMN_ID,
+  readStoredResultsSort,
+  sortGroupedResults,
+  writeStoredResultsSort,
+} from './results-sorting';
+import type { ResultsSortState } from './results-sorting';
 
 const I18N_NS = 'page.search.container.searchResults';
 
@@ -55,6 +64,13 @@ const SearchResults = ({
   // State for FormProcessDocumentSideOver
   const [previewItem, setPreviewItem] = React.useState<ResultGroup | null>(
     null,
+  );
+
+  // Which column the results tables are ordered by, as last chosen by the user.
+  // Every group renders the same columns, so this is shared across them rather
+  // than owned per table.
+  const [storedSort, setStoredSort] = React.useState<ResultsSortState>(
+    readStoredResultsSort,
   );
 
   // Read configuration dynamically
@@ -180,14 +196,64 @@ const SearchResults = ({
     primaryFieldId,
   ]);
 
-  const hasResults = filteredResults && Object.keys(filteredResults).length > 0;
+  // Every column a row can be ordered by, in header order.
+  const sortableColumnIds = React.useMemo(
+    () => [
+      DOC_NAME_SORT_COLUMN_ID,
+      FILE_PATH_SORT_COLUMN_ID,
+      ...tableFields.map((field) => field.id),
+      ...filterConfigs.map((conf) => conf.id),
+    ],
+    [tableFields, filterConfigs],
+  );
+
+  // Switching the parser config (or editing the filters) swaps the dynamic
+  // columns out from under a stored sort, leaving it pointing at a column no
+  // row has any more. Fall back to file name rather than ordering by a key
+  // that resolves to nothing — and leave the stored value alone, so the
+  // original ordering returns if the user switches the config back.
+  const activeSort = React.useMemo(
+    () =>
+      sortableColumnIds.includes(storedSort.columnId)
+        ? storedSort
+        : DEFAULT_RESULTS_SORT,
+    [sortableColumnIds, storedSort],
+  );
+
+  const sortedResults = React.useMemo(
+    () =>
+      sortGroupedResults(
+        filteredResults,
+        activeSort,
+        filterConfigs,
+        primaryFieldId,
+      ),
+    [filteredResults, activeSort, filterConfigs, primaryFieldId],
+  );
+
+  const hasResults = sortedResults && Object.keys(sortedResults).length > 0;
 
   // Shared by the table-level export dropdown and (per-row) the individual
   // download button — both just need the flat item list, not the grouping.
+  // Fed from the sorted map so an export lands in the same order as the table.
   const flattenedItems = React.useMemo(
-    () => flattenGroupedResults(filteredResults),
-    [filteredResults],
+    () => flattenGroupedResults(sortedResults),
+    [sortedResults],
   );
+
+  // A fresh column starts ascending; clicking the active one flips it.
+  const handleSortChange = (columnId: string) => {
+    const next: ResultsSortState =
+      activeSort.columnId === columnId
+        ? {
+            columnId,
+            direction: activeSort.direction === 'asc' ? 'desc' : 'asc',
+          }
+        : { columnId, direction: 'asc' };
+
+    setStoredSort(next);
+    writeStoredResultsSort(next);
+  };
 
   const handleFilterChange = (filterId: string, item: string) => {
     setSelectedFilters((prev) => {
@@ -292,7 +358,7 @@ const SearchResults = ({
     const allColumns = [...baseCols, ...schemaCols, ...dynamicCols];
 
     // 3. Process Rows: Map standard fields & Calculate dynamic fields
-    const processedRows = flattenGroupedResults(filteredResults).map(
+    const processedRows = flattenGroupedResults(sortedResults).map(
       ({ extracted }) => {
         // Map standard fields matching BE Excel structure
         const row: any = {
@@ -822,7 +888,7 @@ const SearchResults = ({
             </div>
           ) : (
             <div className="space-y-6">
-              {Object.entries(filteredResults).map(
+              {Object.entries(sortedResults).map(
                 ([searchQuery, items], filteredResultIndex) => (
                   <ProcessedResultGroup
                     key={searchQuery}
@@ -836,6 +902,9 @@ const SearchResults = ({
                     primaryFieldId={primaryFieldId}
                     templateTagFieldIds={allFieldIds}
                     searchTerm={searchTerm}
+                    sortColumnId={activeSort.columnId}
+                    sortDirection={activeSort.direction}
+                    onSortChange={handleSortChange}
                     onBtnGenerateDocmClick={handleGenerateDocm}
                     addToast={addToast}
                   />

@@ -95,7 +95,9 @@
           "expandAllTitle": "Expand all",
           "collapseAllTitle": "Collapse all",
           "fileNameHeader": "File name",
-          "pathHeader": "Path"
+          "pathHeader": "Path",
+          "sortAscendingTitle": "Sort ascending",
+          "sortDescendingTitle": "Sort descending"
         },
         "processedResultRow": {
           "expandTitle": "Expand",
