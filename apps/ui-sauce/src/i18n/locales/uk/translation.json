@@ -58,7 +58,9 @@
           "parserConfigLabel": "Обробка знайденого тексту",
           "noParsingOption": "Без обробки",
           "parserSettingsTitle": "Налаштування парсера документів",
-          "searchFoldersLabel": "Папки для пошуку"
+          "searchFoldersLabelAll": "Пошук у всіх папках",
+          "searchFoldersLabelScoped": "Пошук лише у вибраних",
+          "searchFoldersHintAll": "(якщо не обрано жодної)"
         },
         "searchResults": {
           "excelFileTypeDescription": "Файл Excel",

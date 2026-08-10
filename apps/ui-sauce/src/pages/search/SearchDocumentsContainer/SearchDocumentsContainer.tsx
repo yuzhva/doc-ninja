@@ -14,6 +14,12 @@ import { SearchForm } from './SearchForm/SearchForm';
 import { readStoredParserConfigs } from './SearchForm/components/FPDModalParserConfigSettings';
 import { addSearchHistoryEntry } from './SearchForm/components/FPDModalSearchHistory';
 import { SearchResults } from './SearchResults/SearchResults';
+import {
+  getDirectoryStructureFingerprint,
+  isRescannableDirectoryPath,
+  reconcileSelectedPaths,
+  rescanDirectoryStructure,
+} from './directory-structure';
 
 const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
   'docNinja_selectedParserConfigName';
@@ -222,11 +228,101 @@ const SearchDocumentsContainer = ({
     buildTree();
   }, [sourceDirectory]);
 
+  // The stored tree is a snapshot of the moment the folder was picked, so it
+  // goes stale as soon as anything changes on disk. These refs let the async
+  // refresh below read current values without re-creating itself (and thus
+  // re-running the mount effect) on every state change.
+  const directoryDataRef = React.useRef(directoryData);
+  const selectedPathsRef = React.useRef(selectedPaths);
+  const pendingRefreshRef = React.useRef<Promise<Set<string>> | null>(null);
+
+  React.useEffect(() => {
+    directoryDataRef.current = directoryData;
+  }, [directoryData]);
+
+  React.useEffect(() => {
+    selectedPathsRef.current = selectedPaths;
+  }, [selectedPaths]);
+
+  /**
+   * Re-reads the source folder and swaps `directoryData` only when its
+   * fingerprint moved, keeping the existing selection across the swap.
+   *
+   * Returns the selection in effect afterwards, so the search submit can use it
+   * in the same tick rather than waiting for the state update to land.
+   */
+  const refreshDirectoryStructure = React.useCallback(async (): Promise<
+    Set<string>
+  > => {
+    // Overlapping runs (the mount refresh still in flight when the user hits
+    // Search) would scan twice and race over the same state — join instead.
+    if (pendingRefreshRef.current) return pendingRefreshRef.current;
+
+    const currentStructure = directoryDataRef.current?.structure;
+    const sourcePath: string | undefined = currentStructure?.path;
+
+    if (!isRescannableDirectoryPath(sourcePath)) {
+      return selectedPathsRef.current;
+    }
+
+    const refreshTask = (async () => {
+      try {
+        const refreshedDirectoryData =
+          await rescanDirectoryStructure(sourcePath);
+
+        // The user may have picked a different source folder while the scan was
+        // running — that pick wins, this result is about the previous folder.
+        if (directoryDataRef.current?.structure?.path !== sourcePath) {
+          return selectedPathsRef.current;
+        }
+
+        if (
+          getDirectoryStructureFingerprint(refreshedDirectoryData.structure) ===
+          getDirectoryStructureFingerprint(currentStructure)
+        ) {
+          return selectedPathsRef.current;
+        }
+
+        const nextSelectedPaths = reconcileSelectedPaths(
+          selectedPathsRef.current,
+          refreshedDirectoryData.structure,
+        );
+
+        setDirectoryData(refreshedDirectoryData);
+        setSelectedPaths(nextSelectedPaths);
+
+        return nextSelectedPaths;
+      } catch (error) {
+        // A folder that was moved, deleted or became unreadable must not block
+        // the search: the request that follows reports that far better than a
+        // toast raised out of a background refresh would.
+        console.warn('Failed to refresh directory structure:', error);
+        return selectedPathsRef.current;
+      } finally {
+        pendingRefreshRef.current = null;
+      }
+    })();
+
+    pendingRefreshRef.current = refreshTask;
+
+    return refreshTask;
+  }, []);
+
+  // Refresh the tree restored from localStorage once on mount. Picking a folder
+  // scans it fresh anyway, so this never competes with the effect above.
+  React.useEffect(() => {
+    refreshDirectoryStructure();
+  }, [refreshDirectoryStructure]);
+
   const postProcessDocuments = React.useCallback<
     Parameters<typeof initSubmitHandler>[0]
   >(
     async (formDataJSON) => {
       addSearchHistoryEntry(String(formDataJSON.bulkNames || ''));
+
+      // Pick up folders created/removed since the tree was last read, so the
+      // scope sent below matches what is actually on disk right now.
+      const effectiveSelectedPaths = await refreshDirectoryStructure();
 
       const selectedParserConfig = parserConfigs.find(
         (c: any) =>
@@ -240,7 +336,7 @@ const SearchDocumentsContainer = ({
           sourceDirectory?.structure?.path ||
           directoryData?.structure?.path ||
           '',
-        searchScopedPaths: Array.from(selectedPaths),
+        searchScopedPaths: Array.from(effectiveSelectedPaths),
         isTypoToleranceEnabled: allowFuzzyMatch,
         maxTypoDistance: Number(maxTypoDistance),
         // Sent to the backend so it knows which pipelines/compounds to
@@ -353,7 +449,7 @@ const SearchDocumentsContainer = ({
       outputDirectory,
       sourceDirectory,
       directoryData, // Updated dependency
-      selectedPaths,
+      refreshDirectoryStructure,
       allowFuzzyMatch,
       maxTypoDistance,
       parserConfigs,
