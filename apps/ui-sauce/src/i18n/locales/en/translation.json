@@ -7,7 +7,13 @@
         "toggleDarkMode": "Toggle dark mode",
         "showUtilitiesPanel": "Show \"Document utilities\"",
         "language": "Language",
-        "beta": "Beta"
+        "beta": "Beta",
+        "requestFeatureReportBug": "- Request a feature <br>- Report a bug"
+      },
+      "footer": {
+        "termsAndConditions": "Terms and conditions",
+        "requestFeatureReportBug": "Request a feature / Report a bug",
+        "privacyPolicyModalTitle": "Privacy Policy for DocNinja"
       },
       "welcomeModal": {
         "greetingLine1": "Hey hi",

@@ -1,8 +1,22 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
+
+import { Modal } from '../../components';
+
+const I18N_NS = 'container.layout.footer';
 
 const Footer = () => {
+  // `Trans` only reads i18n off context — it never subscribes to
+  // `languageChanged` — and the provider memoizes its context value on the
+  // i18n instance, whose identity survives `changeLanguage()`. So without
+  // this hook's subscription nothing re-renders the footer on a language
+  // switch and its labels stay stale until some other state change here.
+  useTranslation();
+
+  const [isTermsModalOpen, setIsTermsModalOpen] = React.useState(false);
+
   return (
-    <div className="mx-4 mt-4">
+    <div className="mx-4 mb-4">
       <footer
         data-testid="flowbite-footer"
         className="w-full rounded-lg bg-white shadow dark:bg-gray-800 md:flex md:items-center md:justify-between w-full p-6"
@@ -13,10 +27,17 @@ const Footer = () => {
             className="flex flex-wrap text-sm text-gray-500 dark:text-white"
           >
             <li className="last:mr-0 md:mr-6 mr-3 mb-3 lg:mb-0">
-              <a href="#" className="hover:underline">
-                Terms and conditions
+              <a
+                href="https://mainset.canny.io/doc-ninja"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+              >
+                <Trans i18nKey={`${I18N_NS}.requestFeatureReportBug`} />
               </a>
             </li>
+
+            {/*
             <li className="last:mr-0 md:mr-6 mr-3 mb-3 lg:mb-0">
               <a href="#" className="hover:underline">
                 Privacy Policy
@@ -37,12 +58,24 @@ const Footer = () => {
                 Contact
               </a>
             </li>
+            */}
           </ul>
+
           <ul
             data-testid="footer-groupLink"
             className="flex flex-wrap text-sm text-gray-500 dark:text-white"
           >
             <div className="flex gap-4 md:gap-0">
+              <li className="last:mr-0 md:mr-6 mr-3 mb-3 lg:mb-0">
+                <button
+                  type="button"
+                  className="hover:underline cursor-pointer"
+                  onClick={() => setIsTermsModalOpen(true)}
+                >
+                  <Trans i18nKey={`${I18N_NS}.termsAndConditions`} />
+                </button>
+              </li>
+              {/*
               <li className="last:mr-0 md:mr-6 hover:[&amp;&gt;*]:text-black dark:hover:[&amp;&gt;*]:text-gray-300">
                 <a href="#" className="hover:underline">
                   <svg
@@ -124,13 +157,140 @@ const Footer = () => {
                   </svg>
                 </a>
               </li>
+              */}
             </div>
           </ul>
         </div>
       </footer>
+
+      {/*
       <p className="my-8 text-center text-sm text-gray-500 dark:text-gray-300">
         © 2019-2022 Flowbite.com. All rights reserved.
       </p>
+      */}
+
+      <Modal
+        title={<Trans i18nKey={`${I18N_NS}.privacyPolicyModalTitle`} />}
+        isOpen={isTermsModalOpen}
+        onBtnCloseClick={() => setIsTermsModalOpen(false)}
+        maxWidthClassName="max-w-2xl"
+      >
+        <div className="space-y-4 text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-xs italic text-gray-500 dark:text-gray-500">
+            Last Updated: 23.07.2026
+          </p>
+
+          <p>
+            This Privacy Policy describes how DocNinja (&ldquo;the
+            Application&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or
+            &ldquo;our&rdquo;) handles your data. We built DocNinja with strict
+            privacy and security in mind.
+          </p>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              1. Data Collection and Usage
+            </h4>
+            <p>We do not collect, store, or transmit any personal data.</p>
+            <p>
+              DocNinja is designed to function entirely locally on your device.
+              The Application does not require an internet connection to process
+              your documents, and we do not monitor, track, or record your usage
+              of the Application.
+            </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              2. Local File Processing and AI Inference
+            </h4>
+            <p>
+              All file processing, data extraction, and artificial intelligence
+              (AI) operations occur 100% locally on your machine.
+            </p>
+            <p>
+              When you upload or provide files (such as PDFs, Word documents, or
+              Excel spreadsheets) to the Application, those files are read
+              directly from your local file system.
+            </p>
+            <p>
+              Any vectorization, indexing, or AI chat inference is executed
+              using the Application&apos;s embedded local engine.
+            </p>
+            <p>
+              Your documents and chat prompts are never uploaded to our servers,
+              third-party cloud providers, or external AI services.
+            </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              3. Data Storage
+            </h4>
+            <p>
+              To provide its functionality, DocNinja may store application
+              settings, cached indexed content, or a local vector database
+              directly on your device&apos;s hard drive. You maintain full
+              control over this data and can delete it at any time by
+              uninstalling the Application or clearing the Application&apos;s
+              local cache.
+            </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              4. Third-Party Sharing
+            </h4>
+            <p>
+              Because we do not collect any user data, we do not share, sell, or
+              disclose any information to third parties, advertising networks,
+              or analytics providers.
+            </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              5. Microsoft Store and Windows Telemetry
+            </h4>
+            <p>
+              While DocNinja itself does not collect data, please be aware that
+              the Microsoft Store and the Windows operating system may collect
+              standard diagnostic or crash data based on your personal Windows
+              privacy settings. This data is governed by the Microsoft Privacy
+              Statement.
+            </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              6. Changes to This Policy
+            </h4>
+            <p>
+              We may update this Privacy Policy from time to time if we
+              introduce new features (for example, if we add an optional
+              cloud-sync feature in the future). If changes are made, we will
+              update the &ldquo;Last Updated&rdquo; date at the top of this
+              document.
+            </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h4 className="font-semibold text-gray-900 dark:text-white">
+              7. Contact Us
+            </h4>
+            <p>
+              If you have any questions or concerns regarding this Privacy
+              Policy or how your data is handled, please contact us at:{' '}
+              <a
+                href="mailto:contact@mainset.io"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                contact@mainset.io
+              </a>
+            </p>
+          </section>
+        </div>
+      </Modal>
     </div>
   );
 };

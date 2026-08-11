@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router';
 
-// import { Footer } from './Footer';
+import { Footer } from './Footer';
 import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 import { WelcomeModal } from './WelcomeModal';
@@ -71,7 +71,7 @@ const Layout = ({ children }: LayoutProps) => {
             {/* {children} */}
           </div>
 
-          {/* <Footer /> */}
+          <Footer />
         </main>
       </div>
     </div>
