@@ -2,7 +2,7 @@ import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
-import { Badge, Checkbox, Modal, Select } from '../../components';
+import { Badge, Checkbox, Modal, Select, Tooltip } from '../../components';
 import { LANGUAGE_LABELS, RESOURCES } from '../../i18n';
 import { useSecretKeyCombo } from './use-secret-key-combo';
 
@@ -88,30 +88,39 @@ const Navbar = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               {isSidebarVisible && (
-                <button
-                  className="mr-3 cursor-pointer rounded p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white lg:inline"
-                  onClick={onBtnToggleSidebarClick}
-                >
-                  <span className="sr-only">
+                <Tooltip
+                  content={
                     <Trans i18nKey="container.layout.navbar.toggleSidebar" />
-                  </span>
-                  <svg
-                    stroke="currentColor"
-                    fill="currentColor"
-                    strokeWidth="0"
-                    viewBox="0 0 20 20"
-                    className="h-6 w-6"
-                    height="1em"
-                    width="1em"
-                    xmlns="http://www.w3.org/2000/svg"
+                  }
+                  placement="bottom"
+                  align="start"
+                  className="mr-3"
+                >
+                  <button
+                    className="cursor-pointer rounded p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white lg:inline"
+                    onClick={onBtnToggleSidebarClick}
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
-                      clipRule="evenodd"
-                    ></path>
-                  </svg>
-                </button>
+                    <span className="sr-only">
+                      <Trans i18nKey="container.layout.navbar.toggleSidebar" />
+                    </span>
+                    <svg
+                      stroke="currentColor"
+                      fill="currentColor"
+                      strokeWidth="0"
+                      viewBox="0 0 20 20"
+                      className="h-6 w-6"
+                      height="1em"
+                      width="1em"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                        clipRule="evenodd"
+                      ></path>
+                    </svg>
+                  </button>
+                </Tooltip>
               )}
               <Link className="relative flex items-center" to="/">
                 <img
@@ -686,44 +695,51 @@ const Navbar = ({
                   </div>
                 </div>
                 */}
-                <button
-                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
-                  data-testid="settings-open"
-                  type="button"
-                  aria-label={t('container.layout.navbar.settings')}
-                  onClick={() => setIsSettingsModalOpen(true)}
+                <Tooltip
+                  content={
+                    <Trans i18nKey="container.layout.navbar.requestFeatureReportBug" />
+                  }
+                  placement="bottom"
                 >
-                  <svg
-                    stroke="currentColor"
-                    fill="currentColor"
-                    strokeWidth="0"
-                    viewBox="0 0 20 20"
-                    className="h-5 w-5"
-                    height="1em"
-                    width="1em"
-                    xmlns="http://www.w3.org/2000/svg"
+                  <a
+                    className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
+                    data-testid="feature-request-open"
+                    href="https://mainset.canny.io/doc-ninja"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={t(
+                      'container.layout.navbar.requestFeatureReportBug',
+                    )}
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-                      clipRule="evenodd"
-                    ></path>
-                  </svg>
-                </button>
-                <button
-                  className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
-                  data-testid="dark-theme-toggle"
-                  type="button"
-                  aria-label={t('container.layout.navbar.toggleDarkMode')}
-                  onClick={handleThemeModeSwitch}
+                    <svg
+                      fill="currentColor"
+                      viewBox="15 5 70 90"
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path d="m68.625 6.2539c-0.67578 0.046875-1.2422 0.52344-1.4062 1.1797-1.1875 4.5703-2.293 7.1641-4.0234 8.8906-1.7344 1.7305-4.3164 2.8359-8.9023 4.0156-0.6875 0.17969-1.168 0.79688-1.1719 1.5078 0 0.70703 0.47266 1.3281 1.1562 1.5156 4.5625 1.2031 7.1484 2.3086 8.8789 4.0469 1.7305 1.7383 2.8438 4.3477 4.0273 8.9414v-0.003906c0.18359 0.68359 0.80078 1.1602 1.5117 1.1602 0.70703 0 1.3281-0.47656 1.5078-1.1602 1.207-4.5742 2.3164-7.168 4.0586-8.9023 1.7422-1.7344 4.3398-2.8398 8.9258-4.0352v-0.003906c0.69922-0.17188 1.1875-0.79688 1.1875-1.5156s-0.48828-1.3438-1.1875-1.5156c-4.5781-1.1914-7.168-2.3008-8.9023-4.0352s-2.8438-4.3242-4.0352-8.9023v-0.003906c-0.18359-0.73438-0.86719-1.2344-1.625-1.1797zm-23.32 3.2266c-16.391 0-29.68 13.289-29.68 29.68 0 9.3438 4.3945 18.082 11.754 23.656 1.2305 0.93359 2.3047 2.832 2.3047 4.375v7.8047h31.238v-7.8047c0-1.543 1.0742-3.4453 2.3047-4.375 7.3633-5.5781 11.754-14.316 11.754-23.656 0-2.0078-0.19922-3.9648-0.57812-5.8594-0.37891 1.0195-0.76562 2.2773-1.1758 3.8398-0.55859 2.1094-2.6406 3.4922-4.5312 3.4922-1.8906 0-3.9766-1.3828-4.5352-3.4922v-0.011719c-1.1367-4.4102-2.1133-6.4141-3.2148-7.5195-1.1016-1.1055-3.0742-2.0703-7.4609-3.2266h-0.011719c-2.1094-0.56641-3.4805-2.6523-3.4727-4.543s1.3945-3.9727 3.5039-4.5234h0.003906 0.011719c4.4023-1.1328 6.3672-2.1016 7.4727-3.2031 0.03125-0.03125 0.0625-0.066406 0.089843-0.097656-4.5703-2.875-9.9805-4.5352-15.777-4.5352zm-10.93 9.0938c0.55859 0 1.0742 0.29297 1.3555 0.77344 0.4375 0.75 0.17969 1.7148-0.57812 2.1445-7.9648 4.5977-11.848 13.949-9.4648 22.836 0.22266 0.83203-0.26562 1.6875-1.0938 1.9141-0.83203 0.22266-1.6836-0.26563-1.9141-1.0938-2.7422-10.238 1.7422-21.062 10.918-26.363 0.23828-0.13672 0.50391-0.21094 0.77734-0.21094zm-4.6914 59.551v3.125h31.242v-3.125zm0 6.25v0.003906c0 1.0938 0.1875 2.1445 0.53125 3.1211h30.18c0.34375-0.97656 0.53125-2.0273 0.53125-3.1211v-0.003906zm2.3867 6.25c1.7148 1.918 4.2109 3.125 6.9883 3.125h12.496c2.7773 0 5.2695-1.207 6.9883-3.125z"></path>
+                    </svg>
+                  </a>
+                </Tooltip>
+
+                <div className="mx-1 h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+
+                <Tooltip
+                  content={<Trans i18nKey="container.layout.navbar.settings" />}
+                  placement="bottom"
                 >
-                  {themeCurrentMode === 'dark' ? (
+                  <button
+                    className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
+                    data-testid="settings-open"
+                    type="button"
+                    aria-label={t('container.layout.navbar.settings')}
+                    onClick={() => setIsSettingsModalOpen(true)}
+                  >
                     <svg
                       stroke="currentColor"
                       fill="currentColor"
                       strokeWidth="0"
                       viewBox="0 0 20 20"
-                      aria-label="Currently dark mode"
                       className="h-5 w-5"
                       height="1em"
                       width="1em"
@@ -731,26 +747,61 @@ const Navbar = ({
                     >
                       <path
                         fillRule="evenodd"
-                        d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
+                        d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
                         clipRule="evenodd"
                       ></path>
                     </svg>
-                  ) : (
-                    <svg
-                      stroke="currentColor"
-                      fill="currentColor"
-                      strokeWidth="0"
-                      viewBox="0 0 20 20"
-                      aria-label="Currently light mode"
-                      className="h-5 w-5"
-                      height="1em"
-                      width="1em"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
-                    </svg>
-                  )}
-                </button>
+                  </button>
+                </Tooltip>
+                <Tooltip
+                  content={
+                    <Trans i18nKey="container.layout.navbar.toggleDarkMode" />
+                  }
+                  placement="bottom"
+                  align="end"
+                >
+                  <button
+                    className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
+                    data-testid="dark-theme-toggle"
+                    type="button"
+                    aria-label={t('container.layout.navbar.toggleDarkMode')}
+                    onClick={handleThemeModeSwitch}
+                  >
+                    {themeCurrentMode === 'dark' ? (
+                      <svg
+                        stroke="currentColor"
+                        fill="currentColor"
+                        strokeWidth="0"
+                        viewBox="0 0 20 20"
+                        aria-label="Currently dark mode"
+                        className="h-5 w-5"
+                        height="1em"
+                        width="1em"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
+                          clipRule="evenodd"
+                        ></path>
+                      </svg>
+                    ) : (
+                      <svg
+                        stroke="currentColor"
+                        fill="currentColor"
+                        strokeWidth="0"
+                        viewBox="0 0 20 20"
+                        aria-label="Currently light mode"
+                        className="h-5 w-5"
+                        height="1em"
+                        width="1em"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                      </svg>
+                    )}
+                  </button>
+                </Tooltip>
               </div>
               {/*
               <div className="hidden lg:block">

@@ -7,7 +7,13 @@
         "toggleDarkMode": "Перемкнути темну тему",
         "showUtilitiesPanel": "Відображати \"Утиліти для документів\"",
         "language": "Мова",
-        "beta": "Бета"
+        "beta": "Бета",
+        "requestFeatureReportBug": "- Запропонувати функцію <br>- Повідомити про помилку"
+      },
+      "footer": {
+        "termsAndConditions": "Умови використання",
+        "requestFeatureReportBug": "Запропонувати функцію / Повідомити про помилку",
+        "privacyPolicyModalTitle": "Політика конфіденційності DocNinja"
       },
       "welcomeModal": {
         "greetingLine1": "Привіт",
