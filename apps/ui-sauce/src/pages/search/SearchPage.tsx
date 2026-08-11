@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { LoadingSpinner, Toast } from '../../components';
 import type { ToastMessage } from '../../components';
@@ -7,7 +8,11 @@ import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-proc
 import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
 import { SearchDocumentsContainer } from './SearchDocumentsContainer';
 
+const I18N_NS = 'page.search';
+
 const SearchPage = () => {
+  const { t } = useTranslation();
+
   // --- Toast Management ---
   const [toasts, setToasts] = React.useState<ToastMessage[]>([]);
   const addToast = React.useCallback(
@@ -76,7 +81,7 @@ const SearchPage = () => {
     // their own scrollbars instead of scrolling the whole page.
     <div className="lg:flex lg:h-full lg:flex-col">
       {/* Toast Container */}
-      <div className="fixed top-5 right-5 z-50 flex flex-col gap-2">
+      <div className="fixed bottom-12 right-5 z-50 flex flex-col gap-2">
         {toasts.map((t) => (
           <Toast key={t.id} {...t} onClose={removeToast} />
         ))}
@@ -84,8 +89,7 @@ const SearchPage = () => {
 
       {!sourceDir.isSupported && (
         <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
-          ⚠️ File System Access API не підтримується. Використовуйте Chrome 86+
-          або Edge 86+.
+          ⚠️ {t(`${I18N_NS}.fileSystemNotSupportedWarning`)}
         </div>
       )}
 
@@ -112,10 +116,9 @@ const SearchPage = () => {
         }`}
       >
         <div className="py-3 px-4 bg-yellow-300 border-t border-yellow-400 text-gray-900 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] dark:bg-yellow-200 dark:border-yellow-300">
-          <div className="flex items-center justify-start gap-2 text-sm font-semibold">
+          <div className="flex items-center justify-start text-sm font-semibold">
             <LoadingSpinner className="text-gray-900" />
-            📊 Processing batch {progress.batch}... ({progress.current}/
-            {progress.total} files)
+            {t(`${I18N_NS}.processingMessage`)}
           </div>
         </div>
       </div>

@@ -35,14 +35,20 @@
   },
   "page": {
     "search": {
+      "fileSystemNotSupportedWarning": "File System Access API is not supported. Use Chrome 86+ or Edge 86+.",
+      "processingMessage": "Processing request ...",
       "container": {
+        "searchDocumentsContainer": {
+          "validationMessage": "Please select an output folder.",
+          "successMessage": "Search across the documents completed."
+        },
         "searchForm": {
           "selectSourceFolderFirstWarning": "First select a folder with documents.",
           "reindexSuccessToast": "Reindexing completed.",
           "deleteCacheSuccessToast": "Index cache deleted.",
           "actionFailedToast": "Failed to perform the action: {{message}}",
           "searchTextLabel": "Text to search",
-          "searchTextPlaceholder": "Enter a keyword or phrase...",
+          "searchTextPlaceholder": "Enter a keyword or phrase ...",
           "perLineModeLabel": "Multi search",
           "removeSearchQueryTitle": "Remove query",
           "addSearchQueryButton": "Add query",
@@ -89,8 +95,8 @@
           "addFiltersButton": "Add filters",
           "noResultsForFiltersMessage": "Nothing found for the selected filters",
           "noMatchesMessage": "No matches found for this search",
-          "searchingMessage": "Searching...",
-          "resultsPlaceholderMessage": "Search results will appear here..."
+          "searchingMessage": "Searching ...",
+          "resultsPlaceholderMessage": "Search results will appear here"
         }
       },
       "component": {

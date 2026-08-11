@@ -35,14 +35,20 @@
   },
   "page": {
     "search": {
+      "fileSystemNotSupportedWarning": "File System Access API не підтримується. Використовуйте Chrome 86+ або Edge 86+.",
+      "processingMessage": "Обробка запиту ...",
       "container": {
+        "searchDocumentsContainer": {
+          "validationMessage": "Оберіть папку призначення.",
+          "successMessage": "Пошук у документах завершено."
+        },
         "searchForm": {
           "selectSourceFolderFirstWarning": "Спочатку оберіть папку з документами.",
           "reindexSuccessToast": "Переіндексацію завершено.",
           "deleteCacheSuccessToast": "Кеш індексації видалено.",
           "actionFailedToast": "Не вдалося виконати дію: {{message}}",
           "searchTextLabel": "Текст пошуку",
-          "searchTextPlaceholder": "Введіть ключове слово або фразу...",
+          "searchTextPlaceholder": "Введіть ключове слово або фразу ...",
           "perLineModeLabel": "Мульти пошук",
           "removeSearchQueryTitle": "Видалити запит",
           "addSearchQueryButton": "Додати запит",
@@ -90,7 +96,7 @@
           "noResultsForFiltersMessage": "Нічого не знайдено за обраними фільтрами",
           "noMatchesMessage": "За цим запитом нічого не знайдено",
           "searchingMessage": "Пошук ...",
-          "resultsPlaceholderMessage": "Результати пошуку з'являться тут..."
+          "resultsPlaceholderMessage": "Результати пошуку з'являться тут"
         }
       },
       "component": {

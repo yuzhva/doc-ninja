@@ -280,12 +280,13 @@ class FileSystemAPIProcessor {
       }
 
       const message =
-        `✅ ${successMessage || 'Processing complete'}\n` +
-        `📄 Successfully processed: ${totalProcessed}\n` +
-        `❌ Failed: ${totalFailed}\n` +
-        `📁 Files saved to selected output folder${
-          subfolderPath ? ` (subfolder: ${subfolderPath})` : ''
-        }.`;
+        `${successMessage || 'Processing complete'}\n` +
+        // `📄 Processed: ${totalProcessed}\n` +
+        // `❌ Failed: ${totalFailed}\n` +
+        // `📁 Files saved to selected output folder${
+        //   subfolderPath ? ` (subfolder: ${subfolderPath})` : ''
+        // }.` +
+        '';
 
       if (allErrors.length > 0) {
         console.warn('Processing errors:', allErrors);
