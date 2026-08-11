@@ -70,7 +70,7 @@ const ProcessPage = () => {
   return (
     <div>
       {/* Toast Container */}
-      <div className="fixed top-5 right-5 z-50 flex flex-col gap-2">
+      <div className="fixed bottom-12 right-5 z-50 flex flex-col gap-2">
         {toasts.map((t) => (
           <Toast key={t.id} {...t} onClose={removeToast} />
         ))}
@@ -139,7 +139,7 @@ const ProcessPage = () => {
         }`}
       >
         <div className="py-3 px-4 bg-yellow-300 border-t border-yellow-400 text-gray-900 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] dark:bg-yellow-200 dark:border-yellow-300">
-          <div className="flex items-center justify-start gap-2 text-sm font-semibold">
+          <div className="flex items-center justify-start text-sm font-semibold">
             <LoadingSpinner className="text-gray-900" />
             📊 Processing batch {progress.batch}... ({progress.current}/
             {progress.total} files)

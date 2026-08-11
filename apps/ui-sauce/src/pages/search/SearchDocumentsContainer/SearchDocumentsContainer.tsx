@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { FileSystemItem } from 'toolkit--local/browser';
 
 import type { BatchFileProcessingSectionProps } from '../../../hooks/use-batch-processor';
@@ -26,6 +27,8 @@ import { joinSearchQueries, normalizeSearchQueries } from './search-queries';
 const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
   'docNinja_selectedParserConfigName';
 
+const I18N_NS = 'page.search.container.searchDocumentsContainer';
+
 const SearchDocumentsContainer = ({
   onSelectSourceDirectory,
   // onSelectOutputDirectory,
@@ -41,6 +44,8 @@ const SearchDocumentsContainer = ({
 }: BatchFileProcessingSectionProps & {
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 }) => {
+  const { t } = useTranslation();
+
   const [processedResults, setProcessedResults] =
     React.useState<GroupedProcessedResults>({});
 
@@ -367,8 +372,8 @@ const SearchDocumentsContainer = ({
           formDataJSON: payload,
           processedDir: selectedFile!,
           destinationHandle: outputDirectory?.browserFSAPIhandle!,
-          validationMessage: 'Please select an output folder.',
-          successMessage: 'Document processing completed successfully!',
+          validationMessage: t(`${I18N_NS}.validationMessage`),
+          successMessage: t(`${I18N_NS}.successMessage`),
           isWritingFilesSkipped: true,
           isLocalFileSystemRequest: true,
           // No subfolderPath specified - files will be saved in root
@@ -463,7 +468,7 @@ const SearchDocumentsContainer = ({
                     existingDocGroup.items.push(newItem);
                   } else {
                     acc[key].push({
-                      docName: item.foundInDocument || 'Unknown', // Display name
+                      docName: item.foundInDocument, // Display name
                       uniqueId: docIdentifier, // Store unique ID for grouping check
                       items: [newItem],
                       // Use first result as the main search ref for file path/metadata
@@ -494,6 +499,7 @@ const SearchDocumentsContainer = ({
       maxTypoDistance,
       parserConfigs,
       selectedParserConfigName,
+      t,
     ],
   );
 
