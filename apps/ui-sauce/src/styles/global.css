@@ -3,4 +3,6 @@
 @import 'tailwindcss';
 @import 'flowbite/src/themes/default';
 
+@import './scrollbar.css';
+
 @custom-variant hover (&:hover);
