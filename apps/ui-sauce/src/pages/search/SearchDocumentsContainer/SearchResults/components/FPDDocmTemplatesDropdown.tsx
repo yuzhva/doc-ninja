@@ -63,6 +63,14 @@ const buildJobFileName = (extracted: any): string => {
 // successfully but then refuse write access — verify up front, before
 // spending time generating anything, so that failure surfaces as one clear
 // message instead of a confusing error deep inside the write loop.
+//
+// This is also where a folder remembered across restarts (see
+// docm-templates-store) earns its keep: the click that gets here is the user
+// gesture Chromium requires to re-grant the permission it drops on every
+// restart, so a returning user confirms one prompt at most instead of
+// walking the folder tree again. The existence check right after covers the
+// other half of that bargain — a folder remembered long enough can be gone
+// by the time it's used again, and permission says nothing about that.
 const verifyOutputDirectoryIsWritable = async (
   handle: WriteFilesViaDestinationHandle,
   t: TFunction,
@@ -73,6 +81,13 @@ const verifyOutputDirectoryIsWritable = async (
   );
   if (!hasPermission) {
     throw new Error(t(`${I18N_NS}.noWritePermissionError`));
+  }
+
+  const isReachable = await FileSystemBridge.isDirectoryReachable(handle);
+  if (!isReachable) {
+    throw new Error(
+      t(`${I18N_NS}.outputFolderMissingError`, { name: handle.name }),
+    );
   }
 };
 
@@ -261,9 +276,10 @@ const FPDDocmTemplatesDropdown = ({
     if (!hasResults) return;
 
     // Reuse the folder from a previous generate — by any dropdown instance,
-    // this session; only prompt the first time anywhere (or after "Змінити
-    // папку") so a batch never asks the user to confirm a save location more
-    // than once, and every instance agrees on where files are going.
+    // and (since it's remembered in IndexedDB) any previous run of the app
+    // too; only show the picker when there's genuinely no folder to reuse, or
+    // after "Змінити папку", so a batch never asks the user to confirm a save
+    // location more than once and every instance agrees on where files go.
     const outputDirectory =
       sharedOutputDirectory ?? (await outputDirPicker.selectDirectory());
     const outputDirectoryHandle = outputDirectory?.browserFSAPIhandle;

@@ -259,6 +259,7 @@
           "changeFolderButton": "Змінити",
           "saveTriggerLabel": "Зберегти .doc*",
           "noWritePermissionError": "Немає дозволу на запис у обрану папку.",
+          "outputFolderMissingError": "Папку для збереження \"{{name}}\" більше не знайдено.",
           "chooseAnotherFolderSuffix": "Оберіть іншу папку.",
           "pickerAlreadyActiveError": "Не вдалося обрати папку: попереднє вікно вибору, ймовірно, ще не закрилося (могло зависнути, якщо ви обрали кореневу папку Downloads, Desktop чи Documents). Оберіть підпапку замість кореневої, або перезапустіть застосунок.",
           "pickDirectoryFailedError": "Не вдалося обрати папку: {{message}}",

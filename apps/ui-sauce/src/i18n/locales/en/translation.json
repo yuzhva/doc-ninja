@@ -251,6 +251,7 @@
           "changeFolderButton": "Change",
           "saveTriggerLabel": "Save .doc*",
           "noWritePermissionError": "No permission to write to the selected folder.",
+          "outputFolderMissingError": "The save folder \"{{name}}\" no longer exists.",
           "chooseAnotherFolderSuffix": "Choose another folder.",
           "pickerAlreadyActiveError": "Couldn't select a folder: the previous picker window probably hasn't closed yet (it may have hung if you picked the root Downloads, Desktop, or Documents folder). Pick a subfolder instead of the root, or restart the app.",
           "pickDirectoryFailedError": "Couldn't select a folder: {{message}}",

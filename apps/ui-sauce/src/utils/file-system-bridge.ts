@@ -134,6 +134,37 @@ class FileSystemBridge {
   }
 
   /**
+   * Whether a directory handle still points at a folder that exists on disk.
+   *
+   * Matters for a remembered folder (see template-store's
+   * StoredOutputDirectoryRecord): a handle persisted weeks ago can outlive
+   * the folder itself, and permission alone says nothing about that —
+   * queryPermission/requestPermission answer "may this app reach it", not
+   * "is it still there".
+   *
+   * Pulling a single directory entry is the cheapest non-destructive way to
+   * force the handle to actually resolve: an existing folder answers
+   * immediately (even an empty one, with done: true), while a deleted or
+   * moved one throws NotFoundError. Unlike a getFileHandle/getDirectoryHandle
+   * probe it cannot create anything, and unlike a full scan its cost doesn't
+   * grow with the folder's size.
+   *
+   * Assumes read access was already granted (ensurePermission); `values()`
+   * isn't in this project's TS DOM lib, hence the `any` cast.
+   */
+  static async isDirectoryReachable(
+    handle: FileSystemDirectoryHandle,
+  ): Promise<boolean> {
+    try {
+      await (handle as any).values().next();
+      return true;
+    } catch (error: any) {
+      if (error?.name === 'NotFoundError') return false;
+      throw error;
+    }
+  }
+
+  /**
    * Re-reads a previously picked-and-remembered file later (e.g. a saved
    * template), as opposed to pickFile, which always shows a picker dialog.
    * pickFile always returns a real handle now (Electron included — see

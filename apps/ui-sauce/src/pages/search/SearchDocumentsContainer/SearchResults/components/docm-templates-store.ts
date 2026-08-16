@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from 'react';
 
-import type { UseDirectoryPicker } from '../../../../../hooks/use-file-system';
 import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
 import {
   listStoredTemplates,
+  readStoredOutputDirectory,
+  removeStoredOutputDirectory,
   removeStoredTemplate,
+  saveStoredOutputDirectory,
   saveStoredTemplate,
 } from '../../../../../utils/template-store';
 import type { StoredTemplateRecord } from '../../../../../utils/template-store';
@@ -132,15 +134,27 @@ let templates: DocmTemplate[] = [];
 let selectedTemplateId: string | null = null;
 let unavailableTemplateIds: Set<string> = new Set();
 // The output folder generated files get written into — shared for the same
-// reason: "pick the folder once, reuse it for the rest of this session"
-// (see FPDDocmTemplatesDropdown's handleGenerateClick) only actually holds
-// if every dropdown instance shares the same picked folder, not just
-// whichever one happened to prompt for it first. Deliberately NOT persisted
-// to IndexedDB/localStorage — a FileSystemDirectoryHandle here is only ever
-// meant to last "this session", unlike a template, which is meant to survive
-// a reload.
-type SharedOutputDirectory = NonNullable<UseDirectoryPicker['processedDir']>;
+// reason: "pick the folder once, reuse it" (see FPDDocmTemplatesDropdown's
+// handleGenerateClick) only actually holds if every dropdown instance shares
+// the same picked folder, not just whichever one happened to prompt for it
+// first. Persisted to IndexedDB alongside the templates (see
+// template-store.ts) so the choice also survives an app restart, exactly the
+// way a remembered template does.
+//
+// Narrower than the picker's own result type on purpose: these two fields are
+// all any consumer reads, and a folder rehydrated from IndexedDB has no
+// scanned file tree behind it to fill the rest in with. `browserFSAPIhandle`
+// stays nullable to match what pickDirectory returns.
+interface SharedOutputDirectory {
+  structure: { name: string };
+  browserFSAPIhandle: FileSystemDirectoryHandle | null;
+}
 let outputDirectory: SharedOutputDirectory | null = null;
+// Whether setOutputDirectory has run at all this session. Distinct from
+// `outputDirectory !== null`, which can't tell "nothing chosen yet" apart
+// from "just explicitly cleared" — and the rehydrate-from-IndexedDB step
+// must defer to the second case as much as to a fresh pick.
+let hasChosenOutputDirectory = false;
 let hasStartedLoad = false;
 const listeners = new Set<() => void>();
 
@@ -163,6 +177,33 @@ const persistSelectedTemplateId = (id: string | null): void => {
 const ensureLoaded = (): void => {
   if (hasStartedLoad) return;
   hasStartedLoad = true;
+
+  // A separate chain from the templates load below, not an await inside it:
+  // the two are independent, and a failure to rehydrate one must not cost
+  // the user the other.
+  readStoredOutputDirectory()
+    .then((record) => {
+      if (!record) return;
+      // Anything chosen in this session already won — this load is async, so
+      // it can land after the user picked, changed, or cleared a folder, and
+      // overriding that with a remembered one would silently redirect their
+      // files somewhere they didn't ask for.
+      if (hasChosenOutputDirectory) return;
+
+      // No permission check here on purpose: queryPermission will say
+      // 'prompt' after a restart, and requestPermission only works inside a
+      // user gesture. The generate click re-acquires it (see
+      // verifyOutputDirectoryIsWritable) — asking here would just get denied
+      // and throw the remembered folder away for nothing.
+      outputDirectory = {
+        structure: { name: record.name },
+        browserFSAPIhandle: record.browserDirectoryHandle,
+      };
+      notify();
+    })
+    .catch((error) => {
+      console.warn('Failed to load persisted docm output directory', error);
+    });
 
   listStoredTemplates()
     .then((records) => {
@@ -296,12 +337,34 @@ const markTemplateUnavailable = (id: string, isUnavailable: boolean): void => {
 };
 
 // Called after a successful pick (or with null to forget a folder that
-// turned out to be unwritable) — the actual picker call itself still goes
-// through each dropdown instance's own useDirectoryPicker, which owns the
-// pick/error mechanics; only the *result* is shared from here on.
+// turned out to be unwritable or to have disappeared) — the actual picker
+// call itself still goes through each dropdown instance's own
+// useDirectoryPicker, which owns the pick/error mechanics; only the *result*
+// is shared from here on.
+//
+// Writing through to IndexedDB here (rather than only at pick time) is what
+// makes forgetting work too: the same call that drops a bad folder from
+// memory also stops it coming back on the next restart.
 const setOutputDirectory = (dir: SharedOutputDirectory | null): void => {
   outputDirectory = dir;
+  hasChosenOutputDirectory = true;
   notify();
+
+  // A pick with no handle behind it (pickDirectory's Electron branch, which
+  // the readwrite output-folder pick never takes) has nothing rememberable
+  // in it, so it clears the stored folder rather than half-persisting a
+  // name that could never be written to.
+  const handle = dir?.browserFSAPIhandle;
+  const persist = handle
+    ? saveStoredOutputDirectory({
+        name: dir!.structure.name,
+        browserDirectoryHandle: handle,
+      })
+    : removeStoredOutputDirectory();
+
+  persist.catch((error) => {
+    console.warn('Failed to persist docm output directory', error);
+  });
 };
 
 const DocmTemplatesStore = {
