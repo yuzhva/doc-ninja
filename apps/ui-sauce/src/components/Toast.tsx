@@ -1,4 +1,7 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+
+const I18N_NS = 'component.toast';
 
 interface ToastMessage {
   id: number;
@@ -33,6 +36,8 @@ const Toast = ({
   content,
   onClose,
 }: ToastMessage & { onClose: (id: number) => void }) => {
+  const { t } = useTranslation();
+
   const [secondsLeft, setSecondsLeft] = React.useState(AUTO_CLOSE_SECONDS);
   const [isAutoCloseCancelled, setIsAutoCloseCancelled] = React.useState(false);
 
@@ -84,7 +89,7 @@ const Toast = ({
           strokeWidth="2"
           d="M5 11.917 9.724 16.5 19 7.5"
         />
-        <span className="sr-only">Check icon</span>
+        <span className="sr-only">{t(`${I18N_NS}.successIconAlt`)}</span>
       </svg>
     ) : type === 'error' ? (
       <svg
@@ -101,7 +106,7 @@ const Toast = ({
           strokeWidth="2"
           d="M6 18 17.94 6M18 18 6.06 6"
         />
-        <span className="sr-only">Error icon</span>
+        <span className="sr-only">{t(`${I18N_NS}.errorIconAlt`)}</span>
       </svg>
     ) : (
       <svg
@@ -118,7 +123,7 @@ const Toast = ({
           strokeWidth="2"
           d="M12 13V8m0 8h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
         />
-        <span className="sr-only">Warning icon</span>
+        <span className="sr-only">{t(`${I18N_NS}.warningIconAlt`)}</span>
       </svg>
     );
 
@@ -139,10 +144,10 @@ const Toast = ({
         <button
           type="button"
           className="ms-auto -mx-1.5 -my-1.5 bg-transparent text-gray-400 hover:text-gray-900 dark:text-gray-500 dark:hover:text-white rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center justify-center h-8 w-8 cursor-pointer"
-          aria-label="Close"
+          aria-label={t(`${I18N_NS}.closeLabel`)}
           onClick={handleClose}
         >
-          <span className="sr-only">Close</span>
+          <span className="sr-only">{t(`${I18N_NS}.closeLabel`)}</span>
           <svg
             className="w-3 h-3"
             aria-hidden="true"
@@ -166,14 +171,14 @@ const Toast = ({
           <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
           <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
             <span>
-              Notification will be auto closed in {secondsLeft} sec ...
+              {t(`${I18N_NS}.autoCloseCountdown`, { count: secondsLeft })}
             </span>
             <button
               type="button"
               className="font-medium text-blue-600 hover:underline dark:text-blue-500 cursor-pointer"
               onClick={() => setIsAutoCloseCancelled(true)}
             >
-              Cancel
+              {t(`${I18N_NS}.cancelAutoCloseButton`)}
             </button>
           </div>
         </>

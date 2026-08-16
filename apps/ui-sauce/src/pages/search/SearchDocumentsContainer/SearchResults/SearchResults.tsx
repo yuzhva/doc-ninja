@@ -4,8 +4,10 @@ import { Trans, useTranslation } from 'react-i18next';
 import { Badge, BadgeCounter, FilterDropdown } from '../../../../components';
 import { fetchRequest } from '../../../../utils';
 import { DocxTemplateEngine } from '../../../../utils/docx-template-engine';
-import type { ProcessedResultGroup as ResultGroup } from '../../search-page.types';
-import type { RichProcessedResultItem } from '../../search-page.types';
+import type {
+  ProcessedResultGroup as ResultGroup,
+  RichProcessedResultItem,
+} from '../../search-page.types';
 import { FormProcessDocumentSideOver } from './FormProcessDocumentSideOver';
 import { ProcessedResultGroup } from './ProcessedResultGroup';
 import type { SearchResultsProps } from './SearchResults.types';
@@ -20,6 +22,7 @@ import {
   getExtractedFieldOutputs,
   truncateRowForXlsx,
 } from './result-helpers';
+import type { ResultsSortState } from './results-sorting';
 import {
   DEFAULT_RESULTS_SORT,
   DOC_NAME_SORT_COLUMN_ID,
@@ -28,7 +31,6 @@ import {
   sortGroupedResults,
   writeStoredResultsSort,
 } from './results-sorting';
-import type { ResultsSortState } from './results-sorting';
 
 const I18N_NS = 'page.search.container.searchResults';
 
@@ -555,8 +557,9 @@ const SearchResults = ({
     setConfigVersion((v) => v + 1);
   };
 
-  const isPlaceholderVisible =
-    ['idle', 'searching', 'empty'].includes(paneState) && !hasResults;
+  const isPlaceholderVisible = ['idle', 'searching', 'empty'].includes(
+    paneState,
+  );
 
   return (
     <div className="lg:col-span-3 lg:h-full lg:min-h-0">
@@ -635,7 +638,7 @@ const SearchResults = ({
             once there are some to act on — no row of dead inputs on first load.
             Until then the same bars stand in for them, pulsing while a search
             runs and still before one has been asked for. */}
-        {isPlaceholderVisible ? (
+        {isPlaceholderVisible && !hasResultsBeforeFiltering ? (
           <ToolbarSkeleton tempo={isProcessing ? 'loading' : 'ghost'} />
         ) : (
           <>
@@ -932,7 +935,7 @@ const SearchResults = ({
               invites walking away with the wrong rows. So 'searching' is
               checked before hasResults, not after. */}
 
-          {isPlaceholderVisible ? (
+          {isPlaceholderVisible && !hasResults ? (
             <div className="flex flex-col items-center justify-center gap-2 h-full text-gray-500 dark:text-gray-400">
               {paneState === 'searching' ? (
                 <>
@@ -944,18 +947,24 @@ const SearchResults = ({
                 </>
               ) : paneState === 'empty' ? (
                 <>
-                  <SearchPlaceholderIllustration
-                    className="w-1/6 max-w-40"
-                    icon="notFound"
-                  />
-                  {/* Which of the two messages applies turns on whether
-                      anything survived the engine but not the filters;
-                      blaming filters the user never set would send them
-                      hunting for a control to clear. */}
                   {hasResultsBeforeFiltering ? (
-                    <Trans i18nKey={`${I18N_NS}.noResultsForFiltersMessage`} />
+                    <>
+                      <SearchPlaceholderIllustration
+                        className="w-1/6 max-w-40"
+                        icon="notFound"
+                      />
+                      <Trans
+                        i18nKey={`${I18N_NS}.noResultsForFiltersMessage`}
+                      />
+                    </>
                   ) : (
-                    <Trans i18nKey={`${I18N_NS}.noMatchesMessage`} />
+                    <>
+                      <SearchPlaceholderIllustration
+                        className="w-1/6 max-w-40"
+                        icon="warning"
+                      />
+                      <Trans i18nKey={`${I18N_NS}.noMatchesMessage`} />
+                    </>
                   )}
                 </>
               ) : (

@@ -31,6 +31,17 @@
     },
     "sortableList": {
       "dragHandleTitle": "Перетягніть, щоб змінити порядок (або ↑ / ↓)"
+    },
+    "toast": {
+      "successIconAlt": "Іконка успіху",
+      "errorIconAlt": "Іконка помилки",
+      "warningIconAlt": "Іконка попередження",
+      "closeLabel": "Закрити",
+      "autoCloseCountdown_one": "Сповіщення закриється через {{count}} секунду ...",
+      "autoCloseCountdown_few": "Сповіщення закриється через {{count}} секунди ...",
+      "autoCloseCountdown_many": "Сповіщення закриється через {{count}} секунд ...",
+      "autoCloseCountdown_other": "Сповіщення закриється через {{count}} секунд ...",
+      "cancelAutoCloseButton": "Скасувати"
     }
   },
   "page": {

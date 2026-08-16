@@ -31,6 +31,15 @@
     },
     "sortableList": {
       "dragHandleTitle": "Drag to reorder (or use ↑ / ↓)"
+    },
+    "toast": {
+      "successIconAlt": "Check icon",
+      "errorIconAlt": "Error icon",
+      "warningIconAlt": "Warning icon",
+      "closeLabel": "Close",
+      "autoCloseCountdown_one": "Notification will be auto closed in {{count}} sec ...",
+      "autoCloseCountdown_other": "Notification will be auto closed in {{count}} sec ...",
+      "cancelAutoCloseButton": "Cancel"
     }
   },
   "page": {

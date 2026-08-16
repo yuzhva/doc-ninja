@@ -8,7 +8,8 @@ import React from 'react';
 // classes, so it doesn't need a light/dark variant of its own.
 const ICON_BY_VARIANT = {
   search: '🔍',
-  notFound: '⚠️',
+  warning: '⚠️',
+  notFound: '🤷',
 } as const;
 
 type IconVariant = keyof typeof ICON_BY_VARIANT;
