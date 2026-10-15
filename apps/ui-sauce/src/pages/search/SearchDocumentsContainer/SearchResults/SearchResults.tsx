@@ -648,15 +648,70 @@ const SearchResults = ({
         await writable.close();
       }
 
+      // Desktop app only: a browser can't open a folder on the computer, and
+      // even Electron only knows where this one is because its main process
+      // noted the path when write access was granted — the handle itself
+      // carries none. A lookup that fails just leaves the link out.
+      const outputFolderName = payload.outputDirectoryHandle.name;
+      const outputFolderPath = await window.electronAPI
+        ?.getWritableDirectoryPath(outputFolderName)
+        .catch(() => null);
+
       addToast(
         'success',
-        t(`${I18N_NS}.generateSuccessToast`, { count: result.files.length }),
+        <>
+          {t(`${I18N_NS}.generateSuccessToast`, {
+            count: result.files.length,
+          })}
+          {outputFolderPath && (
+            <p className="mt-2">
+              <Trans
+                i18nKey={`${I18N_NS}.openOutputFolderMessage`}
+                values={{ name: outputFolderName }}
+                // Not `link`: Trans parses the translation as HTML, where
+                // <link> is a void element — it would come out as an empty
+                // button with "open folder" as plain text beside it.
+                components={{
+                  action: (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenOutputFolder(outputFolderPath)}
+                      className="text-blue-600 underline dark:text-blue-400 cursor-pointer"
+                    />
+                  ),
+                  bold: <span className="font-semibold" />,
+                }}
+              />
+            </p>
+          )}
+        </>,
       );
     } catch (error: any) {
       console.error('Failed to generate .doc* files', error);
       addToast(
         'error',
         t(`${I18N_NS}.generateFailedToast`, {
+          message: error.message || error,
+        }),
+      );
+    }
+  };
+
+  const handleOpenOutputFolder = async (folderPath: string) => {
+    try {
+      // Resolves to an error message, or '' once the folder is open.
+      const errorMessage = await window.electronAPI?.openPath(folderPath);
+      if (errorMessage) {
+        addToast(
+          'error',
+          t(`${I18N_NS}.openFolderFailedToast`, { message: errorMessage }),
+        );
+      }
+    } catch (error: any) {
+      console.error('Failed to open output folder', error);
+      addToast(
+        'error',
+        t(`${I18N_NS}.openFolderFailedToast`, {
           message: error.message || error,
         }),
       );

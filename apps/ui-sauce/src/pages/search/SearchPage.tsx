@@ -16,7 +16,7 @@ const SearchPage = () => {
   // --- Toast Management ---
   const [toasts, setToasts] = React.useState<ToastMessage[]>([]);
   const addToast = React.useCallback(
-    (type: 'success' | 'error' | 'warning', content: string) => {
+    (type: 'success' | 'error' | 'warning', content: React.ReactNode) => {
       const id = Date.now();
       setToasts((prev) => [...prev, { id, type, content }]);
     },

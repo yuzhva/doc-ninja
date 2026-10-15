@@ -6,7 +6,9 @@ const I18N_NS = 'component.toast';
 interface ToastMessage {
   id: number;
   type: 'success' | 'error' | 'warning';
-  content: string;
+  // Usually plain text; markup when the message carries an action, like the
+  // "open folder" link after saving generated documents.
+  content: React.ReactNode;
 }
 
 const AUTO_CLOSE_SECONDS = 3;

@@ -94,6 +94,8 @@
           "summaryColumnHeader": "Summary",
           "generateSuccessToast": "Successfully created {{count}} file(s) in the selected folder.",
           "generateFailedToast": "Error creating file: {{message}}",
+          "openOutputFolderMessage": "<action>Open folder</action> <bold>{{name}}</bold> to view the files.",
+          "openFolderFailedToast": "Couldn't open the folder: {{message}}",
           "documentDetailsTitle": "Document details",
           "queryLabel": "Query:",
           "matchLabel": "Match #{{number}}",

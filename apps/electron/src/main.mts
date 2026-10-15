@@ -238,6 +238,40 @@ electronApp.whenReady().then(async () => {
     },
   );
 
+  // Absolute paths of the folders the user has let the UI write into, keyed
+  // by folder name. The UI picks its output folder through the same File
+  // System Access API (see file-system-bridge.ts), which hands it a handle but
+  // never a path — this permission request, raised on that pick and again on
+  // the re-grant after every restart, is the one place the path shows up. Kept
+  // so the UI can offer to open the folder it just saved into.
+  const writableDirectoryPathByName = new Map<string, string>();
+
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback, details) => {
+      if (
+        permission === 'fileSystem' &&
+        'filePath' in details &&
+        details.filePath &&
+        details.isDirectory &&
+        details.fileAccessType === 'writable'
+      ) {
+        writableDirectoryPathByName.set(
+          path.basename(details.filePath),
+          details.filePath,
+        );
+      }
+
+      // Approve everything, exactly as Electron does when no handler is set
+      // at all — this one is only here to listen.
+      callback(true);
+    },
+  );
+
+  ipcMain.handle(
+    'fileSystemAccess:getWritableDirectoryPath',
+    (_event, name: string) => writableDirectoryPathByName.get(name) ?? null,
+  );
+
   // Handle file reading
   ipcMain.handle('file:readFile', async (event, filePath: string) => {
     return FileScannerNode.safeReadFile(filePath);

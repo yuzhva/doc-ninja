@@ -42,7 +42,10 @@ const SearchDocumentsContainer = ({
   isProcessing,
   addToast,
 }: BatchFileProcessingSectionProps & {
-  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
+  addToast: (
+    type: 'success' | 'error' | 'warning',
+    content: React.ReactNode,
+  ) => void;
 }) => {
   const { t } = useTranslation();
 
