@@ -34,6 +34,42 @@ import {
 
 const I18N_NS = 'page.search.container.searchResults';
 
+const MATCH_SELECTION_ENABLED_STORAGE_KEY = 'docNinja_isMatchSelectionEnabled';
+
+// Rendered twice — exporting everything in the toolbar, and exporting just the
+// ticked matches in the selection bar laid over it.
+const ButtonSaveXlsx = ({
+  onClick,
+  disabled = false,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) => (
+  <button
+    type="button"
+    className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
+    onClick={onClick}
+    disabled={disabled}
+  >
+    <svg
+      className="w-4 h-4 mr-2"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth="2"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M10 3v4a1 1 0 0 1-1 1H5m8-2h3m-3 3h3m-4 3v6m4-3H8M19 4v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1ZM8 12v6h8v-6H8Z"
+      />
+    </svg>
+    <Trans i18nKey={`${I18N_NS}.saveXlsxButton`} />
+  </button>
+);
+
 const SearchResults = ({
   results,
   totalsByQuery,
@@ -78,6 +114,40 @@ const SearchResults = ({
   const [storedSort, setStoredSort] = React.useState<ResultsSortState>(
     readStoredResultsSort,
   );
+
+  // Whether the tables show their "select for download" checkboxes at all.
+  // Remembered across restarts, since it's a way of working rather than a
+  // one-off — and off until asked for, so the tables look as they always did.
+  const [isMatchSelectionEnabled, setIsMatchSelectionEnabled] = React.useState(
+    () => {
+      if (typeof window === 'undefined') return false;
+      try {
+        return (
+          window.localStorage.getItem(MATCH_SELECTION_ENABLED_STORAGE_KEY) ===
+          'true'
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  // Matches ticked for download, held by the match objects themselves rather
+  // than by a derived key: a search response builds each one exactly once, and
+  // sorting and the results filter only ever reshuffle those same objects — so
+  // a selection survives both without any id bookkeeping. Lives here rather
+  // than per table because it spans every table, and the toolbar that exports
+  // it sits up here too.
+  const [selectedMatches, setSelectedMatches] = React.useState<
+    Set<RichProcessedResultItem>
+  >(() => new Set());
+
+  // A new search answers with a fresh set of match objects, so nothing held
+  // from the previous one could ever be shown (or exported) again — let it go
+  // instead of pinning the old results in memory.
+  React.useEffect(() => {
+    setSelectedMatches(new Set());
+  }, [results]);
 
   // Read configuration dynamically
   const filterConfigs = React.useMemo(() => {
@@ -273,6 +343,27 @@ const SearchResults = ({
     [sortedResults],
   );
 
+  // The ticked matches, in table order — the same order an export of
+  // everything uses. Read off the rendered results rather than straight from
+  // the set, so a ticked match that has since dropped out of view (another
+  // parser config narrowing the text filter differently, say) is never
+  // exported without the user seeing it.
+  const selectedFlattenedItems = React.useMemo(
+    () =>
+      Object.values(sortedResults)
+        .flat()
+        .flatMap((group) => group.items)
+        .filter((match) => selectedMatches.has(match))
+        .map(({ extracted }) => ({ extracted })),
+    [sortedResults, selectedMatches],
+  );
+
+  // Only over results that are actually on screen: while a new search runs,
+  // the ones showing answer the previous query, and the selection is about to
+  // be dropped with them anyway.
+  const isSelectionActive =
+    paneState === 'results' && selectedFlattenedItems.length > 0;
+
   // A fresh column starts ascending; clicking the active one flips it.
   const handleSortChange = (columnId: string) => {
     const next: ResultsSortState =
@@ -285,6 +376,45 @@ const SearchResults = ({
 
     setStoredSort(next);
     writeStoredResultsSort(next);
+  };
+
+  const handleMatchSelectionEnabledChange = (isEnabled: boolean) => {
+    setIsMatchSelectionEnabled(isEnabled);
+
+    // Hiding the checkboxes takes away the only way to untick anything, so
+    // whatever was ticked goes with them rather than staying highlighted (and
+    // exportable) with no visible way to undo it.
+    if (!isEnabled) {
+      setSelectedMatches(new Set());
+    }
+
+    try {
+      window.localStorage.setItem(
+        MATCH_SELECTION_ENABLED_STORAGE_KEY,
+        String(isEnabled),
+      );
+    } catch (e) {
+      console.warn('Failed to persist match selection setting', e);
+    }
+  };
+
+  // One entry point for every level of the selection — a single match, a
+  // whole file, a whole table — since each of them is just a list of matches.
+  const handleMatchesSelectionChange = (
+    matches: RichProcessedResultItem[],
+    isSelected: boolean,
+  ) => {
+    setSelectedMatches((prev) => {
+      const next = new Set(prev);
+      matches.forEach((match) => {
+        if (isSelected) {
+          next.add(match);
+        } else {
+          next.delete(match);
+        }
+      });
+      return next;
+    });
   };
 
   const handleFilterChange = (filterId: string, item: string) => {
@@ -318,7 +448,9 @@ const SearchResults = ({
     });
   };
 
-  const handleButtonExportClick = async () => {
+  // `items` is everything in the tables, or just the ticked matches, depending
+  // on which of the two .xlsx buttons was clicked.
+  const handleButtonExportClick = async (items: { extracted: any }[]) => {
     // 1. Load Filter Configs from localStorage for dynamic columns
     let exportFilterConfigs: any[] = [];
     try {
@@ -390,30 +522,28 @@ const SearchResults = ({
     const allColumns = [...baseCols, ...schemaCols, ...dynamicCols];
 
     // 3. Process Rows: Map standard fields & Calculate dynamic fields
-    const processedRows = flattenGroupedResults(sortedResults).map(
-      ({ extracted }) => {
-        // Map standard fields matching BE Excel structure
-        const row: any = {
-          inputName: extracted.searchQuery,
-          foundInDocument: extracted.foundInDocument,
-          foundDeclension: extracted.matchedText,
-        };
+    const processedRows = items.map(({ extracted }) => {
+      // Map standard fields matching BE Excel structure
+      const row: any = {
+        inputName: extracted.searchQuery,
+        foundInDocument: extracted.foundInDocument,
+        foundDeclension: extracted.matchedText,
+      };
 
-        exportedSpreadsheetFields.forEach((field) => {
-          row[field.id] = extracted.extractedFieldById[field.id];
-        });
+      exportedSpreadsheetFields.forEach((field) => {
+        row[field.id] = extracted.extractedFieldById[field.id];
+      });
 
-        // Calculate dynamic fields using shared helper
-        // The helper expects { extracted: ... } structure for consistency
-        const dynamicValues = calculateDynamicValues(
-          { extracted },
-          exportFilterConfigs,
-          exportPrimaryFieldId,
-        );
+      // Calculate dynamic fields using shared helper
+      // The helper expects { extracted: ... } structure for consistency
+      const dynamicValues = calculateDynamicValues(
+        { extracted },
+        exportFilterConfigs,
+        exportPrimaryFieldId,
+      );
 
-        return truncateRowForXlsx({ ...row, ...dynamicValues });
-      },
-    );
+      return truncateRowForXlsx({ ...row, ...dynamicValues });
+    });
 
     // Prepare unified payload for export
     const exportPayload = {
@@ -642,67 +772,148 @@ const SearchResults = ({
           <ToolbarSkeleton tempo={isProcessing ? 'loading' : 'ghost'} />
         ) : (
           <>
-            {/* Toolbar - Row 1: Search, Max Results, Export */}
-            <div className="flex flex-wrap items-center gap-2 p-4">
-              {/* Search Input */}
-              <form
-                className="flex items-center w-full sm:w-auto"
-                onSubmit={(e) => e.preventDefault()}
+            {/* Toolbar - Row 1: Search, Max Results, Export — with the
+                selection bar laid over it while any match is ticked. */}
+            <div className="relative">
+              {/* Hidden rather than merely covered: the bar's tint is
+                  translucent in dark mode, and `invisible` also keeps Tab and
+                  screen readers off controls nobody can see — while still
+                  holding the row's height for the bar to fill. */}
+              <div
+                className={`flex flex-wrap items-center gap-2 p-4 ${
+                  isSelectionActive ? 'invisible' : ''
+                }`}
               >
-                <label htmlFor="simple-search" className="sr-only">
-                  <Trans i18nKey={`${I18N_NS}.filterLabel`} />
-                </label>
-                <div className="relative w-full sm:w-64 md:w-72">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                    <svg
-                      aria-hidden="true"
-                      className="w-5 h-5 text-gray-500 dark:text-gray-400"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
-                  <input
-                    type="text"
-                    id="simple-search"
-                    className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                    placeholder={t(`${I18N_NS}.filterLabel`)}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                  {searchTerm && (
-                    <button
-                      type="button"
-                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
-                      onClick={() => setSearchTerm('')}
-                    >
+                {/* Search Input */}
+                <form
+                  className="flex items-center w-full sm:w-auto"
+                  onSubmit={(e) => e.preventDefault()}
+                >
+                  <label htmlFor="simple-search" className="sr-only">
+                    <Trans i18nKey={`${I18N_NS}.filterLabel`} />
+                  </label>
+                  <div className="relative w-full sm:w-64 md:w-72">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                       <svg
-                        className="w-3 h-3"
                         aria-hidden="true"
+                        className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
                         xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 14 14"
                       >
                         <path
-                          stroke="currentColor"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth="2"
-                          d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                          fillRule="evenodd"
+                          d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                          clipRule="evenodd"
                         />
                       </svg>
-                      <span className="sr-only">
-                        <Trans i18nKey={`${I18N_NS}.clearSearchLabel`} />
-                      </span>
-                    </button>
-                  )}
-                  {searchTerm && (
+                    </div>
+                    <input
+                      type="text"
+                      id="simple-search"
+                      className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                      placeholder={t(`${I18N_NS}.filterLabel`)}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white focus:outline-none"
+                        onClick={() => setSearchTerm('')}
+                      >
+                        <svg
+                          className="w-3 h-3"
+                          aria-hidden="true"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 14 14"
+                        >
+                          <path
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                          />
+                        </svg>
+                        <span className="sr-only">
+                          <Trans i18nKey={`${I18N_NS}.clearSearchLabel`} />
+                        </span>
+                      </button>
+                    )}
+                    {searchTerm && (
+                      <BadgeCounter
+                        count={1}
+                        variant="red"
+                        size="md"
+                        bordered
+                        className="absolute -top-2 -end-2"
+                      />
+                    )}
+                  </div>
+                </form>
+
+                {/* Max Results Counter */}
+                <div className="relative flex items-center max-w-[8rem]">
+                  <button
+                    type="button"
+                    id="decrement-button"
+                    onClick={handleDecrementMaxResults}
+                    className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-s-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
+                  >
+                    <svg
+                      className="w-3 h-3 text-gray-900 dark:text-white"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 18 2"
+                    >
+                      <path
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M1 1h16"
+                      />
+                    </svg>
+                  </button>
+                  <input
+                    type="text"
+                    id="max-results-input"
+                    className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                    placeholder={t(`${I18N_NS}.allResultsPlaceholder`)}
+                    value={maxResults}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || /^\d+$/.test(val)) {
+                        setMaxResults(val);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    id="increment-button"
+                    onClick={handleIncrementMaxResults}
+                    className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-e-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
+                  >
+                    <svg
+                      className="w-3 h-3 text-gray-900 dark:text-white"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 18 18"
+                    >
+                      <path
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M9 1v16M1 9h16"
+                      />
+                    </svg>
+                  </button>
+                  {maxResults !== '' && (
                     <BadgeCounter
                       count={1}
                       variant="red"
@@ -712,125 +923,95 @@ const SearchResults = ({
                     />
                   )}
                 </div>
-              </form>
 
-              {/* Max Results Counter */}
-              <div className="relative flex items-center max-w-[8rem]">
-                <button
-                  type="button"
-                  id="decrement-button"
-                  onClick={handleDecrementMaxResults}
-                  className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-s-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
-                >
-                  <svg
-                    className="w-3 h-3 text-gray-900 dark:text-white"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 18 2"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M1 1h16"
-                    />
-                  </svg>
-                </button>
-                <input
-                  type="text"
-                  id="max-results-input"
-                  className="bg-gray-50 border-x-0 border-gray-300 h-10 text-center text-gray-900 text-sm focus:ring-blue-500 focus:border-blue-500 block w-full py-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                  placeholder={t(`${I18N_NS}.allResultsPlaceholder`)}
-                  value={maxResults}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '' || /^\d+$/.test(val)) {
-                      setMaxResults(val);
-                    }
-                  }}
+                <div className="flex-grow" />
+
+                {/* Export Button */}
+                <FPDDocmTemplatesDropdown
+                  items={flattenedItems}
+                  templateTagFieldIds={allFieldIds}
+                  primaryFieldId={primaryFieldId}
+                  onGenerate={handleGenerateDocm}
+                  addToast={addToast}
                 />
-                <button
-                  type="button"
-                  id="increment-button"
-                  onClick={handleIncrementMaxResults}
-                  className="bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 dark:border-gray-600 hover:bg-gray-200 border border-gray-300 rounded-e-lg p-3 h-10 focus:ring-gray-100 dark:focus:ring-gray-700 focus:ring-2 focus:outline-none cursor-pointer transition-colors"
-                >
-                  <svg
-                    className="w-3 h-3 text-gray-900 dark:text-white"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 18 18"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M9 1v16M1 9h16"
-                    />
-                  </svg>
-                </button>
-                {maxResults !== '' && (
-                  <BadgeCounter
-                    count={1}
-                    variant="red"
-                    size="md"
-                    bordered
-                    className="absolute -top-2 -end-2"
-                  />
-                )}
+
+                <ButtonSaveXlsx
+                  onClick={() => handleButtonExportClick(flattenedItems)}
+                  disabled={!hasResults}
+                />
               </div>
 
-              <div className="flex-grow" />
+              {/* Same padding and control height as the row beneath, so the
+                export buttons land exactly on top of their counterparts.
+                `min-h-full` rather than `inset-0` so it can still grow if its
+                own content ever wraps taller than the row. The very same tint
+                as a selected match, so the two read as one thing without the
+                bar pulling the eye. */}
+              {isSelectionActive && (
+                <div className="absolute inset-x-0 top-0 z-20 min-h-full flex flex-wrap items-center gap-2 p-4 bg-yellow-100 text-gray-900 dark:bg-yellow-300/10 dark:text-gray-100 sm:rounded-t-lg">
+                  <div className="flex items-center gap-3 text-sm">
+                    <span>
+                      <Trans
+                        i18nKey={`${I18N_NS}.selectedMatchesCount`}
+                        count={selectedFlattenedItems.length}
+                        components={{
+                          bold: <span className="font-semibold" />,
+                        }}
+                      />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMatches(new Set())}
+                      className="text-blue-600 underline dark:text-blue-400 cursor-pointer"
+                    >
+                      <Trans i18nKey={`${I18N_NS}.clearSelectionButton`} />
+                    </button>
+                  </div>
 
-              {/* Export Button */}
-              <FPDDocmTemplatesDropdown
-                items={flattenedItems}
-                templateTagFieldIds={allFieldIds}
-                primaryFieldId={primaryFieldId}
-                onGenerate={handleGenerateDocm}
-                addToast={addToast}
-              />
+                  <div className="flex-grow" />
 
-              <button
-                type="button"
-                className={`flex items-center justify-center flex-shrink-0 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 ${!hasResults ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 hover:text-blue-700'}`}
-                onClick={handleButtonExportClick}
-                disabled={!hasResults}
-              >
-                <svg
-                  className="w-4 h-4 mr-2"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M10 3v4a1 1 0 0 1-1 1H5m8-2h3m-3 3h3m-4 3v6m4-3H8M19 4v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1ZM8 12v6h8v-6H8Z"
+                  <FPDDocmTemplatesDropdown
+                    items={selectedFlattenedItems}
+                    templateTagFieldIds={allFieldIds}
+                    primaryFieldId={primaryFieldId}
+                    onGenerate={handleGenerateDocm}
+                    addToast={addToast}
                   />
-                </svg>
-                <Trans i18nKey={`${I18N_NS}.saveXlsxButton`} />
-              </button>
+
+                  <ButtonSaveXlsx
+                    onClick={() =>
+                      handleButtonExportClick(selectedFlattenedItems)
+                    }
+                  />
+                </div>
+              )}
             </div>
 
             {/* Divider */}
             <hr className="h-px bg-gray-200 border-0 dark:bg-gray-700" />
 
-            {/* Toolbar - Row 2: Filters */}
-            <div className="flex flex-wrap items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20">
+            {/* Toolbar - Row 2: Filters — locked while matches are ticked, so
+                a filter change can't hide a match that's already going into
+                the download. */}
+            <div
+              className="flex flex-wrap items-center gap-2 p-2 px-4 bg-gray-50/50 dark:bg-gray-700/20"
+              title={
+                isSelectionActive
+                  ? t(`${I18N_NS}.filtersLockedTitle`)
+                  : undefined
+              }
+            >
               {filterConfigs.length === 0 ? (
                 <>
                   <div className="flex-grow" />
                   <button
                     onClick={() => setIsSettingsOpen(true)}
-                    className="relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer"
+                    disabled={isSelectionActive}
+                    className={`relative flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg md:w-auto focus:outline-none focus:z-10 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 ${
+                      isSelectionActive
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:bg-gray-100 hover:text-blue-700 dark:hover:text-white dark:hover:bg-gray-700 cursor-pointer'
+                    }`}
                   >
                     <svg
                       className="mr-2 w-4 h-4 text-gray-400"
@@ -862,7 +1043,12 @@ const SearchResults = ({
                   {/* Settings cog - rendered as the first item in the filters cluster */}
                   <button
                     onClick={() => setIsSettingsOpen(true)}
-                    className="rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer"
+                    disabled={isSelectionActive}
+                    className={`rounded-lg p-2.5 text-sm text-gray-500 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:focus:ring-gray-700 ${
+                      isSelectionActive
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
+                    }`}
                   >
                     <svg
                       className="w-4 h-4 text-gray-400"
@@ -915,6 +1101,7 @@ const SearchResults = ({
                           handleFilterChange(filterId, item)
                         }
                         idPrefix={`filter-${filterId}`}
+                        disabled={isSelectionActive}
                       />
                     );
                   })}
@@ -993,6 +1180,12 @@ const SearchResults = ({
                     sortColumnId={activeSort.columnId}
                     sortDirection={activeSort.direction}
                     onSortChange={handleSortChange}
+                    isMatchSelectionEnabled={isMatchSelectionEnabled}
+                    onMatchSelectionEnabledChange={
+                      handleMatchSelectionEnabledChange
+                    }
+                    selectedMatches={selectedMatches}
+                    onMatchesSelectionChange={handleMatchesSelectionChange}
                     onBtnGenerateDocmClick={handleGenerateDocm}
                     addToast={addToast}
                   />
