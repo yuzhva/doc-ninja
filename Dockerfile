@@ -22,6 +22,7 @@ FROM node:${NODE_VERSION}-slim AS base
 #    produce a production release, not to run dev or prod containers.
 RUN apt-get update && apt-get install -y \
     python3-openpyxl \
+    libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Install LibreOffice, Python3, and the UNO bridge required for scripting .xlsb files.
