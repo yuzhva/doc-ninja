@@ -1,4 +1,8 @@
-import { execSync } from 'child_process';
+// execFileSync rather than execSync: execSync always runs the command through
+// a shell (cmd.exe on Windows). Starting the executables directly
+// keeps the shell out of the chain. (pnpm itself also runs scripts via cmd.exe
+// unless its `script-shell` is set to another shell.)
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,7 +28,7 @@ if (fs.existsSync(venvDir)) {
 // Create venv
 const pythonCmd = isWin ? 'python' : 'python3';
 try {
-  execSync(`${pythonCmd} -m venv .venv-build`, {
+  execFileSync(pythonCmd, ['-m', 'venv', '.venv-build'], {
     cwd: rootDir,
     stdio: 'inherit',
   });
@@ -45,7 +49,7 @@ const pyInstallerCmd = path.join(
 
 console.log('⬇️ Installing build dependencies...');
 // Install dependencies inside venv
-execSync(`"${pipCmd}" install pyinstaller openpyxl`, {
+execFileSync(pipCmd, ['install', 'pyinstaller', 'openpyxl'], {
   cwd: rootDir,
   stdio: 'inherit',
 });
@@ -61,8 +65,11 @@ for (const script of scripts) {
   console.log(`Building ${script}...`);
   const scriptPath = path.join('src', 'python-scripts', `${script}.py`);
   // Run PyInstaller
-  const cmd = `"${pyInstallerCmd}" --onefile --distpath "${distDir}" --name ${script} "${scriptPath}"`;
-  execSync(cmd, { cwd: rootDir, stdio: 'inherit' });
+  execFileSync(
+    pyInstallerCmd,
+    ['--onefile', '--distpath', distDir, '--name', script, scriptPath],
+    { cwd: rootDir, stdio: 'inherit' },
+  );
 }
 
 console.log('🧹 Cleaning up build artifacts...');
