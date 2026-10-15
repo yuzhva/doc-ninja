@@ -103,6 +103,12 @@
           "clearSearchLabel": "Очистити пошук",
           "allResultsPlaceholder": "Всі",
           "saveXlsxButton": "Зберегти .xlsx",
+          "clearSelectionButton": "Очистити все",
+          "selectedMatchesCount_one": "Обрано <bold>{{count}}</bold> результат до завантаження",
+          "selectedMatchesCount_few": "Обрано <bold>{{count}}</bold> результати до завантаження",
+          "selectedMatchesCount_many": "Обрано <bold>{{count}}</bold> результатів до завантаження",
+          "selectedMatchesCount_other": "Обрано <bold>{{count}}</bold> результатів до завантаження",
+          "filtersLockedTitle": "Фільтри недоступні, поки обрано результати — очистіть вибір, щоб змінити їх",
           "addFiltersButton": "Додайте фільтри",
           "noResultsForFiltersMessage": "Нічого не знайдено за обраними фільтрами",
           "noMatchesMessage": "За цим запитом нічого не знайдено",
@@ -131,7 +137,10 @@
           "fileNameHeader": "Назва файлу",
           "pathHeader": "Шлях",
           "sortAscendingTitle": "Сортувати за зростанням",
-          "sortDescendingTitle": "Сортувати за спаданням"
+          "sortDescendingTitle": "Сортувати за спаданням",
+          "selectAllForDownloadTitle": "Обрати всі результати в таблиці для завантаження",
+          "tableSettingsTitle": "Налаштування таблиці",
+          "matchSelectionToggleLabel": "Обирати результат для завантаження"
         },
         "processedResultRow": {
           "expandTitle": "Розгорнути",
@@ -139,7 +148,9 @@
           "viewContextTitle": "Переглянути контекст",
           "filePathFallback": "Шлях до файлу",
           "copyTooltip": "Скопіювати",
-          "generateDocmTooltip": "Зберегти .doc*"
+          "generateDocmTooltip": "Зберегти .doc*",
+          "selectMatchForDownloadTitle": "Обрати результат для завантаження",
+          "selectFileMatchesForDownloadTitle": "Обрати всі результати цього файлу для завантаження"
         },
         "fpdModalSearchHistory": {
           "title": "Історія пошуку",

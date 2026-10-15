@@ -101,6 +101,10 @@
           "clearSearchLabel": "Clear search",
           "allResultsPlaceholder": "All",
           "saveXlsxButton": "Save .xlsx",
+          "clearSelectionButton": "Clear all",
+          "selectedMatchesCount_one": "<bold>{{count}}</bold> result selected for download",
+          "selectedMatchesCount_other": "<bold>{{count}}</bold> results selected for download",
+          "filtersLockedTitle": "Filters are locked while matches are selected — clear the selection to change them",
           "addFiltersButton": "Add filters",
           "noResultsForFiltersMessage": "Nothing found for the selected filters",
           "noMatchesMessage": "No matches found for this search",
@@ -123,7 +127,10 @@
           "fileNameHeader": "File name",
           "pathHeader": "Path",
           "sortAscendingTitle": "Sort ascending",
-          "sortDescendingTitle": "Sort descending"
+          "sortDescendingTitle": "Sort descending",
+          "selectAllForDownloadTitle": "Select all matches in this table for download",
+          "tableSettingsTitle": "Table settings",
+          "matchSelectionToggleLabel": "Select result for download"
         },
         "processedResultRow": {
           "expandTitle": "Expand",
@@ -131,7 +138,9 @@
           "viewContextTitle": "View context",
           "filePathFallback": "File path",
           "copyTooltip": "Copy",
-          "generateDocmTooltip": "Save .doc*"
+          "generateDocmTooltip": "Save .doc*",
+          "selectMatchForDownloadTitle": "Select this match for download",
+          "selectFileMatchesForDownloadTitle": "Select all matches of this file for download"
         },
         "fpdModalSearchHistory": {
           "title": "Search history",
