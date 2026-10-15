@@ -33,6 +33,10 @@ interface ElectronAPI {
   fetch: (url: string, options?: any) => Promise<any>;
   readFile: (path: string) => Promise<Buffer>;
   openPath: (path: string) => Promise<string>;
+  // Absolute path of a folder picked for writing (by folder name), or null
+  // when the main process never saw it granted. The handle the picker gives
+  // the UI has no path of its own — see main.mts.
+  getWritableDirectoryPath: (name: string) => Promise<string | null>;
 }
 
 // Extend the Window interface

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   readFile: (path) => ipcRenderer.invoke('file:readFile', path),
   openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
+  getWritableDirectoryPath: (name) =>
+    ipcRenderer.invoke('fileSystemAccess:getWritableDirectoryPath', name),
   showDirectoryPicker: () =>
     ipcRenderer.invoke('dialog:showOpenDialog', {
       properties: ['openDirectory'],

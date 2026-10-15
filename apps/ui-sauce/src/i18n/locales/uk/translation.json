@@ -96,6 +96,8 @@
           "summaryColumnHeader": "Підсумок",
           "generateSuccessToast": "Успішно створено {{count}} файл(ів) у обраній папці.",
           "generateFailedToast": "Помилка створення файлу: {{message}}",
+          "openOutputFolderMessage": "<action>Відкрити теку</action> <bold>{{name}}</bold> для перегляду.",
+          "openFolderFailedToast": "Не вдалося відкрити теку: {{message}}",
           "documentDetailsTitle": "Деталі документу",
           "queryLabel": "Запит:",
           "matchLabel": "Збіг #{{number}}",

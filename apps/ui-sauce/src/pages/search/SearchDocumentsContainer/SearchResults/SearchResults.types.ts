@@ -22,7 +22,10 @@ interface SearchResultsProps {
   // reload even when a folder is already set. Same signal SearchForm uses to
   // disable its own submit button.
   isSourceDirectorySelected: boolean;
-  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
+  addToast: (
+    type: 'success' | 'error' | 'warning',
+    content: React.ReactNode,
+  ) => void;
 }
 
 export type { SearchResultsProps };
