@@ -7,6 +7,7 @@ import type {
   WriteFilesViaDestinationHandle,
 } from '../utils/file-system-processor';
 import { FileSystemAPIProcessor } from '../utils/file-system-processor';
+import { NotificationBridge } from '../utils/notification-bridge';
 import type { UseDirectoryPicker, UseFilePicker } from './use-file-system';
 
 interface BatchProcessorHookOptions extends Pick<
@@ -115,12 +116,12 @@ function useBatchProcessor(
         );
 
         addToast('success', result.message);
-        if (window.document.hidden) new Notification(result.message);
+        NotificationBridge.notify(result.message);
       } catch (error) {
         console.error('Processing failed:', error);
         const msg = '❌ Processing failed. Check console for details.';
         addToast('error', msg);
-        if (window.document.hidden) new Notification(msg);
+        NotificationBridge.notify(msg);
       } finally {
         setIsProcessing(false);
       }
