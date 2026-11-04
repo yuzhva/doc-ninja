@@ -7,6 +7,11 @@
         "toggleDarkMode": "Перемкнути темну тему",
         "showUtilitiesPanel": "Відображати \"Утиліти для документів\"",
         "language": "Мова",
+        "zoomLabel": "Масштаб інтерфейсу",
+        "zoomOutTitle": "Зменшити",
+        "zoomInTitle": "Збільшити",
+        "zoomResetButton": "Скинути до 100%",
+        "zoomShortcutsTitle": "Клавіші, поки відкриті налаштування:",
         "beta": "Бета",
         "requestFeatureReportBug": "- Запропонувати функцію <br>- Повідомити про помилку"
       },

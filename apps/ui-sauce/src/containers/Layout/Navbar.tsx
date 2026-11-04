@@ -4,6 +4,8 @@ import { Link } from 'react-router';
 
 import { Badge, Checkbox, Modal, Select, Tooltip } from '../../components';
 import { LANGUAGE_LABELS, RESOURCES } from '../../i18n';
+import { AppZoomSetting } from './AppZoomSetting';
+import { useAppZoom } from './use-app-zoom';
 import { useSecretKeyCombo } from './use-secret-key-combo';
 
 const LANGUAGE_OPTIONS = Object.keys(RESOURCES).map((language) => ({
@@ -37,6 +39,9 @@ const Navbar = ({
   );
   const [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
   const [isInsiderModeEnabled, setIsInsiderModeEnabled] = React.useState(false);
+  // Mounted with the app shell, so the saved zoom applies from the start;
+  // its shortcuts only while the settings are open.
+  const zoom = useAppZoom({ areShortcutsEnabled: isSettingsModalOpen });
 
   // Read on mount rather than in the initializer so server and first client
   // render both start from `false` — localStorage doesn't exist on the
@@ -884,6 +889,10 @@ const Navbar = ({
           options={LANGUAGE_OPTIONS}
           label={<Trans i18nKey="container.layout.navbar.language" />}
         />
+
+        {/* Desktop app only: a web page can't set the browser's zoom, and the
+            browser has its own Ctrl + / Ctrl − for it. */}
+        {zoom.isSupported && <AppZoomSetting zoom={zoom} />}
 
         {isInsiderModeEnabled && (
           <>
