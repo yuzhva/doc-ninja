@@ -33,7 +33,11 @@ const FormConvertSpreadsheetToStatic = ({
   isProcessing,
 }: BatchFileProcessingSectionProps) => {
   const { t } = useTranslation();
-  const [fileNameSuffix, setFileNameSuffix] = React.useState('_без_формул');
+  // In the UI's language, like the rest of the form; whatever is typed in
+  // stays as typed.
+  const [fileNameSuffix, setFileNameSuffix] = React.useState(() =>
+    t(`${I18N_NS}.defaultFilenameSuffix`),
+  );
 
   const selectedFileName = selectedFile?.structure?.name;
   const isSelectedFileSupported =
@@ -151,7 +155,7 @@ const FormConvertSpreadsheetToStatic = ({
                 id="filenameSuffix"
                 name="filenameSuffix"
                 className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                placeholder="_без_формул"
+                placeholder={t(`${I18N_NS}.defaultFilenameSuffix`)}
                 value={fileNameSuffix}
                 onChange={(e) => setFileNameSuffix(e.target.value)}
                 type="text"

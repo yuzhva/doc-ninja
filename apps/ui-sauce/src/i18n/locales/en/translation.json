@@ -34,6 +34,12 @@
     "formConfigSelect": {
       "createConfigButton": "Create a config"
     },
+    "modal": {
+      "closeLabel": "Close"
+    },
+    "batchProcessor": {
+      "failedMessage": "Processing failed. Check the console for details."
+    },
     "confirmModal": {
       "cancelButton": "Cancel"
     },
@@ -298,8 +304,12 @@
       "tabs": {
         "convertSpreadsheetToStatic": "Convert .xlsx to static",
         "chunkSpreadsheet": "Slice a spreadsheet",
-        "parseDocsByRegex": "Extract data from documents"
+        "parseDocsByRegex": "Extract data from documents",
+        "convertDocToText": "Convert documents to text"
       },
+      "fileSystemAccessUnsupported": "This browser doesn’t support the File System Access API. Use Chrome 86+ or Edge 86+.",
+      "progressFooter": "Processing batch {{batch}}... ({{current}}/{{total}} files)",
+      "excelFilesTypeDescription": "Excel files",
       "docRegexIssues": {
         "NOT_AN_ARRAY": "An array is expected",
         "NOT_AN_OBJECT": "An object is expected",
@@ -331,6 +341,7 @@
           "outputFolderLabel": "Destination folder",
           "outputFolderNextToFileHint": "The folder picker opens where the file is — just confirm it.",
           "filenameSuffixLabel": "File name suffix",
+          "defaultFilenameSuffix": "_no_formulas",
           "convertButton": "Convert to static",
           "convertingButton": "Converting...",
           "resultFileHint": "The result will be saved as \"{{fileName}}\" in the chosen folder.",
@@ -549,7 +560,20 @@
           "addColumnLabel": "Add column",
           "addColumnPlaceholder": "— pick a value —",
           "addConfigButton": "Add config",
-          "noConfigsMessage": "There are no configs yet."
+          "noConfigsMessage": "There are no configs yet.",
+          "splitMatchPlaceholder": "from\\s+\\S+\\s+to\\s+\\S+",
+          "compoundValuePlaceholder": "No. {{number}} of {{date}}"
+        },
+        "formConvertDocToText": {
+          "title": "Convert documents to text",
+          "sourceFolderLabel": "Folder with the documents",
+          "outputFolderLabel": "Folder to save the text files to",
+          "subfolderLabel": "Subfolder name",
+          "convertButton": "Convert documents to text",
+          "convertingButton": "Converting... ({{current}}/{{total}})",
+          "resultHint": "The converted files will be saved to the \"{{subfolder}}\" subfolder of the chosen folder.",
+          "validationMessage": "Choose the documents folder and the folder to save to.",
+          "successMessage": "Documents converted to text!"
         }
       }
     }

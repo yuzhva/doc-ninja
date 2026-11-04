@@ -976,7 +976,7 @@ const ConfigCard = ({
                                   }
                                   placeholder={
                                     splitBy === 'match'
-                                      ? 'з\\s+\\S+\\s+по\\s+\\S+'
+                                      ? t(`${I18N_NS}.splitMatchPlaceholder`)
                                       : ',\\s*'
                                   }
                                   className={monoInputClassName}
@@ -1186,7 +1186,12 @@ const ConfigCard = ({
                       onChange={(e) =>
                         update([...compoundPath, 'value'], e.target.value)
                       }
-                      placeholder="№{{number}} від {{date}}"
+                      // The {{…}} references are the config's own syntax,
+                      // passed through as-is rather than filled in by i18n.
+                      placeholder={t(`${I18N_NS}.compoundValuePlaceholder`, {
+                        number: '{{number}}',
+                        date: '{{date}}',
+                      })}
                       className={monoInputClassName}
                     />
                   </FormField>
