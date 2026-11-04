@@ -6,6 +6,7 @@ import type { ToastMessage } from '../../components';
 import { useBatchProcessor } from '../../hooks/use-batch-processor';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
+import { NotificationBridge } from '../../utils/notification-bridge';
 import { SearchDocumentsContainer } from './SearchDocumentsContainer';
 
 const I18N_NS = 'page.search';
@@ -71,9 +72,7 @@ const SearchPage = () => {
   );
 
   React.useEffect(() => {
-    if (Notification.permission !== 'granted') {
-      Notification.requestPermission();
-    }
+    NotificationBridge.requestPermission();
   }, []);
 
   return (

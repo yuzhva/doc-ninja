@@ -38,6 +38,21 @@ protocol.registerSchemesAsPrivileged([
 // Hold the express app instance
 let expressApp: any;
 
+// The app's one window, so a second launch can bring it back to the front
+// instead of opening another (see the single-instance lock at the bottom).
+let mainWindow: BrowserWindow | null = null;
+
+/**
+ * Brings a window to the front, restoring it first if it's minimized.
+ */
+const focusWindow = (win: BrowserWindow | null) => {
+  if (!win || win.isDestroyed()) return;
+
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+};
+
 /**
  * Whether a URL should be handed to the user's real browser rather than
  * opened inside the app.
@@ -103,6 +118,11 @@ const createWindow = () => {
     },
   });
 
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+
   // A target="_blank" link (how the app's external links — feature requests,
   // privacy policy — are written) otherwise opens a *second Electron window*:
   // a browser with no address bar, no back button and no menu bar (see
@@ -127,7 +147,7 @@ const createWindow = () => {
   win.loadURL('app://doc-ninja/server.html');
 };
 
-electronApp.whenReady().then(async () => {
+const startApp = async () => {
   // Define where the web app files are located
   let webappRoot: string;
   if (electronApp.isPackaged) {
@@ -272,6 +292,12 @@ electronApp.whenReady().then(async () => {
     (_event, name: string) => writableDirectoryPathByName.get(name) ?? null,
   );
 
+  // Sent by the UI when the user clicks one of its system notifications (see
+  // notification-bridge.ts): the renderer can't raise its own window.
+  ipcMain.on('window:focus', (event) => {
+    focusWindow(BrowserWindow.fromWebContents(event.sender));
+  });
+
   // Handle file reading
   ipcMain.handle('file:readFile', async (event, filePath: string) => {
     return FileScannerNode.safeReadFile(filePath);
@@ -340,10 +366,28 @@ electronApp.whenReady().then(async () => {
       createWindow();
     }
   });
-});
+};
 
 electronApp.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     electronApp.quit();
   }
 });
+
+/**
+ * Only one DocNinja runs at a time.
+ *
+ * Windows starts the app again whenever it's asked to open it while it's
+ * already running: from the Start menu, the Store's "Open" button, or a click
+ * on one of its notifications that Windows doesn't hand to the running app
+ * (e.g. from Notification Center). Without the lock each of those started a
+ * second, independent DocNinja with an empty session, on the same storage as
+ * the first. Now that launch quits straight away and the running app comes to
+ * the front instead.
+ */
+if (!electronApp.requestSingleInstanceLock()) {
+  electronApp.quit();
+} else {
+  electronApp.on('second-instance', () => focusWindow(mainWindow));
+  electronApp.whenReady().then(startApp);
+}

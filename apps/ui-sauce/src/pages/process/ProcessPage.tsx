@@ -6,6 +6,7 @@ import type { ToastMessage } from '../../components';
 import { useBatchProcessor } from '../../hooks/use-batch-processor';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
+import { NotificationBridge } from '../../utils/notification-bridge';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
 import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
@@ -66,9 +67,7 @@ const ProcessPage = () => {
   );
 
   React.useEffect(() => {
-    if (Notification.permission !== 'granted') {
-      Notification.requestPermission();
-    }
+    NotificationBridge.requestPermission();
   }, []);
 
   // Every tab gets the same pickers and batch runner, so a folder or file
