@@ -76,7 +76,8 @@ services:
   # development service
   # make the service available under custom domain on local computer
   traefik:
-    image: traefik:v2.5
+    # NOTE: Traefik < v3.6.1 hardcodes Docker API v1.24, which Docker Engine 29+ rejects
+    image: traefik:v3.6
     command:
       - '--api.insecure=true'
       - '--providers.docker=true'
