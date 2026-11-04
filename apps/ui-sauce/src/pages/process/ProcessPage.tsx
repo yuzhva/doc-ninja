@@ -71,6 +71,24 @@ const ProcessPage = () => {
     }
   }, []);
 
+  // Every tab gets the same pickers and batch runner, so a folder or file
+  // picked on one tab is still there on the next.
+  const sectionProps: BatchFileProcessingSectionProps = {
+    onSelectFile: filePicker.selectFile,
+    onDropFile: filePicker.selectDroppedFile,
+    onSelectSourceDirectory: sourceDir.selectDirectory,
+    onSelectOutputDirectory: outputDir.selectDirectory,
+    onSelectOutputDirectoryStartingIn: outputDir.selectDirectoryStartingIn,
+    executeBatch: execute,
+    initSubmitHandler,
+    sourceDirectory: sourceDir.processedDir,
+    outputDirectory: outputDir.processedDir,
+    selectedFile: filePicker.processedDir,
+    progress,
+    isFileSystemAccessSupported: sourceDir.isSupported,
+    isProcessing,
+  };
+
   return (
     // An ordinary page: it scrolls as a whole and the Layout keeps the footer
     // below it. Only the results table scrolls on its own.
@@ -90,68 +108,24 @@ const ProcessPage = () => {
       )}
 
       <Tabs>
-        <Tabs.Item title="Конвертувати .xlsx в cтатику">
-          <FormConvertSpreadsheetToStatic
-            onSelectFile={filePicker.selectFile}
-            onSelectSourceDirectory={sourceDir.selectDirectory}
-            onSelectOutputDirectory={outputDir.selectDirectory}
-            executeBatch={execute}
-            initSubmitHandler={initSubmitHandler}
-            sourceDirectory={sourceDir.processedDir}
-            outputDirectory={outputDir.processedDir}
-            selectedFile={filePicker.processedDir}
-            progress={progress}
-            isFileSystemAccessSupported={sourceDir.isSupported}
-            isProcessing={isProcessing}
-          />
+        <Tabs.Item
+          title={
+            <Trans i18nKey={`${I18N_NS}.tabs.convertSpreadsheetToStatic`} />
+          }
+        >
+          <FormConvertSpreadsheetToStatic {...sectionProps} />
         </Tabs.Item>
         <Tabs.Item title="Нарізка таблиці">
-          <FormChunkSpreadsheetTabItem
-            onSelectFile={filePicker.selectFile}
-            onSelectSourceDirectory={sourceDir.selectDirectory}
-            onSelectOutputDirectory={outputDir.selectDirectory}
-            executeBatch={execute}
-            initSubmitHandler={initSubmitHandler}
-            sourceDirectory={sourceDir.processedDir}
-            outputDirectory={outputDir.processedDir}
-            selectedFile={filePicker.processedDir}
-            progress={progress}
-            isFileSystemAccessSupported={sourceDir.isSupported}
-            isProcessing={isProcessing}
-          />
+          <FormChunkSpreadsheetTabItem {...sectionProps} />
         </Tabs.Item>
         <Tabs.Item
           title={<Trans i18nKey={`${I18N_NS}.tabs.parseDocsByRegex`} />}
           // isBetaFeature
         >
-          <FormParseDocsByRegexTabItem
-            onSelectFile={filePicker.selectFile}
-            onSelectSourceDirectory={sourceDir.selectDirectory}
-            onSelectOutputDirectory={outputDir.selectDirectory}
-            executeBatch={execute}
-            initSubmitHandler={initSubmitHandler}
-            sourceDirectory={sourceDir.processedDir}
-            outputDirectory={outputDir.processedDir}
-            selectedFile={filePicker.processedDir}
-            progress={progress}
-            isFileSystemAccessSupported={sourceDir.isSupported}
-            isProcessing={isProcessing}
-          />
+          <FormParseDocsByRegexTabItem {...sectionProps} />
         </Tabs.Item>
         <Tabs.Item title="Конвертувати Документи в Текст">
-          <FormConvertDocToTextTabItem
-            onSelectFile={filePicker.selectFile}
-            onSelectSourceDirectory={sourceDir.selectDirectory}
-            onSelectOutputDirectory={outputDir.selectDirectory}
-            executeBatch={execute}
-            initSubmitHandler={initSubmitHandler}
-            sourceDirectory={sourceDir.processedDir}
-            outputDirectory={outputDir.processedDir}
-            selectedFile={filePicker.processedDir}
-            progress={progress}
-            isFileSystemAccessSupported={sourceDir.isSupported}
-            isProcessing={isProcessing}
-          />
+          <FormConvertDocToTextTabItem {...sectionProps} />
         </Tabs.Item>
       </Tabs>
 

@@ -29,6 +29,14 @@
     "formConfigSelect": {
       "createConfigButton": "Створити конфігурацію"
     },
+    "formFileDropzone": {
+      "clickOrDrop": "<strong>Натисніть, щоб обрати</strong> або перетягніть файл сюди",
+      "acceptedTypes": "Формати: {{extensions}}",
+      "releaseToSelect": "Відпустіть, щоб обрати файл",
+      "replaceHint": "натисніть або перетягніть інший, щоб замінити",
+      "unsupportedType": "«{{name}}» не підтримується — оберіть файл {{extensions}}.",
+      "multipleFiles": "Перетягніть лише один файл."
+    },
     "formInputFileSelect": {
       "clickToSelect": "Натисніть, щоб обрати ..."
     },
@@ -287,6 +295,7 @@
     },
     "process": {
       "tabs": {
+        "convertSpreadsheetToStatic": "Конвертувати .xlsx в статику",
         "parseDocsByRegex": "Обробка даних з документів"
       },
       "docRegexIssues": {
@@ -314,6 +323,18 @@
         "COLUMN_UNKNOWN": "Невідоме значення «{{id}}»"
       },
       "component": {
+        "formConvertSpreadsheetToStatic": {
+          "title": "Конвертувати .xlsx в статику",
+          "spreadsheetFileLabel": "Excel файл",
+          "outputFolderLabel": "Кінцева папка для збереження",
+          "outputFolderNextToFileHint": "Вікно вибору відкриється в папці з файлом — достатньо підтвердити.",
+          "filenameSuffixLabel": "Суфікс назви файлу",
+          "convertButton": "Конвертувати в статику",
+          "convertingButton": "Конвертую...",
+          "resultFileHint": "Результат буде збережено у файл «{{fileName}}» в обраній папці.",
+          "validationMessage": "Оберіть Excel файл і папку для збереження.",
+          "successMessage": "Таблицю конвертовано в статику!"
+        },
         "formParseDocsByRegex": {
           "title": "Обробка даних з документів",
           "sourceFolderLabel": "Папка з документами (разом з підпапками)",

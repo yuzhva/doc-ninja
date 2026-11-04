@@ -38,8 +38,16 @@ interface BatchFileProcessingSectionProps {
   isFileSystemAccessSupported: boolean;
   isProcessing: boolean;
   onSelectFile: () => void;
+  // The same as onSelectFile, for a file dropped onto the page — call it
+  // synchronously from the `drop` handler.
+  onDropFile?: (dataTransfer: DataTransfer) => void;
   onSelectSourceDirectory: () => void;
   onSelectOutputDirectory: () => void;
+  // The same as onSelectOutputDirectory, opening the picker in the folder of
+  // `startIn` (e.g. the selected file's own folder).
+  onSelectOutputDirectoryStartingIn?: (
+    startIn: FileSystemHandle | null | undefined,
+  ) => void;
   executeBatch: (
     options: BatchProcessorHookOptions,
     apiCall: (
