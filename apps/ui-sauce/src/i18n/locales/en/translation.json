@@ -29,6 +29,14 @@
     "formConfigSelect": {
       "createConfigButton": "Create a config"
     },
+    "formFileDropzone": {
+      "clickOrDrop": "<strong>Click to select</strong> or drop a file here",
+      "acceptedTypes": "Formats: {{extensions}}",
+      "releaseToSelect": "Release to select the file",
+      "replaceHint": "click or drop another one to replace it",
+      "unsupportedType": "\"{{name}}\" isn't supported — pick a {{extensions}} file.",
+      "multipleFiles": "Drop just one file."
+    },
     "formInputFileSelect": {
       "clickToSelect": "Click to select ..."
     },
@@ -277,6 +285,7 @@
     },
     "process": {
       "tabs": {
+        "convertSpreadsheetToStatic": "Convert .xlsx to static",
         "parseDocsByRegex": "Extract data from documents"
       },
       "docRegexIssues": {
@@ -304,6 +313,18 @@
         "COLUMN_UNKNOWN": "Unknown value \"{{id}}\""
       },
       "component": {
+        "formConvertSpreadsheetToStatic": {
+          "title": "Convert .xlsx to static",
+          "spreadsheetFileLabel": "Excel file",
+          "outputFolderLabel": "Destination folder",
+          "outputFolderNextToFileHint": "The folder picker opens where the file is — just confirm it.",
+          "filenameSuffixLabel": "File name suffix",
+          "convertButton": "Convert to static",
+          "convertingButton": "Converting...",
+          "resultFileHint": "The result will be saved as \"{{fileName}}\" in the chosen folder.",
+          "validationMessage": "Select an Excel file and a destination folder first.",
+          "successMessage": "The spreadsheet was converted to static!"
+        },
         "formParseDocsByRegex": {
           "title": "Extract data from documents",
           "sourceFolderLabel": "Folder with documents (including subfolders)",

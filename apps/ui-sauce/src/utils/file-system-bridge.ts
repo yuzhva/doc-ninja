@@ -212,18 +212,7 @@ class FileSystemBridge {
         ...options,
       });
 
-      const file = await fileHandle.getFile();
-
-      const result = FileSystemService.processSingleFile({
-        name: file.name,
-        path: `./${file.name}`,
-        size: file.size,
-        modifiedAt: new Date(file.lastModified),
-        // getFileContent: () => FileScannerBrowser.readFileAsBase64(file),
-        getFileContent: () => file,
-      });
-
-      return { ...result, browserFSAPIhandle: fileHandle };
+      return this.toPickedFile(await fileHandle.getFile(), fileHandle);
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('Error selecting file:', error);
@@ -231,6 +220,58 @@ class FileSystemBridge {
       }
       return null;
     }
+  }
+
+  /**
+   * The same result as pickFile, for a file dragged onto the page.
+   *
+   * Must be called synchronously from the `drop` handler: a DataTransfer's
+   * items can only be read while that event is being dispatched, so both
+   * reads below start right away and only their results are awaited.
+   *
+   * The handle (Chromium and Electron) is what lets a later folder picker
+   * open next to the dropped file; where the browser can't give one, the
+   * file is still usable, just without that.
+   */
+  static readDroppedFile(
+    dataTransfer: DataTransfer,
+  ): Promise<ReturnType<typeof FileSystemBridge.toPickedFile> | null> {
+    const item = [...dataTransfer.items].find((i) => i.kind === 'file');
+    const file = item?.getAsFile() ?? null;
+    // getAsFileSystemHandle isn't in this project's TS DOM lib.
+    const pendingHandle: Promise<FileSystemHandle | null> | undefined = (
+      item as any
+    )?.getAsFileSystemHandle?.();
+
+    return (async () => {
+      if (!file) return null;
+      const handle = await pendingHandle?.catch(() => null);
+      return this.toPickedFile(
+        file,
+        handle?.kind === 'file' ? (handle as FileSystemFileHandle) : null,
+      );
+    })();
+  }
+
+  // Generic so each caller keeps its own handle type: always a handle for
+  // pickFile, possibly none for a drop.
+  private static toPickedFile<Handle extends FileSystemFileHandle | null>(
+    file: File,
+    fileHandle: Handle,
+  ) {
+    const result = FileSystemService.processSingleFile({
+      name: file.name,
+      path: `./${file.name}`,
+      size: file.size,
+      modifiedAt: new Date(file.lastModified),
+      // getFileContent: () => FileScannerBrowser.readFileAsBase64(file),
+      // The toolkit types this as Node's `() => Promise<Buffer>`; in the
+      // browser the batch processor reads the File itself (as before, when
+      // an untyped handle hid the mismatch).
+      getFileContent: (() => file) as any,
+    });
+
+    return { ...result, browserFSAPIhandle: fileHandle };
   }
 
   static async pickDirectory(options: PickDirectoryOptions = {}) {

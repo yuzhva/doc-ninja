@@ -1,13 +1,28 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
-import { ButtonProcessing, FormInputFileSelect } from '../../components';
+import {
+  ButtonProcessing,
+  FormFileDropzone,
+  FormInputFileSelect,
+  hasAllowedExtension,
+} from '../../components';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
 
+const I18N_NS = 'page.process.component.formConvertSpreadsheetToStatic';
+
+// What the conversion script (openpyxl) can open — .xls and .xlsb can't be.
+const SUPPORTED_EXTENSIONS = ['.xlsx', '.xlsm'];
+// The backend always saves the static copy as a macro-enabled workbook.
+const RESULT_EXTENSION = '.xlsm';
+
 const FormConvertSpreadsheetToStatic = ({
   onSelectFile,
+  onDropFile,
   // onSelectSourceDirectory,
   onSelectOutputDirectory,
+  onSelectOutputDirectoryStartingIn,
   executeBatch,
   initSubmitHandler,
   // sourceDirectory,
@@ -17,18 +32,27 @@ const FormConvertSpreadsheetToStatic = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: BatchFileProcessingSectionProps) => {
+  const { t } = useTranslation();
   const [fileNameSuffix, setFileNameSuffix] = React.useState('_без_формул');
 
+  const selectedFileName = selectedFile?.structure?.name;
+  const isSelectedFileSupported =
+    !!selectedFileName &&
+    hasAllowedExtension(selectedFileName, SUPPORTED_EXTENSIONS);
+  // A browser can't hand the page the file's folder, but it can open the
+  // folder picker right there — so choosing it is a single confirmation.
+  const selectedFileHandle = selectedFile?.browserFSAPIhandle ?? null;
+
   const previewFileName = React.useMemo(() => {
-    const originalName = selectedFile?.structure?.name;
+    if (!selectedFileName || !isSelectedFileSupported) return;
 
-    if (!originalName) return;
-
-    const originalNameParts = originalName.split('.');
-
-    // Backend enforces .xlsm extension for static files
-    return `${originalNameParts.slice(0, -1).join('.')}${fileNameSuffix}.${originalNameParts[originalNameParts.length - 1]}`;
-  }, [selectedFile, fileNameSuffix]);
+    const extensionStart = selectedFileName.lastIndexOf('.');
+    const baseName =
+      extensionStart > 0
+        ? selectedFileName.slice(0, extensionStart)
+        : selectedFileName;
+    return `${baseName}${fileNameSuffix}${RESULT_EXTENSION}`;
+  }, [selectedFileName, isSelectedFileSupported, fileNameSuffix]);
 
   const postConvertSpreadsheetToStatic = React.useCallback<
     Parameters<typeof initSubmitHandler>[0]
@@ -39,9 +63,8 @@ const FormConvertSpreadsheetToStatic = ({
           formDataJSON,
           processedDir: selectedFile!,
           destinationHandle: outputDirectory?.browserFSAPIhandle!,
-          validationMessage:
-            'Please select both a spreadsheet file and an output folder.',
-          successMessage: 'Successfully converted spreadsheet to static!',
+          validationMessage: t(`${I18N_NS}.validationMessage`),
+          successMessage: t(`${I18N_NS}.successMessage`),
           // subfolderPath: 'xlsx-static',
         },
         async (batchFiles) => {
@@ -71,7 +94,7 @@ const FormConvertSpreadsheetToStatic = ({
         },
       );
     },
-    [executeBatch, selectedFile, outputDirectory],
+    [executeBatch, selectedFile, outputDirectory, t],
   );
 
   return (
@@ -81,32 +104,40 @@ const FormConvertSpreadsheetToStatic = ({
     >
       <div className="flex h-full flex-col justify-center gap-4 p-6">
         <h3 className="mb-4 text-xl font-bold dark:text-white">
-          Конвертувати .xlsx в cтатику
+          <Trans i18nKey={`${I18N_NS}.title`} />
         </h3>
         <form onSubmit={initSubmitHandler(postConvertSpreadsheetToStatic)}>
           <div className="grid gap-4 mb-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <FormInputFileSelect
+              <FormFileDropzone
                 id="spreadsheetFile"
-                name="spreadsheetFile"
-                label="Оберіть Excel файл"
-                accept=".xlsx,.xlsm,.xls"
-                onClick={onSelectFile}
+                label={<Trans i18nKey={`${I18N_NS}.spreadsheetFileLabel`} />}
+                extensions={SUPPORTED_EXTENSIONS}
                 selectedItem={selectedFile}
+                onClick={onSelectFile}
+                onDropFile={(dataTransfer) => onDropFile?.(dataTransfer)}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
-                icon="file"
               />
             </div>
             <div className="sm:col-span-2">
               <FormInputFileSelect
                 id="outputFolder"
                 name="outputFolder"
-                label="Кінцева папка для збереження"
-                onClick={onSelectOutputDirectory}
+                label={<Trans i18nKey={`${I18N_NS}.outputFolderLabel`} />}
+                onClick={() =>
+                  onSelectOutputDirectoryStartingIn
+                    ? onSelectOutputDirectoryStartingIn(selectedFileHandle)
+                    : onSelectOutputDirectory()
+                }
                 selectedItem={outputDirectory}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
                 icon="folder"
               />
+              {selectedFileHandle && !outputDirectory && (
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  💡 <Trans i18nKey={`${I18N_NS}.outputFolderNextToFileHint`} />
+                </p>
+              )}
             </div>
 
             <div className="sm:col-span-2">
@@ -114,7 +145,7 @@ const FormConvertSpreadsheetToStatic = ({
                 htmlFor="filenameSuffix"
                 className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
               >
-                Суфікс назви файлу
+                <Trans i18nKey={`${I18N_NS}.filenameSuffixLabel`} />
               </label>
               <input
                 id="filenameSuffix"
@@ -132,14 +163,16 @@ const FormConvertSpreadsheetToStatic = ({
             <ButtonProcessing
               type="submit"
               isLoading={isProcessing}
-              disabled={!selectedFile || !outputDirectory}
+              disabled={!isSelectedFileSupported || !outputDirectory}
             >
-              {isProcessing ? 'Конвертую...' : 'Конвертувати в Статику'}
+              {isProcessing
+                ? t(`${I18N_NS}.convertingButton`)
+                : t(`${I18N_NS}.convertButton`)}
             </ButtonProcessing>
             {previewFileName && (
               <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                💡 Результат буде збережено до файлу з назвою "{previewFileName}
-                " всередині обраної папки.
+                💡{' '}
+                {t(`${I18N_NS}.resultFileHint`, { fileName: previewFileName })}
               </div>
             )}
           </div>

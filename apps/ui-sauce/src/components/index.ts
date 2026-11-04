@@ -6,6 +6,7 @@ export { Checkbox } from './Checkbox';
 export { Dropdown } from './Dropdown';
 export { FilterDropdown } from './FilterDropdown';
 export { FormConfigSelect } from './FormConfigSelect';
+export { FormFileDropzone, hasAllowedExtension } from './FormFileDropzone';
 export { FormInputFileSelect } from './FormInputFileSelect';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Modal } from './Modal';

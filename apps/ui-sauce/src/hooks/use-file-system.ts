@@ -25,11 +25,14 @@ function usePicker<T>(pick: () => Promise<T | null>) {
   // mutating it here is visible immediately, same call.
   const errorRef = useRef<Error | null>(null);
 
-  const select = useCallback(async () => {
+  // Runs any way of getting a value (a picker dialog, a drop, ...) with the
+  // same result/error tracking. `getValue` is called synchronously — a drop
+  // depends on that (see FileSystemBridge.readDroppedFile).
+  const run = useCallback(async (getValue: () => Promise<T | null>) => {
     setError(null);
     errorRef.current = null;
     try {
-      const result = await pick();
+      const result = await getValue();
       if (result) {
         setValue(result);
       }
@@ -39,7 +42,9 @@ function usePicker<T>(pick: () => Promise<T | null>) {
       errorRef.current = err;
       return null;
     }
-  }, [pick]);
+  }, []);
+
+  const select = useCallback(() => run(pick), [run, pick]);
 
   // Drops a stale/broken pick (e.g. permission revoked after the fact) so
   // the next select() call re-prompts instead of a caller silently reusing
@@ -53,6 +58,7 @@ function usePicker<T>(pick: () => Promise<T | null>) {
   return {
     processedDir,
     select,
+    run,
     reset,
     error,
     errorRef,
@@ -62,8 +68,16 @@ function usePicker<T>(pick: () => Promise<T | null>) {
 
 function useFilePicker(options: PickFileOptions = {}) {
   const pick = useCallback(() => FileSystemBridge.pickFile(options), [options]);
-  const { select: selectFile, ...rest } = usePicker(pick);
-  return { ...rest, selectFile };
+  const { select: selectFile, run, ...rest } = usePicker(pick);
+
+  // Call straight from the `drop` handler, without awaiting anything first.
+  const selectDroppedFile = useCallback(
+    (dataTransfer: DataTransfer) =>
+      run(() => FileSystemBridge.readDroppedFile(dataTransfer)),
+    [run],
+  );
+
+  return { ...rest, selectFile, selectDroppedFile };
 }
 
 function useDirectoryPicker(options: PickDirectoryOptions = {}) {
@@ -71,8 +85,23 @@ function useDirectoryPicker(options: PickDirectoryOptions = {}) {
     () => FileSystemBridge.pickDirectory(options),
     [options],
   );
-  const { select: selectDirectory, ...rest } = usePicker(pick);
-  return { ...rest, selectDirectory };
+  const { select: selectDirectory, run, ...rest } = usePicker(pick);
+
+  // Opens the picker in the folder of `startIn` (a file handle opens in the
+  // file's own folder). A separate function rather than an argument of
+  // selectDirectory, which is passed straight to onClick and would receive
+  // the click event.
+  const selectDirectoryStartingIn = useCallback(
+    (startIn: FileSystemHandle | null | undefined) =>
+      run(() =>
+        FileSystemBridge.pickDirectory(
+          startIn ? { ...options, startIn } : options,
+        ),
+      ),
+    [run, options],
+  );
+
+  return { ...rest, selectDirectory, selectDirectoryStartingIn };
 }
 
 type UseFilePicker = ReturnType<typeof useFilePicker>;
