@@ -7,6 +7,11 @@
         "toggleDarkMode": "Toggle dark mode",
         "showUtilitiesPanel": "Show \"Document utilities\"",
         "language": "Language",
+        "zoomLabel": "Interface scale",
+        "zoomOutTitle": "Zoom out",
+        "zoomInTitle": "Zoom in",
+        "zoomResetButton": "Reset to 100%",
+        "zoomShortcutsTitle": "Keys, while the settings are open:",
         "beta": "Beta",
         "requestFeatureReportBug": "- Request a feature <br>- Report a bug"
       },
