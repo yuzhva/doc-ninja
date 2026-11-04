@@ -29,6 +29,9 @@
     "formConfigSelect": {
       "createConfigButton": "Create a config"
     },
+    "confirmModal": {
+      "cancelButton": "Cancel"
+    },
     "formFileDropzone": {
       "clickOrDrop": "<strong>Click to select</strong> or drop a file here",
       "acceptedTypes": "Formats: {{extensions}}",
@@ -267,6 +270,9 @@
           "templateUnavailableTitle": "Template file not found on disk — try again or choose another",
           "usedCachedTemplateWarning": "Template file \"{{name}}\" not found on disk — used the last saved copy instead.",
           "removeTemplateAriaLabel": "Delete template",
+          "removeTemplateConfirmTitle": "Remove the template?",
+          "removeTemplateConfirmMessage": "<strong>{{name}}</strong> will be removed from the list. The file itself stays on disk, so you can add it again later.",
+          "removeTemplateConfirmButton": "Remove",
           "generateSeparateFilesLabel": "Generate separate files",
           "generateButton": "Download .doc*",
           "savedToLabel": "Save to: {{name}}",
@@ -286,6 +292,7 @@
     "process": {
       "tabs": {
         "convertSpreadsheetToStatic": "Convert .xlsx to static",
+        "chunkSpreadsheet": "Slice a spreadsheet",
         "parseDocsByRegex": "Extract data from documents"
       },
       "docRegexIssues": {
@@ -324,6 +331,53 @@
           "resultFileHint": "The result will be saved as \"{{fileName}}\" in the chosen folder.",
           "validationMessage": "Select an Excel file and a destination folder first.",
           "successMessage": "The spreadsheet was converted to static!"
+        },
+        "formChunkSpreadsheet": {
+          "title": "Slice a spreadsheet",
+          "spreadsheetFileLabel": "Excel file to slice",
+          "outputFolderLabel": "Folder for the parts",
+          "outputFolderNextToFileHint": "The folder picker opens where the file is — just confirm it.",
+          "filenameSuffixLabel": "File name suffix (defaults to the date)",
+          "filenameSuffixPlaceholder": "e.g. v1",
+          "subfolderLabel": "Subfolder name",
+          "sliceButton": "Slice into parts",
+          "slicingButton": "Slicing...",
+          "resultHint": "The parts will be saved to the \"{{subfolder}}\" subfolder of the chosen folder.",
+          "resultInFolderHint": "The parts will be saved to \"{{folderName}}/{{subfolder}}\".",
+          "validationMessage": "Select an Excel file and a destination folder first.",
+          "successMessage": "The spreadsheet was sliced into parts!",
+          "primarySheetTitle": "Main sheet",
+          "additionalSheetsTitle": "Additional sheets",
+          "sheetPositionLabel": "Sheet position",
+          "headerRowsLabel": "Header rows",
+          "filterColumnLabel": "Filter column position",
+          "lastColumnLabel": "Last column index",
+          "fastSlicingLabel": "Fast slicing",
+          "fastSlicingHint": "fewer styles",
+          "additionalSheetFieldLabel": "{{field}} — additional sheet {{number}}",
+          "removeSheetTitle": "Remove the additional sheet",
+          "removeSheetLabel": "Remove additional sheet {{number}}",
+          "addSheetTitle": "Add an additional sheet",
+          "addSheetButton": "Add an additional sheet"
+        },
+        "chunkSpreadsheetConfigsDropdown": {
+          "triggerTitle": "Slicing config",
+          "heading": "Configs",
+          "untitledConfigName": "Slicer config",
+          "importButton": "Import from JSON",
+          "exportButton": "Download as JSON",
+          "addConfigTitle": "New config",
+          "renameConfigTitle": "Rename",
+          "configNameLabel": "Config name",
+          "applyNameTitle": "Apply",
+          "removeConfigTitle": "Delete",
+          "removeConfigConfirmTitle": "Delete the config?",
+          "removeConfigConfirmMessage": "The <strong>{{name}}</strong> config will be deleted. To keep a copy, download the configs as JSON first.",
+          "removeConfigConfirmButton": "Delete",
+          "autosaveHint": "Changes in the form are saved automatically.",
+          "jsonFileTypeDescription": "JSON config",
+          "importErrorAlert": "Import failed: the file is not a slicing config in JSON format",
+          "exportErrorAlert": "Export failed: the file could not be saved"
         },
         "formParseDocsByRegex": {
           "title": "Extract data from documents",

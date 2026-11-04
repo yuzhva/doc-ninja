@@ -3,7 +3,7 @@ import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import type { FileSystemProcessedResult } from 'toolkit--local/browser';
 
-import { Checkbox, Dropdown } from '../../../../../components';
+import { Checkbox, ConfirmModal, Dropdown } from '../../../../../components';
 import {
   useDirectoryPicker,
   useFilePicker,
@@ -259,14 +259,29 @@ const FPDDocmTemplatesDropdown = ({
     DocmTemplatesStore.selectTemplate(id);
   }, [templateFilePicker.processedDir, templates]);
 
+  // The template waiting for "Remove?" to be confirmed.
+  const [pendingRemovalTemplate, setPendingRemovalTemplate] =
+    React.useState<DocmTemplate | null>(null);
+  const closeRemovalConfirm = React.useCallback(
+    () => setPendingRemovalTemplate(null),
+    [],
+  );
+
   const handleRemoveTemplate = (
     event: React.MouseEvent,
-    templateId: string,
+    template: DocmTemplate,
   ) => {
     event.stopPropagation();
+    setPendingRemovalTemplate(template);
+  };
+
+  const confirmRemoveTemplate = () => {
     // Also clears the selection (in every dropdown instance) if it pointed
     // at this template — see DocmTemplatesStore.removeTemplate.
-    DocmTemplatesStore.removeTemplate(templateId);
+    if (pendingRemovalTemplate) {
+      DocmTemplatesStore.removeTemplate(pendingRemovalTemplate.id);
+    }
+    setPendingRemovalTemplate(null);
   };
 
   const handleGenerateClick = async () => {
@@ -430,103 +445,130 @@ const FPDDocmTemplatesDropdown = ({
   };
 
   return (
-    <Dropdown
-      panelClassName="w-80 right-0 bg-white dark:bg-gray-800"
-      openDirection={openDirection}
-      trigger={({ isOpen, toggle }) =>
-        renderTrigger({ isOpen, toggle, hasResults })
-      }
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <h6 className="text-sm font-medium text-gray-900 dark:text-white">
-          <Trans i18nKey={`${I18N_NS}.templatesHeading`} />
-        </h6>
-        <button
-          type="button"
-          onClick={templateFilePicker.selectFile}
-          disabled={!templateFilePicker.isSupported}
-          title={t(`${I18N_NS}.addTemplateTitle`)}
-          className="flex items-center justify-center w-6 h-6 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-        >
-          +
-        </button>
-      </div>
-
-      <div className="-mx-3 mb-3 divide-y divide-gray-100 dark:divide-gray-700">
-        {/* Always first, and selected until a template is picked — generating
-            without one is a real choice, not an empty state. */}
-        <div
-          onClick={() => DocmTemplatesStore.selectTemplate(null)}
-          className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-            !selectedTemplateId
-              ? 'bg-blue-50 dark:bg-blue-900/30'
-              : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-        >
-          <input
-            id="docmTemplate-none"
-            type="radio"
-            name="docmTemplate"
-            checked={!selectedTemplateId}
-            onChange={() => DocmTemplatesStore.selectTemplate(null)}
-            className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
-          />
-          <label
-            htmlFor="docmTemplate-none"
-            className={`w-full select-none text-sm font-medium cursor-pointer ${
-              !selectedTemplateId
-                ? 'text-blue-700 dark:text-blue-400'
-                : 'text-gray-700 dark:text-gray-300'
-            }`}
+    <>
+      <Dropdown
+        panelClassName="w-80 right-0 bg-white dark:bg-gray-800"
+        openDirection={openDirection}
+        trigger={({ isOpen, toggle }) =>
+          renderTrigger({ isOpen, toggle, hasResults })
+        }
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h6 className="text-sm font-medium text-gray-900 dark:text-white">
+            <Trans i18nKey={`${I18N_NS}.templatesHeading`} />
+          </h6>
+          <button
+            type="button"
+            onClick={templateFilePicker.selectFile}
+            disabled={!templateFilePicker.isSupported}
+            title={t(`${I18N_NS}.addTemplateTitle`)}
+            className="flex items-center justify-center w-6 h-6 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            <Trans i18nKey={`${I18N_NS}.noTemplateOptionLabel`} />
-            <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
-              <Trans i18nKey={`${I18N_NS}.noTemplateOptionHint`} />
-            </span>
-          </label>
+            +
+          </button>
         </div>
 
-        {templates.map((template) => {
-          const isSelected = template.id === selectedTemplateId;
-          const isUnavailable = unavailableTemplateIds.has(template.id);
-          const inputId = `docmTemplate-${template.id}`;
-
-          return (
-            <div
-              key={template.id}
-              onClick={() => DocmTemplatesStore.selectTemplate(template.id)}
-              title={
-                isUnavailable
-                  ? t(`${I18N_NS}.templateUnavailableTitle`)
-                  : undefined
-              }
-              className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-                isSelected
-                  ? 'bg-blue-50 dark:bg-blue-900/30'
-                  : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+        <div className="-mx-3 mb-3 divide-y divide-gray-100 dark:divide-gray-700">
+          {/* Always first, and selected until a template is picked — generating
+            without one is a real choice, not an empty state. */}
+          <div
+            onClick={() => DocmTemplatesStore.selectTemplate(null)}
+            className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+              !selectedTemplateId
+                ? 'bg-blue-50 dark:bg-blue-900/30'
+                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+          >
+            <input
+              id="docmTemplate-none"
+              type="radio"
+              name="docmTemplate"
+              checked={!selectedTemplateId}
+              onChange={() => DocmTemplatesStore.selectTemplate(null)}
+              className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+            />
+            <label
+              htmlFor="docmTemplate-none"
+              className={`w-full select-none text-sm font-medium cursor-pointer ${
+                !selectedTemplateId
+                  ? 'text-blue-700 dark:text-blue-400'
+                  : 'text-gray-700 dark:text-gray-300'
               }`}
             >
-              <input
-                id={inputId}
-                type="radio"
-                name="docmTemplate"
-                checked={isSelected}
-                onChange={() => DocmTemplatesStore.selectTemplate(template.id)}
-                className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
-              />
-              <label
-                htmlFor={inputId}
-                className={`w-full truncate select-none text-sm font-medium cursor-pointer flex items-center gap-1.5 ${
+              <Trans i18nKey={`${I18N_NS}.noTemplateOptionLabel`} />
+              <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">
+                <Trans i18nKey={`${I18N_NS}.noTemplateOptionHint`} />
+              </span>
+            </label>
+          </div>
+
+          {templates.map((template) => {
+            const isSelected = template.id === selectedTemplateId;
+            const isUnavailable = unavailableTemplateIds.has(template.id);
+            const inputId = `docmTemplate-${template.id}`;
+
+            return (
+              <div
+                key={template.id}
+                onClick={() => DocmTemplatesStore.selectTemplate(template.id)}
+                title={
                   isUnavailable
-                    ? 'text-red-600 dark:text-red-400'
-                    : isSelected
-                      ? 'text-blue-700 dark:text-blue-400'
-                      : 'text-gray-700 dark:text-gray-300'
+                    ? t(`${I18N_NS}.templateUnavailableTitle`)
+                    : undefined
+                }
+                className={`w-full flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                  isSelected
+                    ? 'bg-blue-50 dark:bg-blue-900/30'
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                {isUnavailable && (
+                <input
+                  id={inputId}
+                  type="radio"
+                  name="docmTemplate"
+                  checked={isSelected}
+                  onChange={() =>
+                    DocmTemplatesStore.selectTemplate(template.id)
+                  }
+                  className="w-4 h-4 shrink-0 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <label
+                  htmlFor={inputId}
+                  className={`w-full truncate select-none text-sm font-medium cursor-pointer flex items-center gap-1.5 ${
+                    isUnavailable
+                      ? 'text-red-600 dark:text-red-400'
+                      : isSelected
+                        ? 'text-blue-700 dark:text-blue-400'
+                        : 'text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  {isUnavailable && (
+                    <svg
+                      className="w-3.5 h-3.5 shrink-0"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+                      />
+                    </svg>
+                  )}
+                  <span className="truncate">{template.name}</span>
+                </label>
+                <button
+                  type="button"
+                  aria-label={t(`${I18N_NS}.removeTemplateAriaLabel`)}
+                  onClick={(e) => handleRemoveTemplate(e, template)}
+                  className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
+                >
                   <svg
-                    className="w-3.5 h-3.5 shrink-0"
+                    className="w-4 h-4"
                     aria-hidden="true"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -537,80 +579,80 @@ const FPDDocmTemplatesDropdown = ({
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+                      d="M6 18 18 6M6 6l12 12"
                     />
                   </svg>
-                )}
-                <span className="truncate">{template.name}</span>
-              </label>
-              <button
-                type="button"
-                aria-label={t(`${I18N_NS}.removeTemplateAriaLabel`)}
-                onClick={(e) => handleRemoveTemplate(e, template.id)}
-                className="p-1 shrink-0 text-gray-400 rounded-lg cursor-pointer hover:text-red-600 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-900/30 focus:outline-none"
-              >
-                <svg
-                  className="w-4 h-4"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18 18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-          );
-        })}
-      </div>
+                </button>
+              </div>
+            );
+          })}
+        </div>
 
-      {/* Meaningless with a single item — separate vs. merged both produce
+        {/* Meaningless with a single item — separate vs. merged both produce
           exactly one file, so skip asking and just leave the toggle at its
           default. */}
-      {items.length > 1 && (
-        <div className="mb-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-          <Checkbox
-            theme="toggle"
-            checked={generateSeparateFiles}
-            onChange={setGenerateSeparateFiles}
-            label={<Trans i18nKey={`${I18N_NS}.generateSeparateFilesLabel`} />}
-          />
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={handleGenerateClick}
-        disabled={!hasResults}
-        className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 cursor-pointer"
-      >
-        <Trans i18nKey={`${I18N_NS}.generateButton`} />
-      </button>
-
-      {sharedOutputDirectory && (
-        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <span className="truncate">
-            <Trans
-              i18nKey={`${I18N_NS}.savedToLabel`}
-              values={{ name: sharedOutputDirectory.structure.name }}
+        {items.length > 1 && (
+          <div className="mb-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+            <Checkbox
+              theme="toggle"
+              checked={generateSeparateFiles}
+              onChange={setGenerateSeparateFiles}
+              label={
+                <Trans i18nKey={`${I18N_NS}.generateSeparateFilesLabel`} />
+              }
             />
-          </span>
-          <button
-            type="button"
-            onClick={handleChangeOutputDirectory}
-            className="shrink-0 text-blue-600 hover:underline dark:text-blue-500 cursor-pointer"
-          >
-            <Trans i18nKey={`${I18N_NS}.changeFolderButton`} />
-          </button>
-        </div>
-      )}
-    </Dropdown>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={handleGenerateClick}
+          disabled={!hasResults}
+          className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 cursor-pointer"
+        >
+          <Trans i18nKey={`${I18N_NS}.generateButton`} />
+        </button>
+
+        {sharedOutputDirectory && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span className="truncate">
+              <Trans
+                i18nKey={`${I18N_NS}.savedToLabel`}
+                values={{ name: sharedOutputDirectory.structure.name }}
+              />
+            </span>
+            <button
+              type="button"
+              onClick={handleChangeOutputDirectory}
+              className="shrink-0 text-blue-600 hover:underline dark:text-blue-500 cursor-pointer"
+            >
+              <Trans i18nKey={`${I18N_NS}.changeFolderButton`} />
+            </button>
+          </div>
+        )}
+      </Dropdown>
+
+      {/* Outside the panel: clicking the modal closes the panel, and that
+        must not take the modal down with it. */}
+      <ConfirmModal
+        isOpen={!!pendingRemovalTemplate}
+        title={t(`${I18N_NS}.removeTemplateConfirmTitle`)}
+        message={
+          <Trans
+            i18nKey={`${I18N_NS}.removeTemplateConfirmMessage`}
+            values={{ name: pendingRemovalTemplate?.name ?? '' }}
+            components={{
+              strong: (
+                <strong className="font-semibold text-gray-900 dark:text-white" />
+              ),
+            }}
+          />
+        }
+        confirmLabel={t(`${I18N_NS}.removeTemplateConfirmButton`)}
+        onConfirm={confirmRemoveTemplate}
+        onCancel={closeRemovalConfirm}
+      />
+    </>
   );
 };
 
