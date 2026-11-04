@@ -26,6 +26,9 @@
     }
   },
   "component": {
+    "formConfigSelect": {
+      "createConfigButton": "Створити конфігурацію"
+    },
     "formInputFileSelect": {
       "clickToSelect": "Натисніть, щоб обрати ..."
     },
@@ -315,9 +318,7 @@
           "title": "Обробка даних з документів",
           "sourceFolderLabel": "Папка з документами (разом з підпапками)",
           "configLabel": "Конфігурація обробки",
-          "createConfigButton": "Створити конфігурацію",
           "configSettingsTitle": "Налаштування конфігурацій",
-          "configSettingsButton": "Налаштувати",
           "unnamedConfig": "Без назви #{{number}}",
           "invalidConfigMessage": "Конфігурація містить помилки — виправте їх у налаштуваннях:",
           "processButton": "Обробити документи",

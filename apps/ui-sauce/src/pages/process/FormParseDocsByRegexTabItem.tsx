@@ -5,15 +5,18 @@ import { FileSystemService } from 'toolkit--local/browser';
 import {
   ButtonProcessing,
   Checkbox,
+  FormConfigSelect,
   FormInputFileSelect,
-  Select,
 } from '../../components';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
 import { DocRegexDocumentViewer } from './doc-regex-parser/components/DocRegexDocumentViewer';
 import type { DocRegexDocumentStatusFilter } from './doc-regex-parser/components/DocRegexDocumentViewer';
 import { DocRegexModalConfigSettings } from './doc-regex-parser/components/DocRegexModalConfigSettings';
-import { DocRegexResultsTable } from './doc-regex-parser/components/DocRegexResultsTable';
+import {
+  DOC_REGEX_SECONDARY_BUTTON_CLASS_NAME,
+  DocRegexResultsTable,
+} from './doc-regex-parser/components/DocRegexResultsTable';
 import type {
   DocRegexResultsTableColumn,
   DocRegexResultsTableRow,
@@ -448,7 +451,10 @@ const FormParseDocsByRegexTabItem = ({
           <Trans i18nKey={`${I18N_NS}.title`} />
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* One row from `lg` up: folder, config, then the action at the end.
+            Bottom-aligned so the button lines up with the inputs, not with
+            their labels. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] items-end gap-4">
           <FormInputFileSelect
             id="docRegexSourceFolder"
             name="docRegexSourceFolder"
@@ -458,99 +464,43 @@ const FormParseDocsByRegexTabItem = ({
             isFileSystemAccessSupported={isFileSystemAccessSupported}
             icon="folder"
           />
-          <div>
-            <span className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-              <Trans i18nKey={`${I18N_NS}.configLabel`} />
-            </span>
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                {configs.length > 0 ? (
-                  <Select
-                    id="docRegexConfig"
-                    value={activeConfig?.name ?? ''}
-                    onChange={handleSelectConfig}
-                    options={configOptions}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsConfigModalOpen(true)}
-                    className="w-full p-2.5 text-sm font-medium text-left text-blue-700 border border-dashed border-blue-300 rounded-lg hover:bg-blue-50 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/30 cursor-pointer"
-                  >
-                    + <Trans i18nKey={`${I18N_NS}.createConfigButton`} />
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsConfigModalOpen(true)}
-                title={t(`${I18N_NS}.configSettingsTitle`)}
-                className="inline-flex items-center gap-2 px-3 text-sm font-medium text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-600 cursor-pointer transition-colors"
-              >
-                <svg
-                  className="w-5 h-5"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 13v-2a1 1 0 0 0-1-1h-.757l-.707-1.707.535-.536a1 1 0 0 0 0-1.414l-1.414-1.414a1 1 0 0 0-1.414 0l-.536.535L14 4.757V4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v.757l-1.707.707-.536-.535a1 1 0 0 0-1.414 0L4.929 6.343a1 1 0 0 0 0 1.414l.536.536L4.757 10H4a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h.757l.707 1.707-.535.536a1 1 0 0 0 0 1.414l1.414 1.414a1 1 0 0 0 1.414 0l.536-.535 1.707.707V20a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-.757l1.707-.708.536.536a1 1 0 0 0 1.414 0l1.414-1.414a1 1 0 0 0 0-1.414l-.535-.536.707-1.707H20a1 1 0 0 0 1-1Z"
-                  />
-                  <path
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                  />
-                </svg>
-                <span className="hidden sm:inline">
-                  <Trans i18nKey={`${I18N_NS}.configSettingsButton`} />
-                </span>
-              </button>
-            </div>
+          <FormConfigSelect
+            id="docRegexConfig"
+            label={<Trans i18nKey={`${I18N_NS}.configLabel`} />}
+            value={activeConfig?.name ?? ''}
+            onChange={handleSelectConfig}
+            options={configOptions}
+            settingsTitle={t(`${I18N_NS}.configSettingsTitle`)}
+            onSettingsClick={() => setIsConfigModalOpen(true)}
+          />
+          {/* `justify-self-start` keeps the button's own width when it wraps
+              under the inputs (between `md` and `lg`). */}
+          <div className="justify-self-start flex items-center gap-4 max-sm:w-full">
+            {/* Sets the action apart from the config's ⚙ — only while they
+                share the line. */}
+            <span
+              aria-hidden="true"
+              className="hidden lg:block w-px h-8 bg-gray-200 dark:bg-gray-600"
+            />
+            <ButtonProcessing
+              type="button"
+              onClick={readDocuments}
+              isLoading={isProcessing}
+              disabled={
+                !sourceDirectory || !parser || candidateFiles.length === 0
+              }
+              // The transparent border makes it exactly as tall as the
+              // (bordered) inputs beside it.
+              className="border border-transparent whitespace-nowrap"
+            >
+              {isProcessing
+                ? t(`${I18N_NS}.processingButton`, {
+                    current: progress.current,
+                    total: progress.total,
+                  })
+                : t(`${I18N_NS}.processButton`)}
+            </ButtonProcessing>
           </div>
-        </div>
-
-        {activeConfigIssues.length > 0 && (
-          <div className="p-3 rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-900/30">
-            <p className="text-sm font-medium text-red-800 dark:text-red-200">
-              <Trans i18nKey={`${I18N_NS}.invalidConfigMessage`} />
-            </p>
-            <ul className="mt-2 space-y-0.5">
-              {activeConfigIssues.slice(0, 5).map((issue, index) => (
-                <li
-                  key={index}
-                  className="text-xs text-red-700 dark:text-red-300"
-                >
-                  <code>{issue.path}</code> — {formatDocRegexIssue(t, issue)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <ButtonProcessing
-            type="button"
-            onClick={readDocuments}
-            isLoading={isProcessing}
-            disabled={
-              !sourceDirectory || !parser || candidateFiles.length === 0
-            }
-          >
-            {isProcessing
-              ? t(`${I18N_NS}.processingButton`, {
-                  current: progress.current,
-                  total: progress.total,
-                })
-              : t(`${I18N_NS}.processButton`)}
-          </ButtonProcessing>
         </div>
         <div className="-mt-3 text-sm text-gray-600 dark:text-gray-400">
           {!activeConfig ? (
@@ -579,6 +529,24 @@ const FormParseDocsByRegexTabItem = ({
             </>
           )}
         </div>
+
+        {activeConfigIssues.length > 0 && (
+          <div className="p-3 rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-900/30">
+            <p className="text-sm font-medium text-red-800 dark:text-red-200">
+              <Trans i18nKey={`${I18N_NS}.invalidConfigMessage`} />
+            </p>
+            <ul className="mt-2 space-y-0.5">
+              {activeConfigIssues.slice(0, 5).map((issue, index) => (
+                <li
+                  key={index}
+                  className="text-xs text-red-700 dark:text-red-300"
+                >
+                  <code>{issue.path}</code> — {formatDocRegexIssue(t, issue)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {results && visibleDocuments.length > 0 && (
           <div className="space-y-4">
@@ -619,7 +587,7 @@ const FormParseDocsByRegexTabItem = ({
                 onClick={() =>
                   setViewerState({ documentIndex: 0, statusFilter: 'ALL' })
                 }
-                className="ms-auto text-sm font-medium text-blue-600 hover:underline dark:text-blue-400 cursor-pointer"
+                className="ms-2 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400 cursor-pointer"
               >
                 <Trans i18nKey={`${I18N_NS}.openViewerButton`} />
               </button>
@@ -657,17 +625,34 @@ const FormParseDocsByRegexTabItem = ({
                       onChange={setIsHeaderCopied}
                       label={<Trans i18nKey={`${I18N_NS}.copyHeaderToggle`} />}
                     />
-                    <button
-                      type="button"
-                      onClick={handleDownloadXlsx}
-                      disabled={isExporting}
-                      className="text-sm font-medium text-blue-600 enabled:hover:underline dark:text-blue-400 cursor-pointer disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {isExporting
-                        ? t(`${I18N_NS}.downloadXlsxProgress`)
-                        : t(`${I18N_NS}.downloadXlsxButton`)}
-                    </button>
                   </>
+                }
+                toolbarActions={
+                  <button
+                    type="button"
+                    onClick={handleDownloadXlsx}
+                    disabled={isExporting}
+                    className={`${DOC_REGEX_SECONDARY_BUTTON_CLASS_NAME} disabled:cursor-wait`}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"
+                      />
+                    </svg>
+                    {isExporting
+                      ? t(`${I18N_NS}.downloadXlsxProgress`)
+                      : t(`${I18N_NS}.downloadXlsxButton`)}
+                  </button>
                 }
               />
             )}

@@ -11,12 +11,14 @@ interface ButtonProcessingProps extends React.ButtonHTMLAttributes<HTMLButtonEle
 const ButtonProcessing = ({
   children,
   isLoading,
+  className = '',
   ...props
 }: ButtonProcessingProps) => (
   <button
     {...props}
     disabled={isLoading || props.disabled}
     className={`
+        ${className}
         cursor-pointer text-white font-medium rounded-lg text-sm w-full sm:w-auto px-5 py-2.5 text-center
         focus:ring-4 focus:outline-none
         ${

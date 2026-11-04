@@ -26,6 +26,9 @@
     }
   },
   "component": {
+    "formConfigSelect": {
+      "createConfigButton": "Create a config"
+    },
     "formInputFileSelect": {
       "clickToSelect": "Click to select ..."
     },
@@ -305,9 +308,7 @@
           "title": "Extract data from documents",
           "sourceFolderLabel": "Folder with documents (including subfolders)",
           "configLabel": "Processing config",
-          "createConfigButton": "Create a config",
           "configSettingsTitle": "Config settings",
-          "configSettingsButton": "Configure",
           "unnamedConfig": "Untitled #{{number}}",
           "invalidConfigMessage": "The config has errors — fix them in the settings:",
           "processButton": "Process documents",
