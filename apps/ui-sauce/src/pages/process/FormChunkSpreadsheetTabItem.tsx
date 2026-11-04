@@ -1,13 +1,50 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
-import { ButtonProcessing, FormInputFileSelect } from '../../components';
+import {
+  ButtonProcessing,
+  Checkbox,
+  FormFileDropzone,
+  FormInputFileSelect,
+  hasAllowedExtension,
+} from '../../components';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
+import { ChunkSpreadsheetConfigsDropdown } from './chunk-spreadsheet/ChunkSpreadsheetConfigsDropdown';
+import {
+  DEFAULT_SUBFOLDER,
+  useChunkSpreadsheetConfigs,
+} from './chunk-spreadsheet/chunk-spreadsheet.store';
+import type {
+  AdditionalSheet,
+  NumberField,
+} from './chunk-spreadsheet/chunk-spreadsheet.store';
+
+const I18N_NS = 'page.process.component.formChunkSpreadsheet';
+
+// What both slicers (ExcelJS and the openpyxl script) can open.
+const SUPPORTED_EXTENSIONS = ['.xlsx', '.xlsm'];
+
+const INPUT_CLASS_NAME =
+  'block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm';
+const LABEL_CLASS_NAME =
+  'block mb-2 text-sm font-medium text-gray-900 dark:text-white';
+const COLUMN_LABEL_CLASS_NAME =
+  'text-sm font-medium text-gray-900 dark:text-gray-300';
+// Four number columns plus one for the toggle / row buttons — shared by
+// every row so the columns line up.
+const SHEET_ROW_CLASS_NAME = 'grid grid-cols-5 gap-4';
+
+const toNumberField = (value: string): NumberField => parseInt(value) || '';
+
+type AdditionalSheetField = keyof AdditionalSheet;
 
 const FormChunkSpreadsheetTabItem = ({
   onSelectFile,
+  onDropFile,
   // onSelectSourceDirectory,
   onSelectOutputDirectory,
+  onSelectOutputDirectoryStartingIn,
   executeBatch,
   initSubmitHandler,
   // sourceDirectory,
@@ -17,42 +54,22 @@ const FormChunkSpreadsheetTabItem = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: BatchFileProcessingSectionProps) => {
-  // Monotonic counter for additional sheet ids — Date.now() can return the
-  // same value across two synchronous calls, which previously caused rows
-  // to share an id and edits to leak between them.
-  const nextRowId = React.useRef(0);
-  const createRowId = () => nextRowId.current++;
+  const { t } = useTranslation();
 
-  // State for form data matching API format
-  const [formState, setFormState] = React.useState(() => ({
-    sheetToChunkPosition: 2,
-    headerRows: 5,
-    splitColumnPosition: 11,
-    maxColumnsToInclude: 17,
-    filenameSuffix: '',
-    outputSubfolder: 'chunks',
-    isFasterLessStyledChunkerUsed: true,
-    additionalSheets: [
-      {
-        id: createRowId(),
-        sheetIndex: 3,
-        headerRows: 2,
-        filterColumnPosition: 15,
-      },
-      {
-        id: createRowId(),
-        sheetIndex: 9,
-        headerRows: 3,
-        filterColumnPosition: 19,
-      },
-      {
-        id: createRowId(),
-        sheetIndex: 10,
-        headerRows: 2,
-        filterColumnPosition: 6,
-      },
-    ],
-  }));
+  // Form data matching API format: the config selected in the dropdown next
+  // to the title, saved to localStorage as it's edited.
+  const chunkConfigs = useChunkSpreadsheetConfigs();
+  const formState = chunkConfigs.selectedConfig;
+  const setFormState = chunkConfigs.updateSelectedConfig;
+
+  const selectedFileName = selectedFile?.structure?.name;
+  const isSelectedFileSupported =
+    !!selectedFileName &&
+    hasAllowedExtension(selectedFileName, SUPPORTED_EXTENSIONS);
+  // Opens the folder picker in the file's own folder — see
+  // FormConvertSpreadsheetToStatic.
+  const selectedFileHandle = selectedFile?.browserFSAPIhandle ?? null;
+  const subfolder = formState.outputSubfolder || DEFAULT_SUBFOLDER;
 
   // Add new additional sheet function
   const addNewRow = () => {
@@ -61,7 +78,6 @@ const FormChunkSpreadsheetTabItem = ({
       additionalSheets: [
         ...prev.additionalSheets,
         {
-          id: createRowId(),
           sheetIndex: 0,
           headerRows: 0,
           filterColumnPosition: 0,
@@ -71,19 +87,18 @@ const FormChunkSpreadsheetTabItem = ({
   };
 
   // Remove additional sheet function
-  const removeRow = (id) => {
-    if (formState.additionalSheets.length > 0) {
-      setFormState((prev) => ({
-        ...prev,
-        additionalSheets: prev.additionalSheets.filter(
-          (sheet) => sheet.id !== id,
-        ),
-      }));
-    }
+  const removeRow = (index: number) => {
+    setFormState((prev) => ({
+      ...prev,
+      additionalSheets: prev.additionalSheets.filter((_, i) => i !== index),
+    }));
   };
 
   // Update primary sheet data
-  const updatePrimarySheet = (field, value) => {
+  const updatePrimarySheet = <Field extends keyof typeof formState>(
+    field: Field,
+    value: (typeof formState)[Field],
+  ) => {
     setFormState((prev) => ({
       ...prev,
       [field]: value,
@@ -91,11 +106,15 @@ const FormChunkSpreadsheetTabItem = ({
   };
 
   // Update additional sheet data
-  const updateAdditionalSheet = (id, field, value) => {
+  const updateAdditionalSheet = (
+    index: number,
+    field: AdditionalSheetField,
+    value: NumberField,
+  ) => {
     setFormState((prev) => ({
       ...prev,
-      additionalSheets: prev.additionalSheets.map((sheet) =>
-        sheet.id === id ? { ...sheet, [field]: value } : sheet,
+      additionalSheets: prev.additionalSheets.map((sheet, i) =>
+        i === index ? { ...sheet, [field]: value } : sheet,
       ),
     }));
   };
@@ -109,9 +128,9 @@ const FormChunkSpreadsheetTabItem = ({
           formDataJSON,
           processedDir: selectedFile!,
           destinationHandle: outputDirectory?.browserFSAPIhandle!,
-          validationMessage: 'Please select a spreadsheet file first.',
-          successMessage: 'Spreadsheet slicing completed successfully!',
-          subfolderPath: formState.outputSubfolder || 'chunks',
+          validationMessage: t(`${I18N_NS}.validationMessage`),
+          successMessage: t(`${I18N_NS}.successMessage`),
+          subfolderPath: formState.outputSubfolder || DEFAULT_SUBFOLDER,
         },
         async (batchFiles) => {
           // Create file from the original file handle
@@ -142,7 +161,7 @@ const FormChunkSpreadsheetTabItem = ({
             formState.isFasterLessStyledChunkerUsed.toString(),
           );
 
-          // Prepare additional sheets data (remove id field for API)
+          // Prepare additional sheets data (only the fields the API knows)
           const apiAdditionalSheets = formState.additionalSheets.map(
             (sheet) => ({
               sheetIndex: sheet.sheetIndex,
@@ -180,8 +199,15 @@ const FormChunkSpreadsheetTabItem = ({
         },
       );
     },
-    [executeBatch, selectedFile, outputDirectory, formState],
+    [executeBatch, selectedFile, outputDirectory, formState, t],
   );
+
+  const sheetColumnLabels = {
+    sheetIndex: t(`${I18N_NS}.sheetPositionLabel`),
+    headerRows: t(`${I18N_NS}.headerRowsLabel`),
+    filterColumnPosition: t(`${I18N_NS}.filterColumnLabel`),
+    maxColumnsToInclude: t(`${I18N_NS}.lastColumnLabel`),
+  };
 
   return (
     <div
@@ -189,314 +215,338 @@ const FormChunkSpreadsheetTabItem = ({
       data-testid="flowbite-card"
     >
       <div className="flex h-full flex-col justify-center gap-4 p-6">
-        <h3 className="mb-4 text-xl font-bold dark:text-white">
-          Нарізка таблиці
-        </h3>
         <form onSubmit={initSubmitHandler(postDocumentToChunk)}>
-          <div className="grid grid-cols-2 gap-4">
-            <FormInputFileSelect
-              id="spreadsheetFile"
-              name="spreadsheetFile"
-              label="Оберіть файл котрий буде нарізано"
-              accept=".xlsx,.xlsm,.xlsb,.xls"
-              onClick={onSelectFile}
-              selectedItem={selectedFile}
-              isFileSystemAccessSupported={isFileSystemAccessSupported}
-              icon="file"
-            />
-            <FormInputFileSelect
-              id="outputChunksFolder"
-              name="outputFolder"
-              label="Папка для збереження нарізаних частин"
-              onClick={onSelectOutputDirectory}
-              selectedItem={outputDirectory}
-              isFileSystemAccessSupported={isFileSystemAccessSupported}
-              icon="folder"
-            />
-
-            <div className="col-span-2 grid grid-cols-2 gap-4">
+          {/* Start: what to slice and where the parts go (the same fields as
+              "Convert .xlsx to static"). End: how to slice it. Side by side
+              from `xl` up, stacked below. Each column opens with a title row
+              of the same height, so both titles share one line. */}
+          <div className="grid gap-8 xl:grid-cols-[24rem_minmax(0,1fr)]">
+            <div className="flex flex-col gap-4">
+              <h3 className="flex items-center min-h-10 text-xl font-bold dark:text-white">
+                <Trans i18nKey={`${I18N_NS}.title`} />
+              </h3>
+              <FormFileDropzone
+                id="chunkSpreadsheetFile"
+                label={<Trans i18nKey={`${I18N_NS}.spreadsheetFileLabel`} />}
+                extensions={SUPPORTED_EXTENSIONS}
+                selectedItem={selectedFile}
+                onClick={onSelectFile}
+                onDropFile={(dataTransfer) => onDropFile?.(dataTransfer)}
+                isFileSystemAccessSupported={isFileSystemAccessSupported}
+              />
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                  Суфікс назви файлу (за замовчуванням: дата)
+                <FormInputFileSelect
+                  id="outputChunksFolder"
+                  name="outputFolder"
+                  label={<Trans i18nKey={`${I18N_NS}.outputFolderLabel`} />}
+                  onClick={() =>
+                    onSelectOutputDirectoryStartingIn
+                      ? onSelectOutputDirectoryStartingIn(selectedFileHandle)
+                      : onSelectOutputDirectory()
+                  }
+                  selectedItem={outputDirectory}
+                  isFileSystemAccessSupported={isFileSystemAccessSupported}
+                  icon="folder"
+                />
+                {selectedFileHandle && !outputDirectory && (
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    💡{' '}
+                    <Trans i18nKey={`${I18N_NS}.outputFolderNextToFileHint`} />
+                  </p>
+                )}
+              </div>
+              <div>
+                <label
+                  htmlFor="chunkFilenameSuffix"
+                  className={LABEL_CLASS_NAME}
+                >
+                  <Trans i18nKey={`${I18N_NS}.filenameSuffixLabel`} />
                 </label>
                 <input
-                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                  id="chunkFilenameSuffix"
+                  className={INPUT_CLASS_NAME}
                   type="text"
                   name="filenameSuffix"
                   value={formState.filenameSuffix}
                   onChange={(e) =>
                     updatePrimarySheet('filenameSuffix', e.target.value)
                   }
-                  placeholder="напр. v1"
+                  placeholder={t(`${I18N_NS}.filenameSuffixPlaceholder`)}
                 />
               </div>
               <div>
-                <label className="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                  Назва підпапки
+                <label
+                  htmlFor="chunkOutputSubfolder"
+                  className={LABEL_CLASS_NAME}
+                >
+                  <Trans i18nKey={`${I18N_NS}.subfolderLabel`} />
                 </label>
                 <input
-                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
+                  id="chunkOutputSubfolder"
+                  className={INPUT_CLASS_NAME}
                   type="text"
                   name="outputSubfolder"
                   value={formState.outputSubfolder}
                   onChange={(e) =>
                     updatePrimarySheet('outputSubfolder', e.target.value)
                   }
-                  required
+                  // Left empty, the parts go to the default subfolder.
+                  placeholder={DEFAULT_SUBFOLDER}
                 />
+              </div>
+
+              <div className="mt-4">
+                <ButtonProcessing
+                  type="submit"
+                  isLoading={isProcessing}
+                  disabled={!isSelectedFileSupported || !outputDirectory}
+                >
+                  {isProcessing
+                    ? t(`${I18N_NS}.slicingButton`)
+                    : t(`${I18N_NS}.sliceButton`)}
+                </ButtonProcessing>
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  💡{' '}
+                  {outputDirectory
+                    ? t(`${I18N_NS}.resultInFolderHint`, {
+                        folderName: outputDirectory.structure.name,
+                        subfolder,
+                      })
+                    : t(`${I18N_NS}.resultHint`, { subfolder })}
+                </div>
               </div>
             </div>
 
-            {/* Dynamic rows with 5 columns */}
-            <div className="mt-6 col-span-2">
-              {/* Headers for primary sheet */}
-              <div className="grid grid-cols-5 gap-4 mb-2">
-                <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  Позиція головного аркуша
-                </label>
-                <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  Кількість рядків заголовку
-                </label>
-                <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  Позиція колонки-фільтру
-                </label>
-                <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  Індекс останньої колонки
-                </label>
-                {/*
-                <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  Режим
-                </label>
-                */}
-              </div>
-
-              {/* Primary sheet row */}
-              <div className="grid grid-cols-5 gap-4 mb-6">
-                <input
-                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                  type="number"
-                  name="sheetToChunkPosition"
-                  value={formState.sheetToChunkPosition}
-                  onChange={(e) =>
-                    updatePrimarySheet(
-                      'sheetToChunkPosition',
-                      parseInt(e.target.value) || '',
-                    )
-                  }
-                  required
-                />
-                <input
-                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                  type="number"
-                  name="headerRows"
-                  value={formState.headerRows}
-                  onChange={(e) =>
-                    updatePrimarySheet(
-                      'headerRows',
-                      parseInt(e.target.value) || '',
-                    )
-                  }
-                  required
-                />
-                <input
-                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                  type="number"
-                  name="splitColumnPosition"
-                  value={formState.splitColumnPosition}
-                  onChange={(e) =>
-                    updatePrimarySheet(
-                      'splitColumnPosition',
-                      parseInt(e.target.value) || '',
-                    )
-                  }
-                  required
-                />
-                <input
-                  className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                  type="number"
-                  name="maxColumnsToInclude"
-                  value={formState.maxColumnsToInclude}
-                  onChange={(e) =>
-                    updatePrimarySheet(
-                      'maxColumnsToInclude',
-                      parseInt(e.target.value) || '',
-                    )
-                  }
-                  required
-                />
-                <div className="flex items-center h-[42px] w-full">
+            <div className="flex flex-col gap-8 xl:border-s xl:border-gray-200 xl:ps-8 dark:xl:border-gray-700">
+              <section>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4 min-h-10">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    <Trans i18nKey={`${I18N_NS}.primarySheetTitle`} />
+                  </h4>
+                  <ChunkSpreadsheetConfigsDropdown
+                    configs={chunkConfigs.configs}
+                    selectedIndex={chunkConfigs.selectedIndex}
+                    onConfigsChange={chunkConfigs.setConfigs}
+                    onSelectedIndexChange={chunkConfigs.setSelectedIndex}
+                  />
+                </div>
+                <div className={`${SHEET_ROW_CLASS_NAME} items-end mb-2`}>
                   <label
-                    className="relative inline-flex items-center cursor-pointer"
-                    title="Використовувати Python для нарізки (ExcelJS альтернатива)"
+                    htmlFor="chunkSheetPosition"
+                    className={COLUMN_LABEL_CLASS_NAME}
                   >
-                    <input
-                      type="checkbox"
+                    {sheetColumnLabels.sheetIndex}
+                  </label>
+                  <label
+                    htmlFor="chunkHeaderRows"
+                    className={COLUMN_LABEL_CLASS_NAME}
+                  >
+                    {sheetColumnLabels.headerRows}
+                  </label>
+                  <label
+                    htmlFor="chunkFilterColumn"
+                    className={COLUMN_LABEL_CLASS_NAME}
+                  >
+                    {sheetColumnLabels.filterColumnPosition}
+                  </label>
+                  <label
+                    htmlFor="chunkLastColumn"
+                    className={COLUMN_LABEL_CLASS_NAME}
+                  >
+                    {sheetColumnLabels.maxColumnsToInclude}
+                  </label>
+                </div>
+                <div className={SHEET_ROW_CLASS_NAME}>
+                  <input
+                    id="chunkSheetPosition"
+                    className={INPUT_CLASS_NAME}
+                    type="number"
+                    name="sheetToChunkPosition"
+                    value={formState.sheetToChunkPosition}
+                    onChange={(e) =>
+                      updatePrimarySheet(
+                        'sheetToChunkPosition',
+                        toNumberField(e.target.value),
+                      )
+                    }
+                    required
+                  />
+                  <input
+                    id="chunkHeaderRows"
+                    className={INPUT_CLASS_NAME}
+                    type="number"
+                    name="headerRows"
+                    value={formState.headerRows}
+                    onChange={(e) =>
+                      updatePrimarySheet(
+                        'headerRows',
+                        toNumberField(e.target.value),
+                      )
+                    }
+                    required
+                  />
+                  <input
+                    id="chunkFilterColumn"
+                    className={INPUT_CLASS_NAME}
+                    type="number"
+                    name="splitColumnPosition"
+                    value={formState.splitColumnPosition}
+                    onChange={(e) =>
+                      updatePrimarySheet(
+                        'splitColumnPosition',
+                        toNumberField(e.target.value),
+                      )
+                    }
+                    required
+                  />
+                  <input
+                    id="chunkLastColumn"
+                    className={INPUT_CLASS_NAME}
+                    type="number"
+                    name="maxColumnsToInclude"
+                    value={formState.maxColumnsToInclude}
+                    onChange={(e) =>
+                      updatePrimarySheet(
+                        'maxColumnsToInclude',
+                        toNumberField(e.target.value),
+                      )
+                    }
+                    required
+                  />
+                  <div className="flex items-center h-[42px]">
+                    <Checkbox
+                      theme="toggle"
                       name="isFasterLessStyledChunkerUsed"
                       checked={formState.isFasterLessStyledChunkerUsed}
-                      onChange={(e) =>
+                      onChange={(checked) =>
                         updatePrimarySheet(
                           'isFasterLessStyledChunkerUsed',
-                          e.target.checked,
+                          checked,
                         )
                       }
-                      className="sr-only peer"
+                      label={
+                        <span className="flex flex-col leading-tight">
+                          <span>
+                            <Trans i18nKey={`${I18N_NS}.fastSlicingLabel`} />
+                          </span>
+                          <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                            <Trans i18nKey={`${I18N_NS}.fastSlicingHint`} />
+                          </span>
+                        </span>
+                      }
                     />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                  </label>
-                  <div className="flex flex-col ml-3">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white leading-tight">
-                      Швидка нарізка
-                    </div>
-                    <div className="text-xs font-normal text-gray-500 dark:text-gray-400 leading-tight">
-                      менше стилів
-                    </div>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Additional sheets section */}
-              {formState.additionalSheets.length > 0 && (
-                <>
-                  <div className="mb-4">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                      Додаткові аркуші
-                    </h4>
+              <section>
+                <h4 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+                  <Trans i18nKey={`${I18N_NS}.additionalSheetsTitle`} />
+                </h4>
+                {formState.additionalSheets.length > 0 && (
+                  <div
+                    className={`${SHEET_ROW_CLASS_NAME} items-end mb-2`}
+                    aria-hidden="true"
+                  >
+                    <span className={COLUMN_LABEL_CLASS_NAME}>
+                      {sheetColumnLabels.sheetIndex}
+                    </span>
+                    <span className={COLUMN_LABEL_CLASS_NAME}>
+                      {sheetColumnLabels.headerRows}
+                    </span>
+                    <span className={COLUMN_LABEL_CLASS_NAME}>
+                      {sheetColumnLabels.filterColumnPosition}
+                    </span>
+                    <span className={COLUMN_LABEL_CLASS_NAME}>
+                      {sheetColumnLabels.maxColumnsToInclude}
+                    </span>
                   </div>
+                )}
 
-                  {/* Headers for additional sheets */}
-                  <div className="grid grid-cols-5 gap-4 mb-2">
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                      Позиція додаткового аркуша
-                    </label>
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                      Кількість рядків заголовку
-                    </label>
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                      Позиція колонки-фільтру
-                    </label>
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                      Індекс останньої колонки
-                    </label>
-                    {/*
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-300">
-                      Дії
-                    </label>
-                    */}
-                  </div>
-                </>
-              )}
+                {formState.additionalSheets.map((sheet, index) => {
+                  // One shared header row, so each input names itself.
+                  const fieldLabel = (field: string) =>
+                    t(`${I18N_NS}.additionalSheetFieldLabel`, {
+                      field,
+                      number: index + 1,
+                    });
+                  const numberInput = (
+                    field: AdditionalSheetField,
+                    label: string,
+                    isRequired = true,
+                  ) => (
+                    <input
+                      className={INPUT_CLASS_NAME}
+                      type="number"
+                      name={`${field}_${index}`}
+                      aria-label={fieldLabel(label)}
+                      value={sheet[field] ?? ''}
+                      onChange={(e) =>
+                        updateAdditionalSheet(
+                          index,
+                          field,
+                          toNumberField(e.target.value),
+                        )
+                      }
+                      required={isRequired}
+                    />
+                  );
 
-              {/* Additional sheets rows */}
-              {formState.additionalSheets.map((sheet, index) => (
-                <div key={sheet.id} className="grid grid-cols-5 gap-4 mb-4">
-                  <input
-                    className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                    type="number"
-                    name={`sheetIndex_${sheet.id}`}
-                    value={sheet.sheetIndex}
-                    onChange={(e) =>
-                      updateAdditionalSheet(
-                        sheet.id,
-                        'sheetIndex',
-                        parseInt(e.target.value) || '',
-                      )
-                    }
-                    required
-                  />
-                  <input
-                    className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                    type="number"
-                    name={`headerRows_${sheet.id}`}
-                    value={sheet.headerRows}
-                    onChange={(e) =>
-                      updateAdditionalSheet(
-                        sheet.id,
-                        'headerRows',
-                        parseInt(e.target.value) || '',
-                      )
-                    }
-                    required
-                  />
-                  <input
-                    className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                    type="number"
-                    name={`filterColumnPosition_${sheet.id}`}
-                    value={sheet.filterColumnPosition}
-                    onChange={(e) =>
-                      updateAdditionalSheet(
-                        sheet.id,
+                  return (
+                    // Index keys are enough: every input is controlled, so
+                    // a row holds no state of its own to mix up.
+                    <div key={index} className={`${SHEET_ROW_CLASS_NAME} mb-4`}>
+                      {numberInput('sheetIndex', sheetColumnLabels.sheetIndex)}
+                      {numberInput('headerRows', sheetColumnLabels.headerRows)}
+                      {numberInput(
                         'filterColumnPosition',
-                        parseInt(e.target.value) || '',
-                      )
-                    }
-                    required
-                  />
-                  <input
-                    className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                    type="number"
-                    name={`maxColumnsToInclude_${sheet.id}`}
-                    value={sheet.maxColumnsToInclude}
-                    onChange={(e) =>
-                      updateAdditionalSheet(
-                        sheet.id,
+                        sheetColumnLabels.filterColumnPosition,
+                      )}
+                      {numberInput(
                         'maxColumnsToInclude',
-                        parseInt(e.target.value) || '',
-                      )
-                    }
-                    // required
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(sheet.id)}
-                      className="flex items-center justify-center w-10 h-10 text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800"
-                      title="Видалити додатковий аркуш"
-                    >
-                      −
-                    </button>
-                    {index === formState.additionalSheets.length - 1 && (
-                      <button
-                        type="button"
-                        onClick={addNewRow}
-                        className="flex items-center justify-center w-10 h-10 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
-                        title="Додати додатковий аркуш"
-                      >
-                        +
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                        sheetColumnLabels.maxColumnsToInclude,
+                        false,
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => removeRow(index)}
+                          className="flex items-center justify-center w-10 h-10 text-white bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800 cursor-pointer"
+                          title={t(`${I18N_NS}.removeSheetTitle`)}
+                          aria-label={t(`${I18N_NS}.removeSheetLabel`, {
+                            number: index + 1,
+                          })}
+                        >
+                          −
+                        </button>
+                        {index === formState.additionalSheets.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={addNewRow}
+                            className="flex items-center justify-center w-10 h-10 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer"
+                            title={t(`${I18N_NS}.addSheetTitle`)}
+                            aria-label={t(`${I18N_NS}.addSheetTitle`)}
+                          >
+                            +
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
 
-              {/* Add button when no additional sheets */}
-              {formState.additionalSheets.length === 0 && (
-                <div className="flex justify-start mb-4">
+                {/* Add button when no additional sheets */}
+                {formState.additionalSheets.length === 0 && (
                   <button
                     type="button"
                     onClick={addNewRow}
-                    className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-transparent border border-blue-600 rounded-lg hover:bg-blue-600 hover:text-white focus:ring-4 focus:outline-none focus:ring-blue-300 dark:text-blue-400 dark:border-blue-500 dark:hover:bg-blue-600 dark:hover:text-white dark:focus:ring-blue-800 cursor-pointer transition-colors"
                   >
-                    + Додати додатковий аркуш
+                    + <Trans i18nKey={`${I18N_NS}.addSheetButton`} />
                   </button>
-                </div>
-              )}
+                )}
+              </section>
             </div>
-          </div>
-
-          <div className="mt-8">
-            <ButtonProcessing
-              type="submit"
-              isLoading={isProcessing}
-              disabled={!selectedFile || !outputDirectory}
-            >
-              {isProcessing
-                ? 'Нарізаю таблицю...'
-                : 'Нарізати табличку частинами'}
-            </ButtonProcessing>
-          </div>
-          <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            💡 Нарізані частини будуть збережені в папці "
-            {formState.outputSubfolder || 'chunks'}" всередині вибраної папки
           </div>
         </form>
       </div>

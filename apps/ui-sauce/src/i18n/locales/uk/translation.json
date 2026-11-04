@@ -29,6 +29,9 @@
     "formConfigSelect": {
       "createConfigButton": "Створити конфігурацію"
     },
+    "confirmModal": {
+      "cancelButton": "Скасувати"
+    },
     "formFileDropzone": {
       "clickOrDrop": "<strong>Натисніть, щоб обрати</strong> або перетягніть файл сюди",
       "acceptedTypes": "Формати: {{extensions}}",
@@ -277,6 +280,9 @@
           "templateUnavailableTitle": "Файл шаблону не знайдено на диску — спробуйте ще раз або оберіть інший",
           "usedCachedTemplateWarning": "Файл шаблону \"{{name}}\" не знайдено на диску — використано останню збережену копію.",
           "removeTemplateAriaLabel": "Видалити шаблон",
+          "removeTemplateConfirmTitle": "Прибрати шаблон?",
+          "removeTemplateConfirmMessage": "Шаблон <strong>{{name}}</strong> зникне зі списку. Сам файл на диску залишиться — його можна буде додати знову.",
+          "removeTemplateConfirmButton": "Прибрати",
           "generateSeparateFilesLabel": "Створювати окремі файли",
           "generateButton": "Завантажити .doc*",
           "savedToLabel": "Зберегти в: {{name}}",
@@ -296,6 +302,7 @@
     "process": {
       "tabs": {
         "convertSpreadsheetToStatic": "Конвертувати .xlsx в статику",
+        "chunkSpreadsheet": "Нарізка таблиці",
         "parseDocsByRegex": "Обробка даних з документів"
       },
       "docRegexIssues": {
@@ -334,6 +341,53 @@
           "resultFileHint": "Результат буде збережено у файл «{{fileName}}» в обраній папці.",
           "validationMessage": "Оберіть Excel файл і папку для збереження.",
           "successMessage": "Таблицю конвертовано в статику!"
+        },
+        "formChunkSpreadsheet": {
+          "title": "Нарізка таблиці",
+          "spreadsheetFileLabel": "Excel файл, який буде нарізано",
+          "outputFolderLabel": "Папка для збереження частин",
+          "outputFolderNextToFileHint": "Вікно вибору відкриється в папці з файлом — достатньо підтвердити.",
+          "filenameSuffixLabel": "Суфікс назви файлу (за замовчуванням — дата)",
+          "filenameSuffixPlaceholder": "напр. v1",
+          "subfolderLabel": "Назва підпапки",
+          "sliceButton": "Нарізати таблицю частинами",
+          "slicingButton": "Нарізаю таблицю...",
+          "resultHint": "Частини буде збережено в підпапку «{{subfolder}}» обраної папки.",
+          "resultInFolderHint": "Частини буде збережено в «{{folderName}}/{{subfolder}}».",
+          "validationMessage": "Оберіть Excel файл і папку для збереження.",
+          "successMessage": "Таблицю нарізано на частини!",
+          "primarySheetTitle": "Головний аркуш",
+          "additionalSheetsTitle": "Додаткові аркуші",
+          "sheetPositionLabel": "Позиція аркуша",
+          "headerRowsLabel": "Кількість рядків заголовку",
+          "filterColumnLabel": "Позиція колонки-фільтру",
+          "lastColumnLabel": "Індекс останньої колонки",
+          "fastSlicingLabel": "Швидка нарізка",
+          "fastSlicingHint": "менше стилів",
+          "additionalSheetFieldLabel": "{{field}} — додатковий аркуш {{number}}",
+          "removeSheetTitle": "Видалити додатковий аркуш",
+          "removeSheetLabel": "Видалити додатковий аркуш {{number}}",
+          "addSheetTitle": "Додати додатковий аркуш",
+          "addSheetButton": "Додати додатковий аркуш"
+        },
+        "chunkSpreadsheetConfigsDropdown": {
+          "triggerTitle": "Конфігурація нарізки",
+          "heading": "Конфігурації",
+          "untitledConfigName": "Параметри нарізки",
+          "importButton": "Імпортувати з JSON",
+          "exportButton": "Завантажити як JSON",
+          "addConfigTitle": "Нова конфігурація",
+          "renameConfigTitle": "Перейменувати",
+          "configNameLabel": "Назва конфігурації",
+          "applyNameTitle": "Застосувати",
+          "removeConfigTitle": "Видалити",
+          "removeConfigConfirmTitle": "Видалити конфігурацію?",
+          "removeConfigConfirmMessage": "Конфігурацію <strong>{{name}}</strong> буде видалено. Щоб зберегти її, спершу завантажте конфігурації як JSON.",
+          "removeConfigConfirmButton": "Видалити",
+          "autosaveHint": "Зміни у формі зберігаються автоматично.",
+          "jsonFileTypeDescription": "Конфігурація JSON",
+          "importErrorAlert": "Помилка імпорту: файл не є конфігурацією нарізки у форматі JSON",
+          "exportErrorAlert": "Помилка експорту: не вдалося зберегти файл"
         },
         "formParseDocsByRegex": {
           "title": "Обробка даних з документів",

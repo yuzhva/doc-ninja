@@ -3,6 +3,7 @@ export { BadgeCounter } from './BadgeCounter';
 export { ButtonCopyToClipboard } from './ButtonCopyToClipboard';
 export { ButtonProcessing } from './ButtonProcessing';
 export { Checkbox } from './Checkbox';
+export { ConfirmModal } from './ConfirmModal';
 export { Dropdown } from './Dropdown';
 export { FilterDropdown } from './FilterDropdown';
 export { FormConfigSelect } from './FormConfigSelect';

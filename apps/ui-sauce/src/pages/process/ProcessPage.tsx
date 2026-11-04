@@ -115,7 +115,9 @@ const ProcessPage = () => {
         >
           <FormConvertSpreadsheetToStatic {...sectionProps} />
         </Tabs.Item>
-        <Tabs.Item title="Нарізка таблиці">
+        <Tabs.Item
+          title={<Trans i18nKey={`${I18N_NS}.tabs.chunkSpreadsheet`} />}
+        >
           <FormChunkSpreadsheetTabItem {...sectionProps} />
         </Tabs.Item>
         <Tabs.Item
