@@ -198,19 +198,27 @@ const ResultRow = React.memo(
   },
 );
 
+const DOC_REGEX_SECONDARY_BUTTON_CLASS_NAME =
+  'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg enabled:hover:bg-gray-100 enabled:hover:text-blue-700 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:enabled:hover:text-white dark:enabled:hover:bg-gray-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors';
+
 const DocRegexResultsTable = ({
   columns,
   rows,
   isHeaderCopied,
   onOpenDocument,
   toolbarStart,
+  toolbarActions,
 }: {
   columns: DocRegexResultsTableColumn[];
   rows: DocRegexResultsTableRow[];
   // Whether copying adds the column labels as the first line.
   isHeaderCopied: boolean;
   onOpenDocument: (documentIndex: number) => void;
+  // View options, at the start of the toolbar.
   toolbarStart?: React.ReactNode;
+  // Extra action buttons, at the end of the toolbar before the copy buttons
+  // (style them with DOC_REGEX_SECONDARY_BUTTON_CLASS_NAME).
+  toolbarActions?: React.ReactNode;
 }) => {
   const { t } = useTranslation();
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -423,24 +431,28 @@ const DocRegexResultsTable = ({
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           {toolbarStart}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* `ms-auto` keeps the actions on the right even once they wrap
+            below the view options. */}
+        <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
           {copiedRowsCount !== null && (
             <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded dark:bg-green-900 dark:text-green-100">
               {t(`${I18N_NS}.copiedMessage`, { count: copiedRowsCount })}
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => range && copyRange(range)}
-            disabled={!range}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg enabled:hover:bg-gray-100 enabled:hover:text-blue-700 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:enabled:hover:text-white dark:enabled:hover:bg-gray-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-          >
-            <Trans i18nKey={`${I18N_NS}.copySelectedButton`} />
-          </button>
+          {toolbarActions}
           <button
             type="button"
             onClick={copyAll}
             disabled={rows.length === 0}
+            className={DOC_REGEX_SECONDARY_BUTTON_CLASS_NAME}
+          >
+            <Trans i18nKey={`${I18N_NS}.copyAllButton`} />
+          </button>
+          {/* Primary: copying a selection is what the table is used for most. */}
+          <button
+            type="button"
+            onClick={() => range && copyRange(range)}
+            disabled={!range}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg enabled:hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:enabled:hover:bg-blue-700 dark:focus:ring-blue-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
           >
             <svg
@@ -458,7 +470,7 @@ const DocRegexResultsTable = ({
                 d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
               />
             </svg>
-            <Trans i18nKey={`${I18N_NS}.copyAllButton`} />
+            <Trans i18nKey={`${I18N_NS}.copySelectedButton`} />
           </button>
         </div>
       </div>
@@ -558,5 +570,5 @@ const DocRegexResultsTable = ({
   );
 };
 
-export { DocRegexResultsTable };
+export { DOC_REGEX_SECONDARY_BUTTON_CLASS_NAME, DocRegexResultsTable };
 export type { DocRegexResultsTableColumn, DocRegexResultsTableRow };

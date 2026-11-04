@@ -5,6 +5,7 @@ export { ButtonProcessing } from './ButtonProcessing';
 export { Checkbox } from './Checkbox';
 export { Dropdown } from './Dropdown';
 export { FilterDropdown } from './FilterDropdown';
+export { FormConfigSelect } from './FormConfigSelect';
 export { FormInputFileSelect } from './FormInputFileSelect';
 export { LoadingSpinner } from './LoadingSpinner';
 export { Modal } from './Modal';

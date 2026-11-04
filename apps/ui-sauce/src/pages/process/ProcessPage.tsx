@@ -72,6 +72,8 @@ const ProcessPage = () => {
   }, []);
 
   return (
+    // An ordinary page: it scrolls as a whole and the Layout keeps the footer
+    // below it. Only the results table scrolls on its own.
     <div>
       {/* Toast Container */}
       <div className="fixed bottom-12 right-5 z-50 flex flex-col gap-2">
@@ -87,7 +89,7 @@ const ProcessPage = () => {
         </div>
       )}
 
-      <Tabs aria-label="Tabs with icons">
+      <Tabs>
         <Tabs.Item title="Конвертувати .xlsx в cтатику">
           <FormConvertSpreadsheetToStatic
             onSelectFile={filePicker.selectFile}
