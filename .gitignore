@@ -16,6 +16,9 @@ assets--prod
 .env*
 !.env.example
 
+# tools
+.claude
+
 # optional: those are generated files
 .cache
 **/assets/**/docs-for-nlp

@@ -35,6 +35,9 @@ nodeLinker: hoisted
 cd ./apps/electron
 pnpm i
 pnpm run make
+
+// OR
+./node_modules/.bin/electron-forge make
 ```
 
 profit - ready to start
