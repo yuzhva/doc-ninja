@@ -32,11 +32,22 @@ const FormConvertDocToTextTabItem = ({
           successMessage: 'Successfully converted documents to text!',
           subfolderPath: formDataJSON.subfolderPath || 'doc-to-text',
         },
-        async (batchFiles, batchIndex, totalBatches, structure) => {
+        async (batchFiles, batchIndex, totalBatches /*, structure */) => {
           const formData = new FormData();
           formData.append('batchIndex', String(batchIndex));
           formData.append('totalBatches', String(totalBatches));
-          formData.append('structure', JSON.stringify(structure));
+          // NOTE: the whole folder tree (4th argument of this callback) is no
+          // longer sent — the backend never needed more than each file's path
+          // (`filePaths` below). Kept as a breadcrumb for a possible
+          // FE-only conversion, which would build on that tree:
+          // formData.append('structure', JSON.stringify(structure));
+          //
+          // Keeps subfolders (and same-named files in different ones) apart
+          // in the output — see postDocumentToText.
+          formData.append(
+            'filePaths',
+            JSON.stringify(batchFiles.map((f) => f.path)),
+          );
 
           // Process files in parallel to get content (Lazy Loading)
           await Promise.all(

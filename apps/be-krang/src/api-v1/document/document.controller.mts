@@ -155,29 +155,28 @@ const postDocumentToText = async (req: Request, res: Response) => {
 
     const batchIndex = Number(req.body.batchIndex);
     const totalBatches = Number(req.body.totalBatches);
-    const structure = req.body.structure
-      ? JSON.parse(req.body.structure)
-      : null;
+    // Relative path of every uploaded file, in the same order as `files` —
+    // a multipart upload only carries the bare file name. Sent as one JSON
+    // field (not a repeated one) because Electron's IPC bridge keeps form
+    // fields in a plain object, where a repeated key would overwrite itself.
+    const filePaths: unknown[] = req.body.filePaths
+      ? JSON.parse(req.body.filePaths)
+      : [];
 
-    // Create a map of filename -> path from the structure
-    const filePaths = new Map<string, string>();
-    const collectPaths = (node: any) => {
-      if (node.type === 'file') filePaths.set(node.name, node.path);
-      node.children?.forEach(collectPaths);
-    };
-    if (structure) collectPaths(structure);
+    const filesToProcess = (req.files as Express.Multer.File[]).map(
+      (f, index) => {
+        // Fix encoding just like in other endpoints to handle Ukrainian characters correctly
+        const name = Buffer.from(f.originalname, 'latin1').toString('utf8');
+        const filePath = filePaths[index];
 
-    // Map files using the lookup map
-    const filesToProcess = (req.files as Express.Multer.File[]).map((f) => {
-      // Fix encoding just like in other endpoints to handle Ukrainian characters correctly
-      const name = Buffer.from(f.originalname, 'latin1').toString('utf8');
-
-      return {
-        name,
-        path: filePaths.get(name) || name,
-        buffer: f.buffer,
-      };
-    });
+        return {
+          name,
+          // No path (e.g. a quick curl test): the file lands in the root.
+          path: typeof filePath === 'string' && filePath ? filePath : name,
+          buffer: f.buffer,
+        };
+      },
+    );
 
     console.log(
       `Processing batch ${batchIndex}/${totalBatches} with ${filesToProcess.length} files`,
