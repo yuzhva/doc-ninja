@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Reference-counted so nested/sibling modals don't fight over restoring the
 // body's original overflow value — only the last one to close restores it.
@@ -37,6 +38,8 @@ const Modal = ({
   maxWidthClassName?: string;
   bodyClassName?: string;
 }) => {
+  const { t } = useTranslation();
+
   React.useEffect(() => {
     if (!isOpen) return;
     lockBodyScroll();
@@ -83,7 +86,7 @@ const Modal = ({
                   d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
                 />
               </svg>
-              <span className="sr-only">Close modal</span>
+              <span className="sr-only">{t('component.modal.closeLabel')}</span>
             </button>
           </div>
           {/* Modal body */}

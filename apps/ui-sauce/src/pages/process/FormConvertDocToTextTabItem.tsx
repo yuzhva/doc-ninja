@@ -1,8 +1,13 @@
 import React from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { ButtonProcessing, FormInputFileSelect } from '../../components';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
+
+const I18N_NS = 'page.process.component.formConvertDocToText';
+
+const DEFAULT_SUBFOLDER = 'doc-to-text';
 
 const FormConvertDocToTextTabItem = ({
   onSelectSourceDirectory,
@@ -16,7 +21,8 @@ const FormConvertDocToTextTabItem = ({
   isFileSystemAccessSupported,
   isProcessing,
 }: BatchFileProcessingSectionProps) => {
-  const [subFolderPath, setSubFolderPath] = React.useState('doc-to-text');
+  const { t } = useTranslation();
+  const [subFolderPath, setSubFolderPath] = React.useState(DEFAULT_SUBFOLDER);
 
   const postConvertDocToText = React.useCallback<
     Parameters<typeof initSubmitHandler>[0]
@@ -27,10 +33,9 @@ const FormConvertDocToTextTabItem = ({
           formDataJSON,
           processedDir: sourceDirectory!,
           destinationHandle: outputDirectory?.browserFSAPIhandle!,
-          validationMessage:
-            'Please select both source and output folders first.',
-          successMessage: 'Successfully converted documents to text!',
-          subfolderPath: formDataJSON.subfolderPath || 'doc-to-text',
+          validationMessage: t(`${I18N_NS}.validationMessage`),
+          successMessage: t(`${I18N_NS}.successMessage`),
+          subfolderPath: formDataJSON.subfolderPath || DEFAULT_SUBFOLDER,
         },
         async (batchFiles, batchIndex, totalBatches /*, structure */) => {
           const formData = new FormData();
@@ -63,7 +68,7 @@ const FormConvertDocToTextTabItem = ({
         },
       );
     },
-    [executeBatch, sourceDirectory, outputDirectory],
+    [executeBatch, sourceDirectory, outputDirectory, t],
   );
 
   return (
@@ -73,7 +78,7 @@ const FormConvertDocToTextTabItem = ({
     >
       <div className="flex h-full flex-col justify-center gap-4 p-6">
         <h3 className="mb-4 text-xl font-bold dark:text-white">
-          Конвертація Документів в Текст
+          <Trans i18nKey={`${I18N_NS}.title`} />
         </h3>
         <form onSubmit={initSubmitHandler(postConvertDocToText)}>
           <div className="grid gap-4 mb-4 sm:grid-cols-2">
@@ -81,7 +86,7 @@ const FormConvertDocToTextTabItem = ({
               <FormInputFileSelect
                 id="sourceFolder"
                 name="sourceFolder"
-                label="Початкова папка з документами"
+                label={<Trans i18nKey={`${I18N_NS}.sourceFolderLabel`} />}
                 onClick={onSelectSourceDirectory}
                 selectedItem={sourceDirectory}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
@@ -92,7 +97,7 @@ const FormConvertDocToTextTabItem = ({
               <FormInputFileSelect
                 id="outputFolder"
                 name="outputFolder"
-                label="Кінцева папка для збереження текстових файлів"
+                label={<Trans i18nKey={`${I18N_NS}.outputFolderLabel`} />}
                 onClick={onSelectOutputDirectory}
                 selectedItem={outputDirectory}
                 isFileSystemAccessSupported={isFileSystemAccessSupported}
@@ -104,13 +109,13 @@ const FormConvertDocToTextTabItem = ({
                 htmlFor="subfolderPath"
                 className="block mb-2 text-sm font-medium text-gray-900 dark:text-white"
               >
-                Назва підпапки
+                <Trans i18nKey={`${I18N_NS}.subfolderLabel`} />
               </label>
               <input
                 id="subfolderPath"
                 name="subfolderPath"
                 className="block w-full border disabled:cursor-not-allowed disabled:opacity-50 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
-                placeholder="doc-to-text"
+                placeholder={DEFAULT_SUBFOLDER}
                 value={subFolderPath}
                 onChange={(e) => setSubFolderPath(e.target.value)}
                 type="text"
@@ -125,12 +130,17 @@ const FormConvertDocToTextTabItem = ({
               disabled={!sourceDirectory || !outputDirectory}
             >
               {isProcessing
-                ? `Конвертую... (${progress.current}/${progress.total})`
-                : 'Конвертувати Документи в Текст'}
+                ? t(`${I18N_NS}.convertingButton`, {
+                    current: progress.current,
+                    total: progress.total,
+                  })
+                : t(`${I18N_NS}.convertButton`)}
             </ButtonProcessing>
             <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              💡 Конвертовані файли будуть збережені в папці "{subFolderPath}"
-              всередині вибраної папки.
+              💡{' '}
+              {t(`${I18N_NS}.resultHint`, {
+                subfolder: subFolderPath || DEFAULT_SUBFOLDER,
+              })}
             </div>
           </div>
         </form>

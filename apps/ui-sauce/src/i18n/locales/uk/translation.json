@@ -34,6 +34,12 @@
     "formConfigSelect": {
       "createConfigButton": "Створити конфігурацію"
     },
+    "modal": {
+      "closeLabel": "Закрити"
+    },
+    "batchProcessor": {
+      "failedMessage": "Обробка не вдалася. Подробиці — в консолі."
+    },
     "confirmModal": {
       "cancelButton": "Скасувати"
     },
@@ -308,8 +314,12 @@
       "tabs": {
         "convertSpreadsheetToStatic": "Конвертувати .xlsx в статику",
         "chunkSpreadsheet": "Нарізка таблиці",
-        "parseDocsByRegex": "Обробка даних з документів"
+        "parseDocsByRegex": "Обробка даних з документів",
+        "convertDocToText": "Конвертувати документи в текст"
       },
+      "fileSystemAccessUnsupported": "Цей браузер не підтримує File System Access API. Використовуйте Chrome 86+ або Edge 86+.",
+      "progressFooter": "Обробка пакета {{batch}}... (файлів: {{current}}/{{total}})",
+      "excelFilesTypeDescription": "Файли Excel",
       "docRegexIssues": {
         "NOT_AN_ARRAY": "Очікується масив",
         "NOT_AN_OBJECT": "Очікується об'єкт",
@@ -341,6 +351,7 @@
           "outputFolderLabel": "Кінцева папка для збереження",
           "outputFolderNextToFileHint": "Вікно вибору відкриється в папці з файлом — достатньо підтвердити.",
           "filenameSuffixLabel": "Суфікс назви файлу",
+          "defaultFilenameSuffix": "_без_формул",
           "convertButton": "Конвертувати в статику",
           "convertingButton": "Конвертую...",
           "resultFileHint": "Результат буде збережено у файл «{{fileName}}» в обраній папці.",
@@ -561,7 +572,20 @@
           "addColumnLabel": "Додати колонку",
           "addColumnPlaceholder": "— оберіть значення —",
           "addConfigButton": "Додати конфігурацію",
-          "noConfigsMessage": "Ще немає жодної конфігурації."
+          "noConfigsMessage": "Ще немає жодної конфігурації.",
+          "splitMatchPlaceholder": "з\\s+\\S+\\s+по\\s+\\S+",
+          "compoundValuePlaceholder": "№{{number}} від {{date}}"
+        },
+        "formConvertDocToText": {
+          "title": "Конвертувати документи в текст",
+          "sourceFolderLabel": "Початкова папка з документами",
+          "outputFolderLabel": "Кінцева папка для збереження текстових файлів",
+          "subfolderLabel": "Назва підпапки",
+          "convertButton": "Конвертувати документи в текст",
+          "convertingButton": "Конвертую... ({{current}}/{{total}})",
+          "resultHint": "Конвертовані файли буде збережено в підпапку «{{subfolder}}» обраної папки.",
+          "validationMessage": "Оберіть папку з документами і папку для збереження.",
+          "successMessage": "Документи конвертовано в текст!"
         }
       }
     }

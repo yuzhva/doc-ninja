@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trans } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { LoadingSpinner, Tabs, Toast } from '../../components';
 import type { ToastMessage } from '../../components';
@@ -15,6 +15,8 @@ import { FormParseDocsByRegexTabItem } from './FormParseDocsByRegexTabItem';
 const I18N_NS = 'page.process';
 
 const ProcessPage = () => {
+  const { t } = useTranslation();
+
   // --- Toast Management ---
   const [toasts, setToasts] = React.useState<ToastMessage[]>([]);
   const addToast = React.useCallback(
@@ -35,7 +37,7 @@ const ProcessPage = () => {
   const filePicker = useFilePicker({
     types: [
       {
-        description: 'Excel files',
+        description: t(`${I18N_NS}.excelFilesTypeDescription`),
         accept: {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
             '.xlsx',
@@ -101,8 +103,7 @@ const ProcessPage = () => {
 
       {!sourceDir.isSupported && (
         <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
-          ⚠️ File System Access API не підтримується. Використовуйте Chrome 86+
-          або Edge 86+.
+          ⚠️ <Trans i18nKey={`${I18N_NS}.fileSystemAccessUnsupported`} />
         </div>
       )}
 
@@ -125,7 +126,9 @@ const ProcessPage = () => {
         >
           <FormParseDocsByRegexTabItem {...sectionProps} />
         </Tabs.Item>
-        <Tabs.Item title="Конвертувати Документи в Текст">
+        <Tabs.Item
+          title={<Trans i18nKey={`${I18N_NS}.tabs.convertDocToText`} />}
+        >
           <FormConvertDocToTextTabItem {...sectionProps} />
         </Tabs.Item>
       </Tabs>
@@ -140,8 +143,12 @@ const ProcessPage = () => {
         <div className="py-3 px-4 bg-yellow-300 border-t border-yellow-400 text-gray-900 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] dark:bg-yellow-200 dark:border-yellow-300">
           <div className="flex items-center justify-start text-sm font-semibold">
             <LoadingSpinner className="text-gray-900" />
-            📊 Processing batch {progress.batch}... ({progress.current}/
-            {progress.total} files)
+            📊{' '}
+            {t(`${I18N_NS}.progressFooter`, {
+              batch: progress.batch,
+              current: progress.current,
+              total: progress.total,
+            })}
           </div>
         </div>
       </div>

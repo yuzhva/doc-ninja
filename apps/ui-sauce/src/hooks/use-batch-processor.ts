@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type {
   BatchFile,
@@ -66,6 +67,7 @@ interface BatchFileProcessingSectionProps {
 function useBatchProcessor(
   addToast: (type: 'success' | 'error' | 'warning', msg: string) => void,
 ) {
+  const { t } = useTranslation();
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState({
     current: 0,
@@ -119,14 +121,14 @@ function useBatchProcessor(
         NotificationBridge.notify(result.message);
       } catch (error) {
         console.error('Processing failed:', error);
-        const msg = '❌ Processing failed. Check console for details.';
+        const msg = `❌ ${t('component.batchProcessor.failedMessage')}`;
         addToast('error', msg);
         NotificationBridge.notify(msg);
       } finally {
         setIsProcessing(false);
       }
     },
-    [addToast],
+    [addToast, t],
   );
 
   return { execute, isProcessing, progress };
