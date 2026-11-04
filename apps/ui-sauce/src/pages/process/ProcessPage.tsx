@@ -1,4 +1,5 @@
 import React from 'react';
+import { Trans } from 'react-i18next';
 
 import { LoadingSpinner, Tabs, Toast } from '../../components';
 import type { ToastMessage } from '../../components';
@@ -8,6 +9,9 @@ import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
 import { FormChunkSpreadsheetTabItem } from './FormChunkSpreadsheetTabItem';
 import { FormConvertDocToTextTabItem } from './FormConvertDocToTextTabItem';
 import { FormConvertSpreadsheetToStatic } from './FormConvertSpreadsheetToStatic';
+import { FormParseDocsByRegexTabItem } from './FormParseDocsByRegexTabItem';
+
+const I18N_NS = 'page.process';
 
 const ProcessPage = () => {
   // --- Toast Management ---
@@ -114,7 +118,25 @@ const ProcessPage = () => {
             isProcessing={isProcessing}
           />
         </Tabs.Item>
-        <Tabs.Item title="Конвертувати Документи в Текст" isBetaFeature>
+        <Tabs.Item
+          title={<Trans i18nKey={`${I18N_NS}.tabs.parseDocsByRegex`} />}
+          // isBetaFeature
+        >
+          <FormParseDocsByRegexTabItem
+            onSelectFile={filePicker.selectFile}
+            onSelectSourceDirectory={sourceDir.selectDirectory}
+            onSelectOutputDirectory={outputDir.selectDirectory}
+            executeBatch={execute}
+            initSubmitHandler={initSubmitHandler}
+            sourceDirectory={sourceDir.processedDir}
+            outputDirectory={outputDir.processedDir}
+            selectedFile={filePicker.processedDir}
+            progress={progress}
+            isFileSystemAccessSupported={sourceDir.isSupported}
+            isProcessing={isProcessing}
+          />
+        </Tabs.Item>
+        <Tabs.Item title="Конвертувати Документи в Текст">
           <FormConvertDocToTextTabItem
             onSelectFile={filePicker.selectFile}
             onSelectSourceDirectory={sourceDir.selectDirectory}
