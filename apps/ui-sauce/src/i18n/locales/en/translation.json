@@ -446,7 +446,8 @@
         "docRegexDocumentViewer": {
           "title": "Document texts",
           "statusFilter": {
-            "ALL": "All documents"
+            "ALL": "All documents",
+            "WITH_GAPS": "With gaps"
           },
           "status": {
             "MATCHED": "Matched",
@@ -456,10 +457,15 @@
           },
           "noDocumentsMessage": "No documents",
           "rowsCount": "rows: {{count}}",
+          "rowsWithGapsCount": "with gaps: {{count}}",
           "noTextHint": "The document has no text — most likely it's a scan (an image). Text recognition (OCR) isn't supported.",
           "qualifierLabel": "Document check:",
           "qualifierRuleLabel": "rule {{number}}",
           "notFoundValue": "not found",
+          "emptyColumnsLabel": "Empty columns:",
+          "emptyColumnAllRows": "all rows",
+          "emptyColumnRow": "row {{row}}",
+          "emptyColumnRows": "rows {{rows}}",
           "emptyTextPlaceholder": "(empty)"
         },
         "docRegexModalConfigSettings": {

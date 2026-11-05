@@ -10,7 +10,10 @@ import {
 } from '../../components';
 import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
 import { fetchRequest } from '../../utils';
-import { DocRegexDocumentViewer } from './doc-regex-parser/components/DocRegexDocumentViewer';
+import {
+  DocRegexDocumentViewer,
+  matchesDocRegexDocumentFilter,
+} from './doc-regex-parser/components/DocRegexDocumentViewer';
 import type { DocRegexDocumentStatusFilter } from './doc-regex-parser/components/DocRegexDocumentViewer';
 import { DocRegexModalConfigSettings } from './doc-regex-parser/components/DocRegexModalConfigSettings';
 import {
@@ -52,6 +55,9 @@ const STATUS_CHIP_CLASSES: Record<DocRegexDocumentStatus, string> = {
   FAILED:
     'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800',
 };
+// The yellow the table marks a missing value with.
+const GAPS_CHIP_CLASS_NAME =
+  'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:hover:bg-amber-800';
 
 const hasExtension = (fileName: string, extensions: string[]) => {
   const lowerName = fileName.toLowerCase();
@@ -189,8 +195,11 @@ const FormParseDocsByRegexTabItem = ({
   }, [sessionDocuments, candidateFiles]);
 
   const results = React.useMemo(
-    () => (parser ? buildDocRegexResults(parser, visibleDocuments) : null),
-    [parser, visibleDocuments],
+    () =>
+      parser && activeConfig
+        ? buildDocRegexResults(parser, visibleDocuments, activeConfig.columns)
+        : null,
+    [parser, activeConfig, visibleDocuments],
   );
 
   const tableColumns = React.useMemo<DocRegexResultsTableColumn[]>(() => {
@@ -253,16 +262,6 @@ const FormParseDocsByRegexTabItem = ({
       };
     });
   }, [results, tableColumns]);
-
-  const rowsWithGapsCount = React.useMemo(
-    () =>
-      results && activeConfig
-        ? results.rows.filter((row) =>
-            activeConfig.columns.some((id) => !row.values[id]),
-          ).length
-        : 0,
-    [results, activeConfig],
-  );
 
   const handleSelectConfig = (name: string) => {
     setSelectedConfigName(name);
@@ -366,11 +365,13 @@ const FormParseDocsByRegexTabItem = ({
     [],
   );
 
-  const handleOpenStatus = (status: DocRegexDocumentStatus) => {
+  const handleOpenFiltered = (statusFilter: DocRegexDocumentStatusFilter) => {
     const documentIndex =
-      results?.outcomes.findIndex((outcome) => outcome.status === status) ?? -1;
+      results?.outcomes.findIndex((outcome) =>
+        matchesDocRegexDocumentFilter(outcome, statusFilter),
+      ) ?? -1;
     if (documentIndex === -1) return;
-    setViewerState({ documentIndex, statusFilter: status });
+    setViewerState({ documentIndex, statusFilter });
   };
 
   const handleDownloadXlsx = async () => {
@@ -561,7 +562,7 @@ const FormParseDocsByRegexTabItem = ({
                   <button
                     key={status}
                     type="button"
-                    onClick={() => handleOpenStatus(status)}
+                    onClick={() => handleOpenFiltered(status)}
                     title={t(`${I18N_NS}.statusChipTitle`)}
                     className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${STATUS_CHIP_CLASSES[status]}`}
                   >
@@ -575,12 +576,17 @@ const FormParseDocsByRegexTabItem = ({
               <span className="text-gray-700 dark:text-gray-300">
                 {t(`${I18N_NS}.rowsSummary`, { count: results.rows.length })}
               </span>
-              {rowsWithGapsCount > 0 && (
-                <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+              {results.rowsWithGapsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenFiltered('WITH_GAPS')}
+                  title={t(`${I18N_NS}.statusChipTitle`)}
+                  className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${GAPS_CHIP_CLASS_NAME}`}
+                >
                   {t(`${I18N_NS}.rowsWithGapsSummary`, {
-                    count: rowsWithGapsCount,
+                    count: results.rowsWithGapsCount,
                   })}
-                </span>
+                </button>
               )}
               <button
                 type="button"

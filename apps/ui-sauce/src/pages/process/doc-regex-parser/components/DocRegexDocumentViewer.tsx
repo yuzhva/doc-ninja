@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { Modal, Select } from '../../../../components';
 import { DocRegexParser } from '../doc-regex-parser.engine';
+import { listEmptyColumnIds } from '../doc-regex-parser.results';
 import type {
   DocRegexDocumentOutcome,
   DocRegexDocumentStatus,
@@ -36,7 +37,17 @@ const STATUS_BADGE_CLASSES: Record<DocRegexDocumentStatus, string> = {
   FAILED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
 };
 
-type StatusFilter = 'ALL' | DocRegexDocumentStatus;
+// WITH_GAPS — matched documents with an empty result column in some row.
+type StatusFilter = 'ALL' | DocRegexDocumentStatus | 'WITH_GAPS';
+
+const matchesDocRegexDocumentFilter = (
+  outcome: DocRegexDocumentOutcome,
+  filter: StatusFilter,
+) =>
+  filter === 'ALL' ||
+  (filter === 'WITH_GAPS'
+    ? outcome.rowsWithGapsCount > 0
+    : outcome.status === filter);
 
 interface TextSegment {
   text: string;
@@ -120,13 +131,23 @@ const DocRegexDocumentViewer = ({
     [config],
   );
 
+  const valueLabelById = React.useMemo(
+    () =>
+      new Map(
+        DocRegexParser.listValues(config).map((value) => [
+          value.id,
+          value.label,
+        ]),
+      ),
+    [config],
+  );
+
   const filteredIndexes = React.useMemo(
     () =>
       outcomes
         .map((outcome, index) => ({ outcome, index }))
-        .filter(
-          ({ outcome }) =>
-            statusFilter === 'ALL' || outcome.status === statusFilter,
+        .filter(({ outcome }) =>
+          matchesDocRegexDocumentFilter(outcome, statusFilter),
         )
         .map(({ index }) => index),
     [outcomes, statusFilter],
@@ -140,7 +161,48 @@ const DocRegexDocumentViewer = ({
     () => buildTextSegments(text, spans),
     [text, spans],
   );
-  const firstRow = outcome?.result?.rows[0];
+  const rows = outcome?.result?.rows;
+  const rowsCount = rows?.length ?? 0;
+  const firstRow = rows?.[0];
+
+  // The result columns this document left empty, and in which of its rows —
+  // the field chips below only show the first row's fields, not split
+  // columns or compounds.
+  const emptyColumns = React.useMemo(() => {
+    const emptyIdsByRow = (rows ?? []).map(
+      (row) => new Set(listEmptyColumnIds(row, config.columns)),
+    );
+    return config.columns
+      .map((id) => ({
+        id,
+        label: valueLabelById.get(id) ?? id,
+        rowNumbers: emptyIdsByRow.flatMap((ids, index) =>
+          ids.has(id) ? [index + 1] : [],
+        ),
+      }))
+      .filter((column) => column.rowNumbers.length > 0);
+  }, [rows, config, valueLabelById]);
+
+  const getEmptyColumnRowsLabel = (rowNumbers: number[]) => {
+    if (rowsCount <= 1) return null;
+    if (rowNumbers.length === rowsCount) {
+      return t(`${I18N_NS}.emptyColumnAllRows`);
+    }
+    return rowNumbers.length === 1
+      ? t(`${I18N_NS}.emptyColumnRow`, { row: rowNumbers[0] })
+      : t(`${I18N_NS}.emptyColumnRows`, { rows: rowNumbers.join(', ') });
+  };
+
+  // Keeps the text pane on a document the list still shows.
+  const handleStatusFilterChange = (filter: StatusFilter) => {
+    setStatusFilter(filter);
+    if (outcome && !matchesDocRegexDocumentFilter(outcome, filter)) {
+      const firstIndex = outcomes.findIndex((item) =>
+        matchesDocRegexDocumentFilter(item, filter),
+      );
+      if (firstIndex !== -1) onDocumentIndexChange(firstIndex);
+    }
+  };
 
   const scrollToRule = (ruleId: string) => {
     const element = textRef.current?.querySelector(
@@ -168,6 +230,7 @@ const DocRegexDocumentViewer = ({
   const statusOptions: Array<{ value: StatusFilter; label: string }> = [
     { value: 'ALL', label: t(`${I18N_NS}.statusFilter.ALL`) },
     { value: 'MATCHED', label: t(`${I18N_NS}.status.MATCHED`) },
+    { value: 'WITH_GAPS', label: t(`${I18N_NS}.statusFilter.WITH_GAPS`) },
     { value: 'SKIPPED', label: t(`${I18N_NS}.status.SKIPPED`) },
     { value: 'NO_TEXT', label: t(`${I18N_NS}.status.NO_TEXT`) },
     { value: 'FAILED', label: t(`${I18N_NS}.status.FAILED`) },
@@ -187,7 +250,9 @@ const DocRegexDocumentViewer = ({
           <div className="p-3 border-b border-gray-200 dark:border-gray-700">
             <Select
               value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
+              onChange={(value) =>
+                handleStatusFilterChange(value as StatusFilter)
+              }
               options={statusOptions}
             />
           </div>
@@ -225,6 +290,13 @@ const DocRegexDocumentViewer = ({
                         <span className="text-xs text-gray-500 dark:text-gray-400">
                           {t(`${I18N_NS}.rowsCount`, {
                             count: item.result?.rows.length ?? 0,
+                          })}
+                        </span>
+                      )}
+                      {item.rowsWithGapsCount > 0 && (
+                        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                          {t(`${I18N_NS}.rowsWithGapsCount`, {
+                            count: item.rowsWithGapsCount,
                           })}
                         </span>
                       )}
@@ -326,6 +398,34 @@ const DocRegexDocumentViewer = ({
                     })}
                   </div>
                 )}
+
+                {emptyColumns.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      <Trans i18nKey={`${I18N_NS}.emptyColumnsLabel`} />
+                    </span>
+                    {emptyColumns.map((column) => {
+                      const rowsLabel = getEmptyColumnRowsLabel(
+                        column.rowNumbers,
+                      );
+
+                      return (
+                        <span
+                          key={column.id}
+                          className="px-2 py-0.5 rounded border bg-amber-50 border-amber-300 text-gray-900 dark:bg-amber-900/30 dark:border-amber-700 dark:text-white"
+                        >
+                          <span className="font-semibold">{column.label}</span>
+                          {rowsLabel && (
+                            <span className="text-gray-600 dark:text-gray-300">
+                              {' '}
+                              — {rowsLabel}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <pre
@@ -365,5 +465,5 @@ const DocRegexDocumentViewer = ({
   );
 };
 
-export { DocRegexDocumentViewer };
+export { DocRegexDocumentViewer, matchesDocRegexDocumentFilter };
 export type { StatusFilter as DocRegexDocumentStatusFilter };

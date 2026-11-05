@@ -458,7 +458,8 @@
         "docRegexDocumentViewer": {
           "title": "Тексти документів",
           "statusFilter": {
-            "ALL": "Усі документи"
+            "ALL": "Усі документи",
+            "WITH_GAPS": "З пропусками"
           },
           "status": {
             "MATCHED": "Підходить",
@@ -468,10 +469,15 @@
           },
           "noDocumentsMessage": "Немає документів",
           "rowsCount": "рядків: {{count}}",
+          "rowsWithGapsCount": "з пропусками: {{count}}",
           "noTextHint": "У документі немає тексту — найімовірніше, це скан (зображення). Розпізнавання тексту (OCR) не підтримується.",
           "qualifierLabel": "Перевірка документа:",
           "qualifierRuleLabel": "правило {{number}}",
           "notFoundValue": "не знайдено",
+          "emptyColumnsLabel": "Порожні колонки:",
+          "emptyColumnAllRows": "усі рядки",
+          "emptyColumnRow": "рядок {{row}}",
+          "emptyColumnRows": "рядки {{rows}}",
           "emptyTextPlaceholder": "(порожньо)"
         },
         "docRegexModalConfigSettings": {

@@ -14,6 +14,8 @@ interface DocRegexDocumentOutcome {
   document: DocRegexSourceDocument;
   status: DocRegexDocumentStatus;
   result: DocRegexDocumentResult | null;
+  // Rows of this document with at least one result column left empty.
+  rowsWithGapsCount: number;
 }
 
 interface DocRegexResultRow {
@@ -26,7 +28,15 @@ interface DocRegexResults {
   outcomes: DocRegexDocumentOutcome[];
   rows: DocRegexResultRow[];
   countByStatus: Record<DocRegexDocumentStatus, number>;
+  rowsWithGapsCount: number;
 }
+
+/**
+ * A gap is an empty result column — the ones the table shows and copies.
+ * An empty intermediate value only counts through a column built from it.
+ */
+const listEmptyColumnIds = (row: DocRegexRow, columnIds: string[]) =>
+  columnIds.filter((id) => !row[id]);
 
 /**
  * Cheap enough to redo on every config change (regexes over texts already in
@@ -36,6 +46,7 @@ interface DocRegexResults {
 const buildDocRegexResults = (
   parser: DocRegexParser,
   documents: DocRegexSourceDocument[],
+  columnIds: string[],
 ): DocRegexResults => {
   const countByStatus: Record<DocRegexDocumentStatus, number> = {
     MATCHED: 0,
@@ -44,20 +55,34 @@ const buildDocRegexResults = (
     FAILED: 0,
   };
   const rows: DocRegexResultRow[] = [];
+  let rowsWithGapsCount = 0;
 
   const outcomes = documents.map((document, documentIndex) => {
     let outcome: DocRegexDocumentOutcome;
 
     if (document.error !== null || document.text === null) {
-      outcome = { document, status: 'FAILED', result: null };
+      outcome = {
+        document,
+        status: 'FAILED',
+        result: null,
+        rowsWithGapsCount: 0,
+      };
     } else if (!document.text.trim()) {
-      outcome = { document, status: 'NO_TEXT', result: null };
+      outcome = {
+        document,
+        status: 'NO_TEXT',
+        result: null,
+        rowsWithGapsCount: 0,
+      };
     } else {
       const result = parser.parse(document.text);
       outcome = {
         document,
         status: result.isQualified ? 'MATCHED' : 'SKIPPED',
         result,
+        rowsWithGapsCount: result.rows.filter(
+          (values) => listEmptyColumnIds(values, columnIds).length > 0,
+        ).length,
       };
       result.rows.forEach((values, rowIndex) =>
         rows.push({
@@ -69,13 +94,14 @@ const buildDocRegexResults = (
     }
 
     countByStatus[outcome.status]++;
+    rowsWithGapsCount += outcome.rowsWithGapsCount;
     return outcome;
   });
 
-  return { outcomes, rows, countByStatus };
+  return { outcomes, rows, countByStatus, rowsWithGapsCount };
 };
 
-export { buildDocRegexResults };
+export { buildDocRegexResults, listEmptyColumnIds };
 export type {
   DocRegexDocumentOutcome,
   DocRegexDocumentStatus,
