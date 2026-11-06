@@ -272,7 +272,7 @@ class DocumentProcessor {
 
         let stemmedTerm = stemCache.get(token.normalized);
         if (stemmedTerm === undefined) {
-          // REVIEW: the {isTypoToleranceEnabled} been used before
+          // REVIEW: the {isInflectedWordFormsAllowed} been used before
           stemmedTerm = this.textProcessor.stemWord(token.normalized);
           stemCache.set(token.normalized, stemmedTerm);
         }

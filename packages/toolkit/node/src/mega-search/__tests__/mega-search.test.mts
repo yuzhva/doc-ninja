@@ -230,16 +230,17 @@ describe('MegaSearch', () => {
       // Regression guard: plain Levenshtein counted a swap as 2 edits.
       assert.deepEqual(await find('serach'), ['search.txt']);
       assert.deepEqual(
-        await find('serach', { isTypoToleranceEnabled: false }),
+        await find('serach', { isInflectedWordFormsAllowed: false }),
         ['search.txt'],
       );
       assert.deepEqual(await find('serach', { maxTypoDistance: 0 }), []);
     });
 
     it('with fuzzy match off, finds a word whose stem is the word itself', async () => {
-      assert.deepEqual(await find('car', { isTypoToleranceEnabled: false }), [
-        'cars.txt',
-      ]);
+      assert.deepEqual(
+        await find('car', { isInflectedWordFormsAllowed: false }),
+        ['cars.txt'],
+      );
     });
 
     it('with fuzzy match off, finds an inflected word spelled exactly as in the text', async () => {
@@ -247,7 +248,7 @@ describe('MegaSearch', () => {
       // the inverted index, whose keys are stems, so a word that differs
       // from its stem ("управління" → "управлін") was never found.
       assert.deepEqual(
-        await find('управління', { isTypoToleranceEnabled: false }),
+        await find('управління', { isInflectedWordFormsAllowed: false }),
         ['наказ 01.02.2024.txt'],
       );
     });
@@ -273,7 +274,7 @@ describe('MegaSearch', () => {
       // with stems, as for single words.
       assert.deepEqual(
         await find('"начальник управління"', {
-          isTypoToleranceEnabled: false,
+          isInflectedWordFormsAllowed: false,
         }),
         ['наказ 01.02.2024.txt'],
       );
@@ -284,7 +285,7 @@ describe('MegaSearch', () => {
       // recorded their positions, which phrase snippets are rendered from.
       const [fuzzy] = (await search('"rich car"')).results;
       const [strict] = (
-        await search('"rich car"', { isTypoToleranceEnabled: false })
+        await search('"rich car"', { isInflectedWordFormsAllowed: false })
       ).results;
 
       assert.deepEqual(
@@ -374,7 +375,7 @@ describe('MegaSearch', () => {
     assert.equal(asPhrase.results[0].snippets[0].matchType, 'fuzzy-phrase');
   });
 
-  describe('search() — "Allow fuzzy match" (isTypoToleranceEnabled) and typos (maxTypoDistance)', () => {
+  describe('search() — "Allow fuzzy match" (isInflectedWordFormsAllowed) and typos (maxTypoDistance)', () => {
     let forms: SearchFixture;
 
     before(async () => {
@@ -384,11 +385,11 @@ describe('MegaSearch', () => {
     after(() => forms.cleanup());
 
     const fuzzy = (maxTypoDistance = 1): SearchOptions => ({
-      isTypoToleranceEnabled: true,
+      isInflectedWordFormsAllowed: true,
       maxTypoDistance,
     });
     const strict = (maxTypoDistance = 1): SearchOptions => ({
-      isTypoToleranceEnabled: false,
+      isInflectedWordFormsAllowed: false,
       maxTypoDistance,
     });
 

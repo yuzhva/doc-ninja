@@ -6,13 +6,13 @@ type SearchOptions = {
   topN?: number;
 
   /**
-   * "Allow fuzzy match" in the UI (default: true). Despite its name it does
-   * not control typos — maxTypoDistance does, in both modes:
+   * "Allow fuzzy match" in the UI (default: true). It does not control
+   * typos — maxTypoDistance does, in both modes:
    * - true:  any inflected form of a query word matches: "Євгена" finds
    *          "Євген", "Євгену", "Євгеній"; "parked" finds "parking", "parks".
    * - false: only the form typed (letter case aside): "Євгена" finds "Євгена".
    */
-  isTypoToleranceEnabled?: boolean;
+  isInflectedWordFormsAllowed?: boolean;
 
   /**
    * Max character edits allowed per word (default: 1; 0 = no typos), with
