@@ -255,6 +255,46 @@ describe('MegaSearch', () => {
     });
   });
 
+  describe('search() — a word typed in both alphabets', () => {
+    // a Latin "i" twice: "Міністерства" to the eye
+    const MIXED = 'Мiнiстерства';
+    let mixed: SearchFixture;
+    const findIn = async (query: string, options?: SearchOptions) =>
+      fileNames(
+        await mixed.megaSearch.search(query, {
+          maxTypoDistance: 0,
+          ...options,
+        }),
+      ).sort();
+
+    before(async () => {
+      mixed = await createSearchFixture({
+        'latin-i.txt': `Лист до ${MIXED} освіти.`,
+        'cyrillic.txt': 'Лист до Міністерства освіти.',
+      });
+    });
+
+    after(() => mixed.cleanup());
+
+    it('is found by the word typed in either alphabet', async () => {
+      assert.deepEqual(await findIn('міністерства'), [
+        'cyrillic.txt',
+        'latin-i.txt',
+      ]);
+      assert.deepEqual(await findIn(MIXED), ['cyrillic.txt', 'latin-i.txt']);
+    });
+
+    it('shows the word as the text writes it', async () => {
+      const [result] = (
+        await mixed.megaSearch.search('міністерства', {
+          searchScopedPaths: ['latin-i.txt'],
+        })
+      ).results;
+
+      assert.equal(result.snippets[0].match, MIXED);
+    });
+  });
+
   describe('search() — letter case', () => {
     // The same name written three ways, and a query in each of them: "євген"
     // must find "Євген", in every mode the UI and the API search with
