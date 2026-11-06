@@ -2,7 +2,7 @@ import path from 'path';
 import type { MegaSearch } from 'toolkit--local/node';
 
 type MegaSearchEnginesOptions = {
-  /** Creates the folder's engine, its index built (createMegaSearch). */
+  /** Creates the folder's engine (createMegaSearch). */
   createEngine: (rootDirectory: string) => Promise<MegaSearch>;
   /** Deletes a folder's index cache with no engine (MegaSearch.clearCacheFor). */
   clearCacheOf: (rootDirectory: string) => Promise<void>;
@@ -49,9 +49,8 @@ class MegaSearchEngines {
   }
 
   /**
-   * The folder's engine, created (and indexed) on first use. `isNew` tells
-   * whether this call created it: an engine made earlier may need to pick up
-   * files changed since. Calls that come in together share one creation; a
+   * The folder's engine, created on first use. `isNew` tells whether this
+   * call created it. Calls that come in together share one creation; a
    * failed one isn't kept, so the next call tries again.
    */
   async get(

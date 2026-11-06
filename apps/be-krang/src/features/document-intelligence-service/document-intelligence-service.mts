@@ -8,10 +8,15 @@ import { MegaSearchEngines } from './mega-search-engines.mjs';
 /**
  * Every request's search engines, one per source folder. Each watches its
  * folder, so a request lists the folder's files only after one changed.
+ * A new one indexes nothing yet: each search brings the folders it searches
+ * up to date (see getMegaSearchInstance).
  */
 const engines = new MegaSearchEngines({
   createEngine: (rootDirectory) =>
-    createMegaSearch({ rootDirectory, concurrency: 4, watchFiles: true }),
+    createMegaSearch(
+      { rootDirectory, concurrency: 4, watchFiles: true },
+      { indexFolder: false },
+    ),
   clearCacheOf: (rootDirectory) => MegaSearch.clearCacheFor(rootDirectory),
   closeEngine: (megaSearch) => megaSearch.close(),
 });
@@ -43,22 +48,24 @@ class DocumentIntelligenceService {
   }
 
   /**
-   * This folder's search engine, shared across requests and up to date with
-   * the files on disk: a new engine indexes the folder as it's created, one
-   * made earlier first picks up the documents added, edited or deleted
-   * since. It lists the folder's files for that only when its watcher saw a
-   * change, or a minute went by. Requests that come in together share that
-   * refresh.
+   * This folder's search engine, shared across requests, with what a search
+   * in `searchScopedPaths` reads up to date with the files on disk: the
+   * documents in those folders, or in all of them when none are given. It
+   * picks up the documents added, edited or deleted there since — all of
+   * them, the first time a folder is searched — and lists the folders'
+   * files for that only when its watcher saw a change, or a minute went by.
+   * Requests that come in together share that refresh.
    */
-  async getMegaSearchInstance(): Promise<MegaSearch> {
-    const { megaSearch, isNew } = await engines.get(this.rootDirectory);
-    if (!isNew) {
-      try {
-        await megaSearch.refresh();
-      } catch (error) {
-        // The index from before is a better answer than none
-        console.error('Search index refresh failed:', error);
-      }
+  async getMegaSearchInstance(
+    searchScopedPaths?: string[],
+  ): Promise<MegaSearch> {
+    const { megaSearch } = await engines.get(this.rootDirectory);
+    try {
+      await megaSearch.refresh(searchScopedPaths);
+    } catch (error) {
+      // The index from before is a better answer than none — if there is one
+      if (megaSearch.getStats().documentsCount === 0) throw error;
+      console.error('Search index refresh failed:', error);
     }
     return megaSearch;
   }
@@ -67,7 +74,9 @@ class DocumentIntelligenceService {
     queries: string[],
     options: SearchOptions = {},
   ): Promise<SearchResult[]> {
-    const megaSearch = await this.getMegaSearchInstance();
+    const megaSearch = await this.getMegaSearchInstance(
+      options.searchScopedPaths,
+    );
     const results: SearchResult[] = [];
 
     for (const query of queries) {
@@ -102,15 +111,14 @@ class DocumentIntelligenceService {
   }
 
   /**
-   * Re-runs indexing for this instance's rootDirectory. Same incremental
-   * engine that runs on first search (only new/changed files are
+   * Re-runs indexing for this instance's rootDirectory, all its folders.
+   * Same incremental engine a search runs (only new/changed files are
    * reprocessed, deleted files are pruned) — this just lets a caller
    * trigger it explicitly, independent of running a search.
    */
   async reindex(): Promise<void> {
-    const { megaSearch, isNew } = await engines.get(this.rootDirectory);
-    // A new engine has just indexed the folder
-    if (!isNew) await megaSearch.reindex();
+    const { megaSearch } = await engines.get(this.rootDirectory);
+    await megaSearch.reindex();
   }
 
   /**

@@ -313,21 +313,93 @@ describe('FileIndexer', () => {
     });
   });
 
+  /**
+   * Counts how often the indexer lists files from now on — the folder's, or
+   * those in some of its folders — and keeps what each listing was of.
+   */
+  const countListings = (indexer: FileIndexer) => {
+    const scanner = (indexer as any).scanner;
+    const discoverFiles = scanner.discoverFiles.bind(scanner);
+    const discoverSpecificPaths = scanner.discoverSpecificPaths.bind(scanner);
+    const listed: (string[] | 'all')[] = [];
+    scanner.discoverFiles = () => {
+      listed.push('all');
+      return discoverFiles();
+    };
+    scanner.discoverSpecificPaths = (paths: string[]) => {
+      listed.push(paths);
+      return discoverSpecificPaths(paths);
+    };
+    return Object.assign(() => listed.length, { listed });
+  };
+
+  describe('refreshIfChanged() of some folders', () => {
+    beforeEach(async () => {
+      await corpus.write('orders/c.txt', 'Квартальний звіт.');
+      await corpus.write('reports/d.txt', 'Кошторис затверджено.');
+    });
+
+    it('indexes the documents in those folders only', async () => {
+      const indexer = newIndexer();
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders')]);
+
+      assert.equal(indexer.getStats().documentsCount, 1);
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), []);
+
+      await indexer.refreshIfChanged();
+      assert.equal(indexer.getStats().documentsCount, 4);
+    });
+
+    it('drops the deleted documents of those folders only', async () => {
+      const indexer = await indexed();
+      await corpus.remove('orders/c.txt');
+      await corpus.remove('reports/d.txt');
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders')]);
+
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), []);
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['d.txt']);
+    });
+
+    it('drops what a folder held once the folder is gone', async () => {
+      const indexer = await indexed();
+      await corpus.remove('orders');
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders')]);
+
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), []);
+      assert.equal(indexer.getStats().documentsCount, 3);
+    });
+
+    it('lists a folder once, though a folder in it is given too, and nothing outside', async () => {
+      const indexer = newIndexer();
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged([
+        corpus.pathOf('orders/sub'),
+        corpus.pathOf('orders'),
+        path.resolve(corpus.root, '..'),
+      ]);
+
+      assert.deepEqual(listings.listed, [[corpus.pathOf('orders')]]);
+    });
+
+    it('lists the whole folder when it is given itself', async () => {
+      const indexer = newIndexer();
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders'), corpus.root]);
+
+      assert.deepEqual(listings.listed, ['all']);
+      assert.equal(indexer.getStats().documentsCount, 4);
+    });
+  });
+
   describe('refreshIfChanged() with watchFiles', () => {
     /** Lets the folder watcher's reports of what just happened come in. */
     const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
-
-    /** Counts how often the indexer lists the folder's files from now on. */
-    const countListings = (indexer: FileIndexer) => {
-      const scanner = (indexer as any).scanner;
-      const discoverFiles = scanner.discoverFiles.bind(scanner);
-      let listings = 0;
-      scanner.discoverFiles = () => {
-        listings++;
-        return discoverFiles();
-      };
-      return () => listings;
-    };
 
     const watching = async (overrides: Partial<SearchConfig> = {}) => {
       const indexer = await indexed({ watchFiles: true, ...overrides });
@@ -363,6 +435,31 @@ describe('FileIndexer', () => {
 
       assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
       assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    });
+
+    it('lists a folder again only after a change in it', async () => {
+      await corpus.write('orders/c.txt', 'Квартальний звіт.');
+      await corpus.write('reports/d.txt', 'Кошторис затверджено.');
+      const indexer = await watching();
+      const listings = countListings(indexer);
+      const orders = [corpus.pathOf('orders')];
+      const reports = [corpus.pathOf('reports')];
+
+      // The look at the whole folder takes in its folders
+      await indexer.refreshIfChanged(orders);
+      assert.equal(listings(), 0);
+
+      await corpus.write('reports/d.txt', 'Наказ підписано.', later());
+      await settle();
+      // The change is in the whole folder, so that look is due now: the
+      // folder searched is listed, once
+      await indexer.refreshIfChanged(orders);
+      await indexer.refreshIfChanged(orders);
+      assert.deepEqual(listings.listed, [orders]);
+
+      await indexer.refreshIfChanged(reports);
+      assert.deepEqual(listings.listed, [orders, reports]);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt', 'd.txt']);
     });
 
     it('lists the files anyway once rescanAfterMs went by', async () => {

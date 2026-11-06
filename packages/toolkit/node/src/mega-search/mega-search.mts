@@ -181,9 +181,17 @@ class MegaSearch {
    * waits for an update running, if any. Cheap enough to run before every
    * search: a change is in the searches after the watcher reports it, a
    * moment after the file is saved.
+   *
+   * With `searchScopedPaths`, as search() takes them, only the files in
+   * those folders: what a search in them reads. The other folders' files
+   * aren't even listed, and theirs stay in the index as they were — a
+   * search in one folder of a large one, first of all, waits for that
+   * folder's documents to be indexed, not for all of them.
    */
-  async refresh(): Promise<void> {
-    await this.fileIndexer.refreshIfChanged();
+  async refresh(searchScopedPaths: string[] = []): Promise<void> {
+    await this.fileIndexer.refreshIfChanged(
+      this.resolveScopedPaths(searchScopedPaths),
+    );
     this.dropStaleResults();
   }
 
@@ -1011,13 +1019,20 @@ const defaultConfig: SearchConfig = {
 };
 
 // Main factory function
+/**
+ * A search engine for the folder `config.rootDirectory`, with every file in
+ * it indexed. With `indexFolder: false` it indexes nothing yet: refresh()
+ * then indexes what each search reads — first of all, the folders searched
+ * in, not the whole folder.
+ */
 async function createMegaSearch(
   config: Partial<SearchConfig> = {},
+  { indexFolder = true }: { indexFolder?: boolean } = {},
 ): Promise<MegaSearch> {
   const finalConfig = { ...defaultConfig, ...config };
   const megaSearch = new MegaSearch(finalConfig);
 
-  await megaSearch.initialize();
+  if (indexFolder) await megaSearch.initialize();
   return megaSearch;
 }
 
