@@ -70,7 +70,7 @@ export class SnippetGenerator {
   /**
    * Read the original raw document text (as written to disk pre-normalization),
    * for use cases where the normalized `doc.vocab` tokens (lowercased, stripped
-   * of apostrophes/punctuation, stop words removed) are not suitable — e.g.
+   * of apostrophes/punctuation) are not suitable — e.g.
    * rendering snippet context or highlighting exact substrings.
    * Returns null if no text cache path is available, the read fails, or the
    * text is no longer this version's (see isTextOf), so callers can fall back
@@ -107,8 +107,8 @@ export class SnippetGenerator {
   /**
    * Resolve the display text for a token-index range [start, end) within a
    * snippet. Prefers an exact slice of the raw (pre-normalization) document
-   * text via char offsets — preserving original casing, apostrophes, stop
-   * words, and punctuation. Falls back to joining normalized `doc.vocab`
+   * text via char offsets — preserving original casing, apostrophes, single
+   * letters, and punctuation. Falls back to joining normalized `doc.vocab`
    * tokens only if the raw text cache is unavailable (e.g. missing/unreadable
    * textFilePath), which reproduces the previous (lossy) behavior.
    *

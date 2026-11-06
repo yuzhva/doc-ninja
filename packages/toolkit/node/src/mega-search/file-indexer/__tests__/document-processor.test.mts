@@ -75,7 +75,7 @@ describe('DocumentProcessor', () => {
         await discovered('orders/order.txt'),
       );
 
-      assert.deepEqual(doc.vocab, ['наказ', 'бюджет', 'виконано']);
+      assert.deepEqual(doc.vocab, ['наказ', 'про', 'бюджет', 'виконано']);
       assert.deepEqual(
         Array.from({ length: doc.positions.length }, (_, token) => [
           doc.vocab[doc.positions.vocabIndex(token)],
@@ -86,11 +86,13 @@ describe('DocumentProcessor', () => {
         ]),
         [
           ['наказ', 'Наказ'],
+          ['про', 'про'],
           ['бюджет', 'бюджет'],
           ['наказ', 'Наказ'],
           ['виконано', 'виконано'],
         ],
       );
+      // words only: the function word "про" doesn't count
       assert.equal(doc.wordCount, 4);
       assert.equal(doc.metadata.indexed, true);
       assert.equal(doc.metadata.language, 'ukrainian');
@@ -125,6 +127,7 @@ describe('DocumentProcessor', () => {
 
       assert.deepEqual(onDisk.termFrequency, {
         [stem('наказ')]: 2,
+        [stem('про')]: 1,
         [stem('бюджет')]: 1,
         [stem('виконано')]: 1,
       });
@@ -134,8 +137,8 @@ describe('DocumentProcessor', () => {
 
     it('keeps what glues the parts of a number together, in memory, on disk and when read back', async () => {
       await corpus.write('dated.txt', 'Наказ № 15/2 від 22.12.2024.');
-      // наказ0 15(1) 2(2) 22(3) 12(4) 2024(5)
-      const joints = { 2: '/', 4: '.', 5: '.' };
+      // наказ0 15(1) 2(2) від3 22(4) 12(5) 2024(6)
+      const joints = { 2: '/', 5: '.', 6: '.' };
 
       const doc = await newProcessor().indexDocument(
         await discovered('dated.txt'),
@@ -205,7 +208,7 @@ describe('DocumentProcessor', () => {
         await discovered('orders/order.txt'),
       );
 
-      assert.deepEqual(doc.vocab, ['наказ', 'бюджет', 'виконано']);
+      assert.deepEqual(doc.vocab, ['наказ', 'про', 'бюджет', 'виконано']);
     });
 
     it('stamps the per-document index with the INDEX_VERSION that built it', async () => {
@@ -228,7 +231,7 @@ describe('DocumentProcessor', () => {
         await discovered('orders/order.txt'),
       );
 
-      assert.deepEqual(doc.vocab, ['наказ', 'бюджет', 'виконано']);
+      assert.deepEqual(doc.vocab, ['наказ', 'про', 'бюджет', 'виконано']);
       assert.equal(
         JSON.parse(await corpus.read(indexCacheFile('orders/order.txt')))
           .indexVersion,
@@ -322,6 +325,7 @@ describe('DocumentProcessor', () => {
       );
       assert.deepEqual(documentCache.get(metadata.originalFilePath)?.vocab, [
         'наказ',
+        'про',
         'бюджет',
         'виконано',
       ]);

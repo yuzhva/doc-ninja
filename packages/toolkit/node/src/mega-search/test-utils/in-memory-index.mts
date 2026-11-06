@@ -6,8 +6,8 @@ import { InvertedIndex } from '../file-indexer/inverted-index.mjs';
 import { createLogger } from '../shared/logger.mjs';
 import {
   UkrainianTextProcessor,
+  countsAsWord,
   findJoints,
-  isNumberTerm,
 } from '../text-processor.mjs';
 import { TokenPositions } from '../token-positions.mjs';
 import type {
@@ -67,7 +67,7 @@ function buildDocumentIndex(
     positions: TokenPositions.fromFlat(positions),
     joints: findJoints(text, tokens),
     termFrequency,
-    wordCount: tokens.filter((token) => !isNumberTerm(token.term)).length,
+    wordCount: tokens.filter((token) => countsAsWord(token.term)).length,
   };
 }
 

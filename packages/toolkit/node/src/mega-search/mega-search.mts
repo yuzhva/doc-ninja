@@ -21,7 +21,11 @@ import type {
   SnippetInfo,
 } from './mega-search.types.mjs';
 import { createLogger } from './shared/logger.mjs';
-import { UkrainianTextProcessor, findJoints } from './text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  findJoints,
+  isFunctionWord,
+} from './text-processor.mjs';
 import type { DocumentIndex, SearchConfig, SearchSnapshot } from './types.mjs';
 
 const logger = createLogger('MegaSearch');
@@ -717,7 +721,14 @@ class MegaSearch {
       if (useBM25) this.syncScorerWithIndex(docCache, indexGeneration);
 
       // What each query word matches — every search mode below reads these.
-      const words = queryData.words.map((word) =>
+      // A phrase holds its function words as written; a search word by word
+      // skips them, unless they're all the query holds — "наказ про
+      // відпустку" would find nearly every document by "про" alone.
+      const queryWords =
+        queryData.isPhrase || queryData.words.every(isFunctionWord)
+          ? queryData.words
+          : queryData.words.filter((word) => !isFunctionWord(word));
+      const words = queryWords.map((word) =>
         this.termMatcher.match(
           word,
           {

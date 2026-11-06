@@ -1,12 +1,8 @@
-import {
-  englishStopWords,
-  normalizeEnglish,
-  stemEnglish,
-} from './lang/english.mjs';
+import { englishFunctionWords, stemEnglish } from './lang/english.mjs';
 import {
   lemmatizeUkrainian,
   normalizeUkrainian,
-  ukrainianStopWords,
+  ukrainianFunctionWords,
 } from './lang/ukrainian.mjs';
 import { SearchToken } from './types.mjs';
 
@@ -15,6 +11,31 @@ import { SearchToken } from './types.mjs';
  * a code. Words never hold a digit, so a token is all digits or none.
  */
 const isNumberTerm = (term: string): boolean => /^[0-9]+$/.test(term);
+
+/**
+ * A token is a function word: a preposition, conjunction or particle ("про",
+ * "та", "лише"; "of", "and"), which only ties the words around it together.
+ * It is indexed and must be there in a phrase, but:
+ * - it matches itself only, as typed, never another form or a typo, and no
+ *   other word matches it: "від" is no typo of "вид";
+ * - it doesn't count where distance is counted in words, as numbers don't,
+ *   so phrase gaps and snippets count the words they counted before function
+ *   words were indexed;
+ * - a word-by-word search skips it, unless the query holds nothing else.
+ */
+const isFunctionWord = (term: string): boolean =>
+  ukrainianFunctionWords.has(term) || englishFunctionWords.has(term);
+
+/** A token matched as typed only, never by another form or a typo. */
+const matchesItselfOnly = (term: string): boolean =>
+  isNumberTerm(term) || isFunctionWord(term);
+
+/**
+ * Whether a token counts where distance is counted in words — phrase gaps,
+ * snippet windows, document length. Numbers and function words don't.
+ */
+const countsAsWord = (term: string): boolean =>
+  !isNumberTerm(term) && !isFunctionWord(term);
 
 /**
  * What glues each token to the one before it, by the token's index: the
@@ -63,6 +84,9 @@ class UkrainianTextProcessor {
    * Words are what they were before numbers were indexed — a digit ends a
    * word as any separator does — and numbers don't count where distance is
    * counted in words, so searches for words find what they found before.
+   *
+   * Every word is a token, function words too (see isFunctionWord). Single
+   * letters aren't: "в", "і", "з", initials.
    */
   tokenize(text: string): SearchToken[] {
     const tokens: SearchToken[] = [];
@@ -97,7 +121,6 @@ class UkrainianTextProcessor {
 
       if (
         normalizedTerm.length > 1 &&
-        !this.isStopWord(normalizedTerm) &&
         this.combinedAlphabet.test(normalizedTerm)
       ) {
         tokens.push({
@@ -113,16 +136,19 @@ class UkrainianTextProcessor {
     return tokens;
   }
 
-  private isStopWord(word: string): boolean {
-    const stemmed = this.stemWord(word);
-
-    if (this.ukrainianAlphabet.test(word)) {
-      return ukrainianStopWords.has(stemmed);
-    }
-    return englishStopWords.has(stemmed);
+  /**
+   * The key a word is indexed and searched under: its stem, or the word
+   * itself for a function word. No other word's stem is ever a function
+   * word's key — a word whose stem would be one keeps its whole form — so a
+   * function word's postings hold that word only.
+   */
+  stemWord(word: string): string {
+    if (isFunctionWord(word)) return word;
+    const stem = this.stem(word);
+    return isFunctionWord(stem) ? word : stem;
   }
 
-  stemWord(word: string): string {
+  private stem(word: string): string {
     if (this.ukrainianAlphabet.test(word)) {
       return lemmatizeUkrainian(word);
     }
@@ -243,4 +269,11 @@ class UkrainianTextProcessor {
   }
 }
 
-export { findJoints, isNumberTerm, UkrainianTextProcessor };
+export {
+  countsAsWord,
+  findJoints,
+  isFunctionWord,
+  isNumberTerm,
+  matchesItselfOnly,
+  UkrainianTextProcessor,
+};
