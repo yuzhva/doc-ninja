@@ -383,6 +383,39 @@ _intended_ behaviour and is marked with `knownBug('<cause>')`. The test still ru
 reported as `# TODO KNOWN BUG …` without failing the suite. Once the fix lands the test passes;
 remove the marker then, so it guards against regressions.
 
+### Regression check on a real corpus
+
+Unit tests can't show what a change does to hundreds of real searches. The snapshot tool
+(`test-utils/regression/`) samples queries from a corpus — words, word pairs, names as written
+and in lowercase, typos, swapped letters, quoted phrases, numbers and dates, a number between
+two words — and records what consumers see for each: totals, the first page's documents and
+scores, each snippet's `match@charStart` (what parser-config extraction reads) and highlight
+counts. It does so under every option set the UI can send through be-krang, plus the main API
+modes:
+
+```bash
+pnpm mega-search:snapshot <corpusDir> before.json   # add --queries names.txt for your own list
+# …make the change…
+pnpm mega-search:snapshot <corpusDir> after.json
+pnpm mega-search:compare before.json after.json
+```
+
+The comparison counts, per option set and per query group, the searches that are the same and
+those that find fewer or more documents, rank or score them differently, or return other
+snippets or highlights, with examples, and adds up the search time of each. A refactoring or a
+speed-up should leave every search the same; a behaviour change should differ only where it
+means to.
+
+- The same corpus text always gives the same queries, so two snapshots ask the same things.
+- The index is kept in a folder of the OS temp dir per corpus, so the corpus folder isn't
+  touched. Pass `--cache <corpusDir>/.cache` to use the app's own index instead.
+- Search times are only comparable between warm runs: a run that builds the index, right after
+  the documents were read from a cold disk, searched 8–28% slower than the next one on the same
+  code. Before timing a speed-up, take a throw-away snapshot first, and compare runs that both
+  loaded the index (indexing well under a second).
+- Snapshots hold document names and text: they go to the OS temp dir unless you name a file,
+  and must never be committed.
+
 ## 📈 Future Roadmap
 
 - [ ] REST API endpoints
