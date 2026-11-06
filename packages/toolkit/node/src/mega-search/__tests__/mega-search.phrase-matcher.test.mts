@@ -22,6 +22,10 @@ const DOCS = {
   'orders.txt':
     'Начальник управління підписав наказ. Наказ начальника управління.',
   // начальник0 управління1 підписав2 наказ3 наказ4 начальника5 управління6
+  'repeated.txt': 'Оплатити рахунок вчасно. Оплатити рахунок вчасно.',
+  // оплатити0 рахунок1 вчасно2 оплатити3 рахунок4 вчасно5
+  'contract.txt': 'Підписати договір, договір оренди.',
+  // підписати0 договір1 договір2 оренди3
 };
 
 describe('PhraseMatcher', () => {
@@ -77,14 +81,26 @@ describe('PhraseMatcher', () => {
       assert.equal(matches.has('reversed.txt'), false);
     });
 
-    it('returns every matching sequence as document token positions', () => {
-      assert.deepEqual(phrase('rich car', 3).get('adjacent.txt'), [
-        [0, 1],
-        [0, 4],
-      ]);
+    it('returns every occurrence as document token positions', () => {
       assert.deepEqual(phrase('начальник управління', 0).get('orders.txt'), [
         [0, 1],
         [5, 6],
+      ]);
+    });
+
+    it('returns the same text at another place as another occurrence', () => {
+      assert.deepEqual(phrase('оплатити рахунок', 0).get('repeated.txt'), [
+        [0, 1],
+        [3, 4],
+      ]);
+    });
+
+    it('takes one occurrence per first word, from the nearest words after it', () => {
+      // "rich" … "car" and "rich" … "cars" start at the same "rich"
+      assert.deepEqual(phrase('rich car', 3).get('adjacent.txt'), [[0, 1]]);
+      // "підписати договір" and "підписати … договір" alike
+      assert.deepEqual(phrase('підписати договір', 1).get('contract.txt'), [
+        [0, 1],
       ]);
     });
 

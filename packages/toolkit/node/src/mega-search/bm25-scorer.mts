@@ -1,4 +1,7 @@
+import { createLogger } from './shared/logger.mjs';
 import type { DocumentIndex } from './types.mjs';
+
+const logger = createLogger('BM25');
 
 interface BM25Config {
   k1: number; // Controls term frequency saturation (typically 1.0-2.0)
@@ -20,8 +23,8 @@ class BM25Scorer {
     );
 
     this.avgDocLength = totalLength / documents.size;
-    console.log(
-      `[BM25] Calculated average document length: ${this.avgDocLength.toFixed(2)} tokens`,
+    logger.debug(
+      `Calculated average document length: ${this.avgDocLength.toFixed(2)} tokens`,
     );
   }
 

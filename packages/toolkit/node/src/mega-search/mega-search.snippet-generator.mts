@@ -262,8 +262,9 @@ export class SnippetGenerator {
   }
 
   /**
-   * ✅ UNIFIED: Extract phrase snippets from pre-computed match positions
-   * Works for both strict and fuzzy phrase search
+   * One snippet per phrase occurrence PhraseMatcher found, strict and fuzzy
+   * alike. Snippets of the same text at different places are all kept: each
+   * is its own match, and its own extraction row in be-krang.
    */
   private async extractPhraseSnippetsFromPositions(
     doc: DocumentIndex,
@@ -299,9 +300,14 @@ export class SnippetGenerator {
       if (snippet) snippets.push(snippet);
     }
 
-    return this.removeDuplicateSnippets(snippets);
+    return snippets;
   }
 
+  /**
+   * One snippet per occurrence of a matched word, unless an earlier one
+   * already has the very same window. As with phrases, the same text at
+   * different places gives a snippet each.
+   */
   private async extractTokenSnippets(
     doc: DocumentIndex,
     matchedWords: ReadonlyMap<string, MatchedWord>,
@@ -371,7 +377,7 @@ export class SnippetGenerator {
       });
     }
 
-    return this.removeDuplicateSnippets(snippets);
+    return snippets;
   }
 
   private async createSnippetFromSequence(
@@ -564,22 +570,6 @@ export class SnippetGenerator {
     }
 
     return { text, highlightedWords };
-  }
-
-  private removeDuplicateSnippets(snippets: SnippetInfo[]): SnippetInfo[] {
-    const seen = new Set<string>();
-    return snippets.filter((snippet) => {
-      const simplifiedContext = snippet.context
-        .replace(/<b>|<\/b>/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (seen.has(simplifiedContext)) {
-        return false;
-      } else {
-        seen.add(simplifiedContext);
-        return true;
-      }
-    });
   }
 
   private escapeRegExp(string: string): string {

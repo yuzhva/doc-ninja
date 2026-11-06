@@ -195,6 +195,68 @@ describe('MegaSearch', () => {
     });
   });
 
+  describe('search() — one snippet per occurrence', () => {
+    // Documents repeat a sentence for every person, and be-krang extracts a
+    // row from each snippet: every repetition must come back.
+    const PAYMENTS = ['Іваненко Петро', 'Петренко Марія', 'Сидоренко Олег']
+      .map((name) => `${name}. Нарахувати щомісячну премію згідно з графіком.`)
+      .join('\n');
+    let occurrences: SearchFixture;
+
+    before(async () => {
+      occurrences = await createSearchFixture({
+        'payments.txt': PAYMENTS,
+        'contract.txt': 'Підписати договір, договір оренди.',
+      });
+    });
+
+    after(() => occurrences.cleanup());
+
+    const searchOccurrences = (query: string, options: SearchOptions = {}) =>
+      occurrences.megaSearch.search(query, {
+        ...PRODUCTION_OPTIONS,
+        ...options,
+      });
+
+    const offsetsOf = (pattern: RegExp) =>
+      [...PAYMENTS.matchAll(pattern)].map((m) => m.index);
+
+    it('returns the same sentence at each place, with its own offsets', async () => {
+      const { results, pagination } =
+        await searchOccurrences('щомісячну премію');
+
+      assert.deepEqual(
+        results[0].snippets.map((s) => s.matchCharStart),
+        offsetsOf(/щомісячну премію/g),
+      );
+      assert.equal(pagination.totalMatches, 3);
+    });
+
+    it('does the same for a word searched on its own', async () => {
+      const { results } = await searchOccurrences('премію', {
+        isPhraseProximityEnabled: false,
+      });
+
+      assert.deepEqual(
+        results[0].snippets.map((s) => s.matchCharStart),
+        offsetsOf(/премію/g),
+      );
+    });
+
+    it('counts a phrase whose word repeats within the gap once', async () => {
+      // "Підписати договір" and "Підписати договір, договір" start at the
+      // same word: one occurrence
+      const { results, pagination } =
+        await searchOccurrences('підписати договір');
+
+      assert.deepEqual(
+        results[0].snippets.map((s) => s.match),
+        ['Підписати договір'],
+      );
+      assert.equal(pagination.totalMatches, 1);
+    });
+  });
+
   describe('search() — typo tolerance', () => {
     it('matches a misspelled word within maxTypoDistance (default 1)', async () => {
       assert.ok((await find('упрвління')).includes('наказ 01.02.2024.txt'));
