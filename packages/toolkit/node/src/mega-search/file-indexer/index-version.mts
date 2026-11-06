@@ -20,7 +20,9 @@
  * 7. every word indexed: no stop words left out; function words (see
  *    isFunctionWord) under themselves, not their stem, and out of the stem
  *    dictionary; wordCount counts neither numbers nor function words
+ * 8. a word typed in both alphabets reads in the one most of its letters
+ *    are in ("Мiнiстерство" with a Latin "i" → "міністерство")
  */
-const INDEX_VERSION = 7;
+const INDEX_VERSION = 8;
 
 export { INDEX_VERSION };

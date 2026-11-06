@@ -110,6 +110,23 @@ describe('UkrainianTextProcessor', () => {
       );
     });
 
+    it('reads a word typed in both alphabets in the one most of its letters are in', () => {
+      // Latin "i" in "Міністерство", Latin "C" and "i" in "Світанок", Latin
+      // "ï" in "Україна", a Cyrillic "о" in "Microsoft"
+      assert.deepEqual(terms('Мiнiстерство, Cвiтанок, Украïна, Microsоft'), [
+        'міністерство',
+        'світанок',
+        'україна',
+        'microsoft',
+      ]);
+      // words in one alphabet, and the parts of a compound, stay as they are
+      assert.deepEqual(terms('IT-відділ, Wi-Fi, офіс'), [
+        'it-відділ',
+        'wi-fi',
+        'офіс',
+      ]);
+    });
+
     it('keeps a hyphenated compound as one token', () => {
       assert.deepEqual(terms('науково-дослідний інститут'), [
         'науково-дослідний',
