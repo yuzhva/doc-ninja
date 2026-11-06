@@ -12,15 +12,13 @@ import {
 import type {
   DocumentIndex,
   DocumentMetadata,
-  InvertedIndexEntry,
   SearchConfig,
+  SearchSnapshot,
 } from '../types.mjs';
 
-/** The three structures MegaSearch reads from FileIndexer.getSearchDataOptimized(). */
-type SearchData = {
+/** The three structures MegaSearch reads from FileIndexer.getSearchSnapshot(). */
+type SearchData = Pick<SearchSnapshot, 'invertedIndex' | 'stemDictionary'> & {
   docCache: Map<string, DocumentIndex>;
-  invertedIndex: Map<string, InvertedIndexEntry[]>;
-  stemDictionary: Map<string, string[]>;
 };
 
 const textProcessor = new UkrainianTextProcessor();
@@ -100,7 +98,7 @@ async function buildSearchData(
   }
 
   const invertedIndex = new InvertedIndex();
-  const stemSets = new Map<string, Set<string>>();
+  const stemDictionary = new Map<string, Set<string>>();
   const builderConfig: SearchConfig = {
     rootDirectory: '',
     extensions: [],
@@ -110,15 +108,9 @@ async function buildSearchData(
   await new IndexBuilder(
     builderConfig,
     createLogger('test:in-memory-index'),
-  ).updateInvertedIndexBatch(docCache, invertedIndex, stemSets);
+  ).updateInvertedIndexBatch(docCache, invertedIndex, stemDictionary);
 
-  return {
-    docCache,
-    invertedIndex: invertedIndex.toLegacyMap(),
-    stemDictionary: new Map(
-      Array.from(stemSets, ([stem, words]) => [stem, Array.from(words)]),
-    ),
-  };
+  return { docCache, invertedIndex, stemDictionary };
 }
 
 /** Tokenizes + stems a query exactly like MegaSearch's typo-tolerant path. */

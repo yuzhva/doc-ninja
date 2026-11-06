@@ -3,6 +3,36 @@ import { UkrainianTextProcessor, isNumberTerm } from '../text-processor.mjs';
 import { DocumentIndex, SearchConfig } from '../types.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
 
+/** Files a document word under its stem in a stem dictionary. */
+type AddWord = (stem: string, word: string) => void;
+
+/** Adds to a stem dictionary no search reads yet. */
+const addingTo =
+  (stems: Map<string, Set<string>>): AddWord =>
+  (stem, word) => {
+    let words = stems.get(stem);
+    if (!words) stems.set(stem, (words = new Set()));
+    words.add(word);
+  };
+
+/**
+ * Adds to a copy of a stem dictionary that searches may still read: the
+ * copy shares its word sets, and a set is copied before its first change.
+ */
+const addingToCopy = (stems: Map<string, Set<string>>): AddWord => {
+  const copied = new Set<string>();
+  return (stem, word) => {
+    const words = stems.get(stem);
+    if (words?.has(word)) return;
+    if (words && copied.has(stem)) {
+      words.add(word);
+      return;
+    }
+    stems.set(stem, new Set(words).add(word));
+    copied.add(stem);
+  };
+};
+
 export class IndexBuilder {
   private textProcessor = new UkrainianTextProcessor();
 
@@ -12,38 +42,49 @@ export class IndexBuilder {
   ) {}
 
   /**
-   * Brings the inverted index up to date for the given documents only: drops
-   * their old postings and adds their current ones, without reading any other
-   * document. Stems no document holds any more leave the stem dictionary.
-   * A word that just disappeared from a stem that other documents still hold
-   * stays listed under it until the next full rebuild. It matches no position,
-   * so search results are the same.
+   * The inverted index and stem dictionary brought up to date for the given
+   * documents only: their old postings dropped and their current ones added,
+   * without reading any other document. Stems no document holds any more
+   * leave the stem dictionary. A word that just disappeared from a stem that
+   * other documents still hold stays listed under it until the next full
+   * rebuild. It matches no position, so search results are the same.
+   *
+   * The ones passed in are left as they are, for the searches reading them:
+   * the result shares what didn't change with them.
    */
   updateDocuments(
-    documentCache: Map<string, DocumentIndex>,
+    documentCache: ReadonlyMap<string, DocumentIndex>,
     invertedIndex: InvertedIndex,
-    stemDictionary: Map<string, Set<string>>,
+    stemDictionary: ReadonlyMap<string, Set<string>>,
     documentPaths: Iterable<string>,
-  ): void {
+  ): {
+    invertedIndex: InvertedIndex;
+    stemDictionary: Map<string, Set<string>>;
+  } {
     const paths = new Set(documentPaths);
     this.logger.info(
       `🔗 Updating the inverted index for ${paths.size} documents...`,
     );
 
-    for (const stem of invertedIndex.removeDocuments(paths)) {
-      stemDictionary.delete(stem);
+    const updatedIndex = invertedIndex.fork();
+    const updatedStems = new Map(stemDictionary);
+    const addWord = addingToCopy(updatedStems);
+
+    for (const stem of updatedIndex.removeDocuments(paths)) {
+      updatedStems.delete(stem);
     }
     for (const docPath of paths) {
       const doc = documentCache.get(docPath);
       if (doc?.metadata.indexed) {
-        this.addDocument(doc, invertedIndex, stemDictionary);
+        this.addDocument(doc, updatedIndex, addWord);
       }
     }
+    return { invertedIndex: updatedIndex, stemDictionary: updatedStems };
   }
 
   /** Rebuilds the inverted index and the stem dictionary from every document. */
   async updateInvertedIndexBatch(
-    documentCache: Map<string, DocumentIndex>,
+    documentCache: ReadonlyMap<string, DocumentIndex>,
     invertedIndex: InvertedIndex,
     stemDictionary: Map<string, Set<string>>,
   ): Promise<void> {
@@ -56,6 +97,7 @@ export class IndexBuilder {
       );
       invertedIndex.clear();
       stemDictionary.clear();
+      const addWord = addingTo(stemDictionary);
 
       const allDocuments = Array.from(documentCache.values()).filter(
         (doc) => doc.metadata.indexed,
@@ -88,7 +130,7 @@ export class IndexBuilder {
           docTermsProcessed = this.addDocument(
             docIndex,
             invertedIndex,
-            stemDictionary,
+            addWord,
           );
 
           totalTermsProcessed += docIndex.vocab.length;
@@ -176,7 +218,7 @@ export class IndexBuilder {
   private addDocument(
     docIndex: DocumentIndex,
     invertedIndex: InvertedIndex,
-    stemDictionary: Map<string, Set<string>>,
+    addWord: AddWord,
   ): number {
     const termPositions = new Map<string, number[]>();
     const vocabStemMap = new Array<string | null>(docIndex.vocab.length);
@@ -198,10 +240,7 @@ export class IndexBuilder {
       // A number has no other forms to look up: it is matched from its
       // postings alone (TermMatcher), so the dictionary holds words only
       if (isNumberTerm(stemmedTerm)) continue;
-      if (!stemDictionary.has(stemmedTerm)) {
-        stemDictionary.set(stemmedTerm, new Set());
-      }
-      stemDictionary.get(stemmedTerm)!.add(term);
+      addWord(stemmedTerm, term);
     }
 
     for (let i = 0; i < docIndex.positions.length; i++) {
