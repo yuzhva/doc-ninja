@@ -341,6 +341,32 @@ The system provides extensive logging for:
 - Cache hit/miss ratios
 - Performance metrics
 
+## 🧪 Testing
+
+Tests use the built-in `node:test` runner (through `tsx`). Run them from `packages/toolkit`:
+
+```bash
+pnpm test                 # all *.test.mts files
+pnpm test:watch           # re-run on change
+LOG_LEVEL=DEBUG pnpm test # show engine logs (tests default to ERROR)
+```
+
+- Tests live in a `__tests__/` folder beside the modules they cover, and are named
+  `<module>.test.mts` (e.g. `file-indexer/__tests__/inverted-index.test.mts`). Each layer is
+  tested on its own: pure units (`fuzzy`, `bm25-scorer`, `text-processor`, …), matching/snippets
+  on in-memory indexes (`buildSearchData`), `file-indexer/*` against temp folders, and
+  `__tests__/mega-search.test.mts` through the public `createMegaSearch()` API.
+- Shared fixtures live in `test-utils/`. Use `createTempCorpus()` for a document folder in the
+  OS temp dir and `createSearchFixture()` for a corpus plus an initialized `MegaSearch`.
+  Fixture files get a fixed past mtime, so pass `later()` as the mtime when you simulate an edit.
+- `__tests__/` and `test-utils/` are excluded from `dist` by `tsconfig.build.json` /
+  `tsconfig.build-type.json`. `tsconfig.json` still includes them for type-checking.
+
+**Known bugs.** A defect that is confirmed but not fixed yet gets a test that asserts the
+_intended_ behaviour and is marked with `knownBug('<cause>')`. The test still runs, and it is
+reported as `# TODO KNOWN BUG …` without failing the suite. Once the fix lands the test passes;
+remove the marker then, so it guards against regressions.
+
 ## 📈 Future Roadmap
 
 - [ ] REST API endpoints
@@ -352,7 +378,7 @@ The system provides extensive logging for:
 
 ## 🤝 Contributing
 
-1. Run tests: `npm test`
+1. Run tests: `pnpm test` (in `packages/toolkit`, see [Testing](#-testing))
 2. Check performance: `npm run benchmark`
 3. Lint code: `npm run lint`
 
