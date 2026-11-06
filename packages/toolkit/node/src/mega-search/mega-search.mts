@@ -36,6 +36,8 @@ type ScoringResult = {
   docScores: Map<string, number>;
   docMatchCounts: Map<string, number>;
   phraseMatches: Map<string, number[][]>;
+  /** Index terms matched through typo tolerance → the query term each stands for. */
+  termAliases: Map<string, string>;
 };
 
 type PhraseScoringParams = {
@@ -81,6 +83,7 @@ type BuildPaginatedResultsParams = {
   isPhrase: boolean;
   snippetsLimit: number | 'ALL';
   phraseMatches: Map<string, number[][]>;
+  termAliases: Map<string, string>;
   includeHighlights: boolean;
   snippetContextBefore: number;
   snippetContextAfter: number;
@@ -144,6 +147,45 @@ class MegaSearch {
     const startTime = Date.now();
 
     await this.fileIndexer.buildFullIndex();
+    await this.refreshDerivedState();
+
+    const stats = this.fileIndexer.getStats();
+    const indexTime = Date.now() - startTime;
+
+    logger.info(
+      `✅ Indexing complete: ${stats.documentsCount} documents, ${stats.termsCount} unique terms (${indexTime}ms)`,
+    );
+
+    // ✅ NEW: Explicitly log that the system is ready for search
+    logger.info(
+      `🚀 MegaSearch is ready! Startup time does not affect search latency.`,
+    );
+
+    // Log memory usage
+    const memStats = this.fileIndexer.getMemoryStats?.();
+    if (memStats) {
+      logger.info(
+        `💾 Memory usage: ${memStats.heap.used}MB heap, ${memStats.rss}MB RSS`,
+      );
+    }
+  }
+
+  async reindex(): Promise<void> {
+    const startTime = Date.now();
+    logger.info('Starting re-indexing...');
+    await this.fileIndexer.buildFullIndex();
+    await this.refreshDerivedState();
+    logger.info(`Re-indexing completed in ${Date.now() - startTime}ms`);
+  }
+
+  /**
+   * Brings everything derived from the index in line with it after a
+   * (re)build: drops cached results (they may hold documents that changed or
+   * are gone), recomputes the BM25 corpus statistics, and pre-warms the
+   * indexer's search caches.
+   */
+  private async refreshDerivedState(): Promise<void> {
+    this.searchCache.clear();
 
     // Optimization: Run post-indexing tasks in parallel
     const postIndexTasks: Promise<void>[] = [];
@@ -175,33 +217,6 @@ class MegaSearch {
     );
 
     await Promise.all(postIndexTasks);
-
-    const stats = this.fileIndexer.getStats();
-    const indexTime = Date.now() - startTime;
-
-    logger.info(
-      `✅ Indexing complete: ${stats.documentsCount} documents, ${stats.termsCount} unique terms (${indexTime}ms)`,
-    );
-
-    // ✅ NEW: Explicitly log that the system is ready for search
-    logger.info(
-      `🚀 MegaSearch is ready! Startup time does not affect search latency.`,
-    );
-
-    // Log memory usage
-    const memStats = this.fileIndexer.getMemoryStats?.();
-    if (memStats) {
-      logger.info(
-        `💾 Memory usage: ${memStats.heap.used}MB heap, ${memStats.rss}MB RSS`,
-      );
-    }
-  }
-
-  async reindex(): Promise<void> {
-    const startTime = Date.now();
-    logger.info('Starting re-indexing...');
-    await this.fileIndexer.buildFullIndex();
-    logger.info(`Re-indexing completed in ${Date.now() - startTime}ms`);
   }
 
   /**
@@ -307,15 +322,50 @@ class MegaSearch {
 
   private resolveScopedPaths(searchScopedPaths: string[]): string[] {
     return searchScopedPaths.map((p) => {
-      // If path is already absolute and within root, keep it
-      if (path.isAbsolute(p) && p.startsWith(this.config.rootDirectory)) {
-        return p;
-      }
-      // Otherwise treat as relative to root. Strip a leading slash so
-      // path.join treats it as relative rather than re-rooting.
-      const cleanPath = p.replace(/^[/\\]/, '');
-      return path.join(this.config.rootDirectory, cleanPath);
+      // If path is already absolute and within root, keep it. Otherwise treat
+      // as relative to root: strip a leading slash so path.join treats it as
+      // relative rather than re-rooting.
+      const resolved =
+        path.isAbsolute(p) && p.startsWith(this.config.rootDirectory)
+          ? p
+          : path.join(this.config.rootDirectory, p.replace(/^[/\\]/, ''));
+      // Native separators and no trailing one, so isInScope can compare paths
+      // and append exactly one separator.
+      return path.normalize(resolved).replace(/[/\\]+$/, '');
     });
+  }
+
+  /**
+   * Whether a document lies within one of the resolved scopes: the scope
+   * itself (a file) or anything beneath it (a folder). A plain prefix check
+   * would also let scope "orders" match the sibling folder "orders 2022".
+   */
+  private isInScope(filePath: string, resolvedScopedPaths: string[]): boolean {
+    return resolvedScopedPaths.some(
+      (scope) => filePath === scope || filePath.startsWith(scope + path.sep),
+    );
+  }
+
+  /** BM25 (or TF-IDF) contribution of one query term to one document. */
+  private scoreTerm(
+    termFrequency: number,
+    docLength: number,
+    docFrequency: number,
+    docCount: number,
+    useBM25: boolean,
+  ): number {
+    return useBM25
+      ? this.bm25Scorer.calculateScore(
+          termFrequency,
+          docLength,
+          docFrequency,
+          docCount,
+        )
+      : this.bm25Scorer.calculateTfIdfScore(
+          termFrequency,
+          docFrequency,
+          docCount,
+        );
   }
 
   /**
@@ -418,13 +468,16 @@ class MegaSearch {
         const doc = docCache.get(docId);
         if (!doc) return false;
 
-        const count = this.phraseMatcher.countExactPhrase(
+        // Compare with the same tokens the candidates were looked up with:
+        // stems when typo tolerance is on. The positions feed the snippets.
+        const sequences = this.phraseMatcher.findExactPhraseSequences(
           doc,
-          queryData.originalPhraseTokens,
+          tokensToUse,
         );
 
-        if (count > 0) {
-          docMatchCounts.set(docId, count);
+        if (sequences.length > 0) {
+          docMatchCounts.set(docId, sequences.length);
+          phraseMatches.set(docId, sequences);
           return true;
         }
         return false;
@@ -435,8 +488,9 @@ class MegaSearch {
       filteredDocIds = filteredDocIds.filter((docId) => {
         const doc = docCache.get(docId);
         if (!doc) return false;
-        return resolvedScopedPaths.some((p) =>
-          doc.metadata.originalFilePath.startsWith(p),
+        return this.isInScope(
+          doc.metadata.originalFilePath,
+          resolvedScopedPaths,
         );
       });
     }
@@ -445,29 +499,35 @@ class MegaSearch {
       `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
     );
 
+    // Term frequencies come from the postings: doc.termFrequency is emptied in
+    // memory once a document is indexed (see DocumentProcessor), which used to
+    // score every phrase result 0.
+    const scoringTerms = queryData.uniqueScoringTokens.map((term) => {
+      const postings = invertedIndex.get(term) ?? [];
+      return {
+        docFrequency: postings.length,
+        frequencyByDoc: new Map(
+          postings.map((entry) => [entry.documentId, entry.frequency]),
+        ),
+      };
+    });
+
     for (const docId of filteredDocIds) {
       let score = 0;
       const doc = docCache.get(docId);
       if (!doc) continue;
 
-      for (const term of queryData.uniqueScoringTokens) {
-        const tf = doc.termFrequency.get(term) || 0;
+      for (const { docFrequency, frequencyByDoc } of scoringTerms) {
+        const tf = frequencyByDoc.get(docId) ?? 0;
         if (tf === 0) continue;
 
-        const postings = invertedIndex.get(term);
-        const df = postings ? postings.length : 0;
-        if (df === 0) continue;
-
-        if (useBM25) {
-          score += this.bm25Scorer.calculateScore(
-            tf,
-            doc.wordCount,
-            df,
-            docCount,
-          );
-        } else {
-          score += this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
-        }
+        score += this.scoreTerm(
+          tf,
+          doc.wordCount,
+          docFrequency,
+          docCount,
+          useBM25,
+        );
       }
 
       // Exact phrase matches get a higher boost than fuzzy proximity matches
@@ -476,7 +536,13 @@ class MegaSearch {
       docScores.set(docId, score);
     }
 
-    return { filteredDocIds, docScores, docMatchCounts, phraseMatches };
+    return {
+      filteredDocIds,
+      docScores,
+      docMatchCounts,
+      phraseMatches,
+      termAliases: new Map(),
+    };
   }
 
   /**
@@ -497,6 +563,7 @@ class MegaSearch {
 
     const docScores = new Map<string, number>();
     const docMatchCounts = new Map<string, number>();
+    const termAliases = new Map<string, string>();
 
     const uniqueTokensToUse = Array.from(new Set(tokensToUse));
 
@@ -527,22 +594,32 @@ class MegaSearch {
           continue;
         }
 
+        // Snippets/highlights must find the index term the typo matched,
+        // and still report the query term it stands for.
+        if (idxTerm !== term && !termAliases.has(idxTerm)) {
+          termAliases.set(idxTerm, term);
+        }
+
         for (const entry of postings) {
           const tf = entry.frequency; // Term frequency
           const doc = docCache.get(entry.documentId);
 
           if (!doc) continue;
 
-          if (resolvedScopedPaths.length > 0) {
-            const isAllowed = resolvedScopedPaths.some((p) =>
-              doc.metadata.originalFilePath.startsWith(p),
-            );
-            if (!isAllowed) continue;
+          if (
+            resolvedScopedPaths.length > 0 &&
+            !this.isInScope(doc.metadata.originalFilePath, resolvedScopedPaths)
+          ) {
+            continue;
           }
 
-          const score = useBM25
-            ? this.bm25Scorer.calculateScore(tf, doc.wordCount, df, docCount)
-            : this.bm25Scorer.calculateTfIdfScore(tf, df, docCount);
+          const score = this.scoreTerm(
+            tf,
+            doc.wordCount,
+            df,
+            docCount,
+            useBM25,
+          );
 
           docScores.set(
             entry.documentId,
@@ -562,6 +639,7 @@ class MegaSearch {
       docScores,
       docMatchCounts,
       phraseMatches: new Map(),
+      termAliases,
     };
   }
 
@@ -655,6 +733,7 @@ class MegaSearch {
       isPhrase,
       snippetsLimit,
       phraseMatches,
+      termAliases,
       includeHighlights,
       snippetContextBefore,
       snippetContextAfter,
@@ -678,6 +757,7 @@ class MegaSearch {
           includeHighlights,
           snippetContextBefore,
           snippetContextAfter,
+          termAliases,
         ),
       );
 
@@ -759,33 +839,38 @@ class MegaSearch {
       const scoringStart = Date.now();
       const useBM25 = this.config.useBM25 !== false;
 
-      const { filteredDocIds, docScores, docMatchCounts, phraseMatches } =
-        queryData.isPhrase
-          ? this.scorePhraseSearch({
-              tokensToUse,
-              queryData,
-              isPhraseProximityEnabled,
-              maxTypoDistance,
-              maxWordsInPhraseDistance,
-              invertedIndex,
-              stemDictionary,
-              docCache,
-              resolvedScopedPaths,
-              isTypoToleranceEnabled,
-              useBM25,
-              docCount,
-            })
-          : this.scoreTokenSearch({
-              tokensToUse,
-              invertedIndex,
-              stemDictionary,
-              docCache,
-              resolvedScopedPaths,
-              isTypoToleranceEnabled,
-              maxTypoDistance,
-              useBM25,
-              docCount,
-            });
+      const {
+        filteredDocIds,
+        docScores,
+        docMatchCounts,
+        phraseMatches,
+        termAliases,
+      } = queryData.isPhrase
+        ? this.scorePhraseSearch({
+            tokensToUse,
+            queryData,
+            isPhraseProximityEnabled,
+            maxTypoDistance,
+            maxWordsInPhraseDistance,
+            invertedIndex,
+            stemDictionary,
+            docCache,
+            resolvedScopedPaths,
+            isTypoToleranceEnabled,
+            useBM25,
+            docCount,
+          })
+        : this.scoreTokenSearch({
+            tokensToUse,
+            invertedIndex,
+            stemDictionary,
+            docCache,
+            resolvedScopedPaths,
+            isTypoToleranceEnabled,
+            maxTypoDistance,
+            useBM25,
+            docCount,
+          });
 
       logger.debug(
         `Scoring ${docScores.size} documents completed in ${Date.now() - scoringStart}ms`,
@@ -828,6 +913,7 @@ class MegaSearch {
         isPhrase: queryData.isPhrase,
         snippetsLimit,
         phraseMatches,
+        termAliases,
         includeHighlights,
         snippetContextBefore,
         snippetContextAfter,
@@ -925,10 +1011,11 @@ class MegaSearch {
     isTypoToleranceEnabled: boolean,
     isPhrase: boolean,
     snippetsLimit: number | 'ALL',
-    phraseMatchPositions?: number[][], // Phrase match positions from findDocsWithFuzzyPhrase
+    phraseMatchPositions?: number[][], // Phrase match positions (exact or fuzzy phrase search)
     includeHighlights: boolean = false,
     snippetContextBefore: number = 0,
     snippetContextAfter: number = 50,
+    termAliases: Map<string, string> = new Map(),
   ): Promise<{
     doc: any;
     score: number;
@@ -950,6 +1037,7 @@ class MegaSearch {
             originalPhraseOrStemmedTokens,
             isPhrase,
             isTypoToleranceEnabled,
+            termAliases,
           );
         }
 
@@ -963,6 +1051,7 @@ class MegaSearch {
           phraseMatchPositions,
           snippetContextBefore,
           snippetContextAfter,
+          termAliases,
         );
 
         // Limit snippets if not 'ALL'

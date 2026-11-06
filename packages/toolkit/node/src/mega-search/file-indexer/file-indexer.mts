@@ -67,6 +67,7 @@ class FileIndexer {
     this.logger.info(`🎯 Indexing ${paths.length} specific paths...`);
 
     // Ensure global index is loaded so we can merge updates
+    let isInvertedIndexMissing = false;
     if (this.documentCache.size === 0) {
       const loadedData = await this.storage.loadGlobalIndex();
       if (loadedData) {
@@ -76,6 +77,8 @@ class FileIndexer {
         this.logger.debug(
           '📋 Loaded existing global index for partial update.',
         );
+      } else {
+        isInvertedIndexMissing = true;
       }
     }
 
@@ -93,13 +96,39 @@ class FileIndexer {
     const indexingMethod = await this.selectIndexingMethod(filesToIndex);
 
     // 3. Process files
-    // Note: We pass filesRemoved=false because we are doing an additive update,
-    // not a full sweep that should prune missing files.
+    // Note: this is an additive update, not a full sweep that should prune
+    // missing files — so a rebuild is only forced when there were no postings
+    // to merge into at all.
+    const rebuildThresholds = this.getRebuildThresholds();
     if (indexingMethod === 'parallel') {
-      await this.buildFullIndexParallel(filesToIndex, {}, false);
+      await this.buildFullIndexParallel(
+        filesToIndex,
+        rebuildThresholds,
+        isInvertedIndexMissing,
+      );
     } else {
-      await this.buildFullIndexSequential(filesToIndex, {}, false);
+      await this.buildFullIndexSequential(
+        filesToIndex,
+        rebuildThresholds,
+        isInvertedIndexMissing,
+      );
     }
+  }
+
+  /**
+   * How many re-indexed files it takes to rebuild the inverted index — shared
+   * by full and path-scoped indexing so both apply the same configured rules.
+   */
+  private getRebuildThresholds(): {
+    rebuildThreshold: number;
+    minFiles: number;
+  } {
+    return {
+      // require at least 0.1% of index to have changed to trigger rebuild
+      rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001,
+      // rebuild if at least N files changed
+      minFiles: this.config.minFilesForRebuild ?? 1,
+    };
   }
 
   /**
@@ -143,12 +172,7 @@ class FileIndexer {
     const indexingMethod = await this.selectIndexingMethod(allDiscoveredFiles);
     this.logger.debug(`📂 Using indexing method: ${indexingMethod}`);
 
-    const buildFullIndexConfig = {
-      // require at least 0.1% of index to have changed to trigger rebuild
-      rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001,
-      // rebuild if at least N files changed
-      minFiles: this.config.minFilesForRebuild ?? 1,
-    };
+    const buildFullIndexConfig = this.getRebuildThresholds();
 
     this.logger.info(
       `📁 Found ${allDiscoveredFiles.length} documents to process...`,
@@ -208,8 +232,14 @@ class FileIndexer {
       if (filesToReindex.length === 0) {
         this.logger.info('✅ All files are up to date. No reindexing needed.');
 
-        // If files were removed, we should save the index to reflect deletions
+        // If files were removed, rebuild so their postings go too, then save
+        // the index to reflect deletions
         if (filesRemoved) {
+          await this.builder.updateInvertedIndexBatch(
+            this.documentCache,
+            this.invertedIndex,
+            this.stemDictionary,
+          );
           this.logger.info('💾 Saving global index (files removed)...');
           await this.storage.saveGlobalIndex(
             this.documentCache,
@@ -231,17 +261,22 @@ class FileIndexer {
       filesToIndex = filesToReindex;
     }
 
+    // Without a loaded global index the postings are empty, even when every
+    // file is still covered by its per-document cache (and so counts as
+    // unchanged) — e.g. after a legacy-format index was rejected for a rebuild.
+    const forceRebuild = filesRemoved || !loadedData;
+
     if (indexingMethod === 'parallel') {
       await this.buildFullIndexParallel(
         filesToIndex,
         buildFullIndexConfig,
-        filesRemoved,
+        forceRebuild,
       );
     } else {
       await this.buildFullIndexSequential(
         filesToIndex,
         buildFullIndexConfig,
-        filesRemoved,
+        forceRebuild,
       );
     }
   }
@@ -300,17 +335,25 @@ class FileIndexer {
     return useParallel ? 'parallel' : 'sequential';
   }
 
+  /**
+   * @param forceRebuild Rebuild and save the inverted index even if no file
+   *   needed re-indexing — files were removed, or there were no postings to
+   *   start from (no global index was loaded).
+   */
   async buildFullIndexSequential(
     files: DocumentMetadata[],
     {
       rebuildThreshold,
       minFiles,
-    }: { rebuildThreshold?: number; minFiles?: number } = {},
-    filesRemoved: boolean = false,
+    }: {
+      rebuildThreshold: number;
+      minFiles: number;
+    } = this.getRebuildThresholds(),
+    forceRebuild: boolean = false,
   ): Promise<void> {
     const startTime = Date.now();
     try {
-      if (files.length === 0 && !filesRemoved) return;
+      if (files.length === 0 && !forceRebuild) return;
 
       this.logger.info(`🔄 Indexing ${files.length} documents sequentially...`);
       let indexed = 0;
@@ -348,10 +391,11 @@ class FileIndexer {
 
               const result = await this.processor.indexDocument(file);
               this.documentCache.set(file.originalFilePath, result);
-              const isNewlyProcessed = !wasInCache && result.metadata.indexed;
+              // New or edited alike, this document now differs from what the
+              // inverted index holds, so it counts towards the rebuild.
               return {
                 success: true,
-                type: isNewlyProcessed ? 'newly-indexed' : 'cached-loaded',
+                type: 'indexed',
                 filePath: file.originalFilePath,
               };
             } else {
@@ -378,12 +422,9 @@ class FileIndexer {
 
         batchResults.forEach((result) => {
           if (result.success) {
-            if (result.type === 'newly-indexed') {
+            if (result.type === 'indexed') {
               indexed++;
               actuallyProcessed++;
-              documentsToUpdate.push(result.filePath);
-            } else if (result.type === 'cached-loaded') {
-              indexed++;
               documentsToUpdate.push(result.filePath);
             } else if (result.type === 'skipped') {
               skipped++;
@@ -400,15 +441,15 @@ class FileIndexer {
 
       const significantChanges =
         actuallyProcessed >=
-        Math.max(minFiles!, files.length * rebuildThreshold!);
+        Math.max(minFiles, files.length * rebuildThreshold);
 
-      // If files were removed, we should consider it a significant change to ensure index consistency
+      // A forced rebuild (files removed / no postings loaded) is always significant, to ensure index consistency
       if (
         (documentsToUpdate.length > 0 && significantChanges) ||
-        filesRemoved
+        forceRebuild
       ) {
         this.logger.info(
-          `🔗 Updating inverted index (processed ${documentsToUpdate.length}, removed ${filesRemoved})...`,
+          `🔗 Updating inverted index (processed ${documentsToUpdate.length}, forced ${forceRebuild})...`,
         );
         await this.builder.updateInvertedIndexBatch(
           this.documentCache,
@@ -426,7 +467,7 @@ class FileIndexer {
 
       if (
         actuallyProcessed > 0 ||
-        filesRemoved ||
+        forceRebuild ||
         this.storage.needsOptimization
       ) {
         this.logger.info('💾 Saving global index...');
@@ -446,17 +487,21 @@ class FileIndexer {
     );
   }
 
+  /** @param forceRebuild See buildFullIndexSequential. */
   async buildFullIndexParallel(
     files: DocumentMetadata[],
     {
       rebuildThreshold,
       minFiles,
-    }: { rebuildThreshold?: number; minFiles?: number } = {},
-    filesRemoved: boolean = false,
+    }: {
+      rebuildThreshold: number;
+      minFiles: number;
+    } = this.getRebuildThresholds(),
+    forceRebuild: boolean = false,
   ): Promise<void> {
     const startTime = Date.now();
     try {
-      if (files.length === 0 && !filesRemoved) return;
+      if (files.length === 0 && !forceRebuild) return;
 
       this.logger.info(
         `🚀 Processing ${files.length} documents with parallel workers...`,
@@ -517,8 +562,8 @@ class FileIndexer {
       await Promise.all(workerPromises);
 
       if (
-        totalIndexed >= Math.max(minFiles!, files.length * rebuildThreshold!) ||
-        filesRemoved
+        totalIndexed >= Math.max(minFiles, files.length * rebuildThreshold) ||
+        forceRebuild
       ) {
         await this.builder.updateInvertedIndexBatch(
           this.documentCache,
@@ -528,7 +573,7 @@ class FileIndexer {
         );
       }
 
-      if (totalIndexed > 0 || filesRemoved || this.storage.needsOptimization) {
+      if (totalIndexed > 0 || forceRebuild || this.storage.needsOptimization) {
         await this.storage.saveGlobalIndex(
           this.documentCache,
           this.invertedIndex,
