@@ -154,8 +154,9 @@ describe('DocumentProcessor', () => {
         await discovered('dated.txt'),
       );
 
-      // vocabIndex, charStart, charEnd of наказ, 15 and 2 in turn
-      const saved = [0, 0, 5, 1, 8, 10, 2, 11, 12];
+      // vocabIndex, gap from the token before, length of наказ (0–5),
+      // 15 (8–10) and 2 (11–12) in turn
+      const saved = [0, 0, 5, 1, 3, 2, 2, 1, 1];
       assert.deepEqual(doc.positions.toJSON(), saved);
       assert.deepEqual(
         JSON.parse(await corpus.read(indexCacheFile('dated.txt'))).positions,

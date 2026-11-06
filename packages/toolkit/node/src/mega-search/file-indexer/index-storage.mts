@@ -504,7 +504,7 @@ class IndexStorage {
       try {
         const content = fs.readFileSync(indexPath, 'utf8');
         const fullDoc = JSON.parse(content);
-        fullDoc.positions = TokenPositions.fromFlat(fullDoc.positions);
+        fullDoc.positions = TokenPositions.fromSaved(fullDoc.positions);
         fullDoc.vocab ??= [];
         fullDoc.joints ??= {};
         this.documentLRU.set(doc.metadata.originalFilePath, fullDoc);
