@@ -254,6 +254,49 @@ describe('FileIndexer', () => {
       assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
       assert.deepEqual(docsWithWord(restarted, 'бюджет'), ['b.txt']);
     });
+
+    it('drops a deleted file from the postings without reading the other documents', async () => {
+      // A deleted file used to force a full rebuild
+      await corpus.write('c.txt', 'Квартальний звіт.');
+      await indexed(fewChanges);
+      await corpus.remove('a.txt');
+      await corpus.remove('.cache/index/b.txt.index.json');
+
+      const restarted = await indexed(fewChanges);
+
+      assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
+      assert.deepEqual(docsWithWord(restarted, 'бюджет'), ['b.txt']);
+      assert.deepEqual(docsWithWord(restarted, 'звіт'), ['c.txt']);
+    });
+  });
+
+  it('indexes a document its per-document cache holds and the saved index does not', async () => {
+    // e.g. the app stopped between saving the two. Regression guard: read
+    // back from its per-document cache, the document counted as unchanged,
+    // so its words never reached the postings.
+    const savedIndex = [
+      '.cache/global-inverted-index.json.gz',
+      '.cache/global-inverted-index.chunks',
+    ];
+    await indexed();
+    for (const file of savedIndex) {
+      fs.cpSync(corpus.pathOf(file), corpus.pathOf(`saved/${file}`), {
+        recursive: true,
+      });
+    }
+    await corpus.write('c.txt', 'Квартальний звіт.');
+    await indexed();
+    for (const file of savedIndex) {
+      await corpus.remove(file);
+      fs.cpSync(corpus.pathOf(`saved/${file}`), corpus.pathOf(file), {
+        recursive: true,
+      });
+    }
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'звіт'), ['c.txt']);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
   });
 
   it('after an index version change, re-tokenizes every document once, from the cached text', async () => {
