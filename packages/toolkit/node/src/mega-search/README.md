@@ -15,6 +15,7 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 🚀 **Performance & Scalability**
 
 - **Incremental Indexing**: Only reprocesses changed files
+- **No Vocabulary Scans**: a query word's forms, related words and typos are looked up, not compared with every word in the index — typos by the letter pairs they share (see `vocabulary-index.mts`)
 - **Disk Caching**: Intelligent caching of text extraction and indexes
 - **LRU Memory Management**: Efficient memory usage for large corpora
 - **Compressed Storage**: Compressed inverted index storage
