@@ -5,6 +5,7 @@ import {
   matchesItselfOnly,
 } from './text-processor.mjs';
 import type { DocumentIndex, SearchSnapshot } from './types.mjs';
+import { VocabularyIndex } from './vocabulary-index.mjs';
 
 type TermMatchOptions = {
   /**
@@ -178,7 +179,13 @@ class TermMatcher {
     const forms = new Map<string, ReadonlySet<string> | null>();
     const words = new Map<string, MatchedWord>();
 
-    for (const [stem, stemWords] of index.stemDictionary) {
+    for (const stem of this.stemsThatMayMatch(
+      queryWord,
+      queryStem,
+      maxTypoDistance,
+      index.stemDictionary,
+    )) {
+      const stemWords = index.stemDictionary.get(stem)!;
       let confidence = this.matchStem(queryWord, queryStem, stem, {
         maxTypoDistance,
         isRelatedWordsAllowed,
@@ -220,6 +227,44 @@ class TermMatcher {
     return this.toWordMatch(queryStem, forms, words, index);
   }
 
+  /**
+   * The stems matchInflectedForms reads, in the dictionary's order: those a
+   * rule may take a word from. Every other stem matches nothing, so they're
+   * found by lookups rather than by comparing the query word with every
+   * stem in the index:
+   * - stems that start with the query stem: the stem itself, a stem the
+   *   stemmer cut the query word short of, a related word's longer stem;
+   * - stems the query stem starts with: forms cut short, a related word's
+   *   shorter stem;
+   * - with typos, stems within maxTypoDistance of the query stem, and stems
+   *   holding a word within it of the query word.
+   */
+  private stemsThatMayMatch(
+    queryWord: string,
+    queryStem: string,
+    maxTypoDistance: number,
+    stemDictionary: SearchIndex['stemDictionary'],
+  ): string[] {
+    const vocabulary = VocabularyIndex.of(stemDictionary);
+    const stems = new Set(vocabulary.stemsStartingWith(queryStem));
+    for (let length = 1; length < queryStem.length; length++) {
+      const prefix = queryStem.slice(0, length);
+      if (stemDictionary.has(prefix)) stems.add(prefix);
+    }
+    if (maxTypoDistance > 0) {
+      for (const stem of vocabulary.stemsNear(queryStem, maxTypoDistance)) {
+        stems.add(stem);
+      }
+      for (const stem of vocabulary.stemsHoldingWordsNear(
+        queryWord,
+        maxTypoDistance,
+      )) {
+        stems.add(stem);
+      }
+    }
+    return vocabulary.inDictionaryOrder(stems);
+  }
+
   private matchWordForms(
     queryWord: string,
     maxTypoDistance: number,
@@ -244,12 +289,15 @@ class TermMatcher {
     }
 
     if (maxTypoDistance > 0) {
-      for (const [stem, stemWords] of index.stemDictionary) {
+      const vocabulary = VocabularyIndex.of(index.stemDictionary);
+      for (const stem of vocabulary.inDictionaryOrder(
+        vocabulary.stemsHoldingWordsNear(queryWord, maxTypoDistance),
+      )) {
         // The other forms of the word are inflections, not typos — "Євгену"
         // is 1 edit from "Євгена" — and only fuzzy match finds those.
         if (stem === queryStem) continue;
 
-        for (const word of stemWords) {
+        for (const word of index.stemDictionary.get(stem)!) {
           if (fuzzyMatch(queryWord, word, maxTypoDistance)) add(stem, word);
         }
       }
