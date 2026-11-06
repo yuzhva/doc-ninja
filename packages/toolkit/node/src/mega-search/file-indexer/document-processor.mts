@@ -410,4 +410,4 @@ class DocumentProcessor {
   }
 }
 
-export { DocumentProcessor };
+export { DocumentProcessor, isIndexedAsIs };

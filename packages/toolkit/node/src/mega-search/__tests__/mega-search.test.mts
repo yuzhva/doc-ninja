@@ -1039,6 +1039,125 @@ describe('MegaSearch re-indexing and cache maintenance', () => {
     });
   });
 
+  /** Runs `onIndex` each time the instance indexes a document, before it. */
+  const onIndexDocument = (
+    megaSearch: MegaSearch,
+    onIndex: (fileName: string) => Promise<void>,
+  ) => {
+    const processor = megaSearch.indexer['processor'];
+    const indexDocument = processor.indexDocument.bind(processor);
+    processor.indexDocument = async (metadata) => {
+      await onIndex(metadata.fileName);
+      return indexDocument(metadata);
+    };
+  };
+
+  describe('a search while reindex() updates the index', () => {
+    useFreshFixture();
+
+    it('reads the index from before the update, whole — snippets included', async () => {
+      // Regression guard: edited documents went in before their postings,
+      // and their text cache was rewritten before either — so a search in
+      // between cut the new text at the old positions, and found a phrase
+      // the document no longer holds.
+      const during: Record<string, Array<[string, string[]]>> = {};
+      onIndexDocument(fixture.megaSearch, async () => {
+        // what indexing the edit does first: its text goes to the text cache
+        await fixture.megaSearch.indexer.extractTextFromFile(
+          fixture.corpus.pathOf('a.txt'),
+        );
+        for (const query of ['підписав наказ', 'кошторис']) {
+          const { results } = await fixture.megaSearch.search(
+            query,
+            PRODUCTION_OPTIONS,
+          );
+          during[query] = results.map((r) => [
+            r.doc.fileName,
+            r.snippets.map((s) => s.match.toLowerCase()),
+          ]);
+        }
+      });
+
+      await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
+      await fixture.megaSearch.reindex();
+
+      assert.deepEqual(during, {
+        'підписав наказ': [['a.txt', ['підписав наказ']]],
+        кошторис: [],
+      });
+      assert.deepEqual(await find('кошторис'), ['a.txt']);
+      assert.deepEqual(await find('наказ'), []);
+    });
+  });
+
+  describe('reindex() called several times at once', () => {
+    useFreshFixture();
+
+    it('runs one update at a time, so no file is indexed twice', async () => {
+      // Regression guard: each call loaded the saved index and indexed the
+      // same new file into it, all at the same time.
+      const indexed: string[] = [];
+      onIndexDocument(fixture.megaSearch, async (fileName) => {
+        indexed.push(fileName);
+      });
+
+      await fixture.corpus.write('d.txt', 'Квартальний звіт.');
+      await Promise.all([
+        fixture.megaSearch.reindex(),
+        fixture.megaSearch.reindex(),
+        fixture.megaSearch.reindex(),
+      ]);
+
+      assert.deepEqual(indexed, ['d.txt']);
+      assert.deepEqual(await find('звіт'), ['d.txt']);
+    });
+  });
+
+  describe('reindex() called while an update runs', () => {
+    useFreshFixture();
+
+    it('runs after it, and picks up what changed in the meantime', async () => {
+      let queued: Promise<void> | undefined;
+      onIndexDocument(fixture.megaSearch, async () => {
+        if (queued) return;
+        await fixture.corpus.write('e.txt', 'Річний звіт.');
+        queued = fixture.megaSearch.reindex();
+      });
+
+      await fixture.corpus.write('d.txt', 'Квартальний звіт.');
+      await fixture.megaSearch.reindex();
+      await queued;
+
+      assert.deepEqual((await find('звіт')).sort(), ['d.txt', 'e.txt']);
+    });
+  });
+
+  describe('an update through the indexer alone', () => {
+    useFreshFixture();
+
+    it('is what the next search reads — no cached result or score from before it', async () => {
+      // Regression guard: reindex() refreshed cached results and BM25's
+      // average document length only after the update was saved — so until
+      // then, and for good after an update by the indexer alone, a search
+      // could be served from the index as it was before.
+      assert.deepEqual(await find('освіти'), []);
+      await fixture.corpus.write(
+        'long.txt',
+        'Начальник управління освіти підписав наказ про зміну графіку роботи всіх шкіл міста.',
+      );
+      await fixture.megaSearch.indexer.buildFullIndex();
+
+      const fresh = await createMegaSearch(fixture.config);
+      const scores = async (megaSearch: MegaSearch) =>
+        (await megaSearch.search('освіти')).results.map((r) => [
+          r.doc.fileName,
+          r.score,
+        ]);
+      assert.deepEqual(await find('освіти'), ['long.txt']);
+      assert.deepEqual(await scores(fixture.megaSearch), await scores(fresh));
+    });
+  });
+
   describe('clearCache()', () => {
     useFreshFixture();
 

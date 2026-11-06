@@ -87,8 +87,11 @@ class MegaSearch {
   private queryCache = new LRUCache<string, QueryCacheEntry>(1000);
   private readonly QUERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-  // Search result cache, keyed by query+options, to speed up repeat requests.
+  // Search result cache, keyed by query+options and the index generation
+  // searched, to speed up repeat requests.
   private searchCache = new LRUCache<string, PaginatedSearchResult>(100);
+  // The index generation BM25's average document length was computed for.
+  private scorerIndexGeneration = -1;
 
   constructor(private config: SearchConfig) {
     this.fileIndexer = new FileIndexer(config);
@@ -166,44 +169,32 @@ class MegaSearch {
   }
 
   /**
-   * Brings everything derived from the index in line with it after a
-   * (re)build: drops cached results (they may hold documents that changed or
-   * are gone), recomputes the BM25 corpus statistics, and pre-warms the
-   * indexer's search caches.
+   * Tidies up after a (re)build: drops cached results of earlier index
+   * generations (no search can reach them any more) and pre-warms the
+   * indexer's search caches. Searches don't wait for it — they key what they
+   * derive from the index by its generation (see syncScorerWithIndex).
    */
   private async refreshDerivedState(): Promise<void> {
     this.searchCache.clear();
 
-    // Optimization: Run post-indexing tasks in parallel
-    const postIndexTasks: Promise<void>[] = [];
-
-    // 1. Calculate average document length for BM25
-    if (this.config.useBM25 !== false) {
-      postIndexTasks.push(
-        (async () => {
-          const docCache = this.fileIndexer.getDocumentCache();
-          this.bm25Scorer.calculateAverageDocLength(docCache);
-        })(),
-      );
+    try {
+      await this.fileIndexer.preWarmSearchCaches();
+    } catch (error) {
+      logger.warn('⚠️ Failed to pre-warm search caches:', error);
     }
+  }
 
-    // 2. Pre-warm search caches
-    postIndexTasks.push(
-      (async () => {
-        try {
-          if (
-            this.fileIndexer.preWarmSearchCaches &&
-            typeof this.fileIndexer.preWarmSearchCaches === 'function'
-          ) {
-            await this.fileIndexer.preWarmSearchCaches();
-          }
-        } catch (error) {
-          logger.warn('⚠️ Failed to pre-warm search caches:', error);
-        }
-      })(),
-    );
-
-    await Promise.all(postIndexTasks);
+  /**
+   * Recomputes BM25's average document length when the index searched is of
+   * another generation than the last one computed for.
+   */
+  private syncScorerWithIndex(
+    docCache: Map<string, DocumentIndex>,
+    indexGeneration: number,
+  ): void {
+    if (this.scorerIndexGeneration === indexGeneration) return;
+    this.bm25Scorer.calculateAverageDocLength(docCache);
+    this.scorerIndexGeneration = indexGeneration;
   }
 
   /**
@@ -668,8 +659,11 @@ class MegaSearch {
 
     const resolvedScopedPaths = this.resolveScopedPaths(searchScopedPaths);
 
-    // Cache key includes all options, so different option combos don't collide.
-    const cacheKey = JSON.stringify({ query, options });
+    // Cache key includes all options, so different option combos don't
+    // collide, and the index generation, so an update can't serve results
+    // of the index before it.
+    const indexGeneration = this.fileIndexer.indexGeneration;
+    const cacheKey = JSON.stringify({ query, options, indexGeneration });
 
     const cachedResult = this.searchCache.get(cacheKey);
     if (cachedResult) {
@@ -703,6 +697,8 @@ class MegaSearch {
 
       const scoringStart = Date.now();
       const useBM25 = this.config.useBM25 !== false;
+      // Scoring below runs without a pause, so no update gets in between
+      if (useBM25) this.syncScorerWithIndex(docCache, indexGeneration);
 
       // What each query word matches — every search mode below reads these.
       const words = queryData.words.map((word) =>
