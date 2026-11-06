@@ -76,6 +76,39 @@ describe('UkrainianTextProcessor', () => {
       ]);
     });
 
+    it('keeps hyphens at word edges out of the token', () => {
+      // A compound broken by a space ("водія- електрика") left the hyphen on
+      // the token, so "водія" found "водія-" only with typo tolerance on.
+      const text =
+        'водія- електрика, Івано- Франківськ, -Залізничний, ВОС- 100 — штаб';
+      const tokens = processor.tokenize(text);
+
+      assert.deepEqual(
+        tokens.map((t) => t.normalized),
+        [
+          'водія',
+          'електрика',
+          'івано',
+          'франківськ',
+          'залізничний',
+          'вос',
+          'штаб',
+        ],
+      );
+      assert.deepEqual(
+        tokens.map((t) => text.slice(t.charStart, t.charEnd)),
+        [
+          'водія',
+          'електрика',
+          'Івано',
+          'Франківськ',
+          'Залізничний',
+          'ВОС',
+          'штаб',
+        ],
+      );
+    });
+
     it('keeps quote marks at word edges out of the token span', () => {
       const text = "Слово ‘наказ’ та 'бюджет'";
       const tokens = processor.tokenize(text);
