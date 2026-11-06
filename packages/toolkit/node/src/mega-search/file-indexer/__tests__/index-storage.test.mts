@@ -118,7 +118,7 @@ describe('IndexStorage', () => {
     await fs.promises.rm(corpus.pathOf('.cache/index/nested/b.txt.index.json'));
     assert.equal(second, corpus.pathOf('nested/b.txt'));
     assert.deepEqual(loaded.documentCache.get(second)!.vocab, []);
-    assert.deepEqual(loaded.documentCache.get(second)!.positions, []);
+    assert.equal(loaded.documentCache.get(second)!.positions.length, 0);
     assert.deepEqual(loaded.documentCache.get(second)!.joints, {});
   });
 

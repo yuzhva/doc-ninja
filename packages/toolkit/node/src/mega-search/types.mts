@@ -1,3 +1,5 @@
+import type { TokenPositions } from './token-positions.mjs';
+
 interface DocumentMetadata {
   fileName: string;
   /** Absolute path to the original source file (e.g. .doc, .docx) */
@@ -43,7 +45,8 @@ interface ParagraphInfo {
 interface DocumentIndex {
   metadata: DocumentMetadata;
   vocab: string[]; // Array of unique words in the document
-  positions: Array<[number, number, number]>; // Tuples of [vocabIndex, charStart, charEnd]
+  /** Each token's vocab index and the characters it spans, in text order. */
+  positions: TokenPositions;
   /**
    * What glues a token to the one before it, by the token's position, where
    * one of the two is a number: "22.12.2024" → "." at 12 and at 2024. See

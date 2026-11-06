@@ -77,9 +77,12 @@ describe('DocumentProcessor', () => {
 
       assert.deepEqual(doc.vocab, ['наказ', 'бюджет', 'виконано']);
       assert.deepEqual(
-        doc.positions.map(([vocabIndex, start, end]) => [
-          doc.vocab[vocabIndex],
-          ORDER_TEXT.slice(start, end),
+        Array.from({ length: doc.positions.length }, (_, token) => [
+          doc.vocab[doc.positions.vocabIndex(token)],
+          ORDER_TEXT.slice(
+            doc.positions.charStart(token),
+            doc.positions.charEnd(token),
+          ),
         ]),
         [
           ['наказ', 'Наказ'],
@@ -146,6 +149,26 @@ describe('DocumentProcessor', () => {
         await discovered('dated.txt'),
       );
       assert.deepEqual(readBack.joints, joints);
+    });
+
+    it('saves the positions as one flat array of numbers, read back the same', async () => {
+      await corpus.write('dated.txt', 'Наказ № 15/2.');
+      const doc = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+
+      // vocabIndex, charStart, charEnd of наказ, 15 and 2 in turn
+      const saved = [0, 0, 5, 1, 8, 10, 2, 11, 12];
+      assert.deepEqual(doc.positions.toJSON(), saved);
+      assert.deepEqual(
+        JSON.parse(await corpus.read(indexCacheFile('dated.txt'))).positions,
+        saved,
+      );
+      const readBack = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+      assert.deepEqual(readBack.positions, doc.positions);
+      assert.deepEqual(readBack.positions.at(1), [1, 8, 10]);
     });
 
     it('stores an empty, indexed entry for a file without text, so it is not retried forever', async () => {

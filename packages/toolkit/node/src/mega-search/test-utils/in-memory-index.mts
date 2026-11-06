@@ -9,6 +9,7 @@ import {
   findJoints,
   isNumberTerm,
 } from '../text-processor.mjs';
+import { TokenPositions } from '../token-positions.mjs';
 import type {
   DocumentIndex,
   DocumentMetadata,
@@ -35,7 +36,7 @@ function buildDocumentIndex(
 ): DocumentIndex {
   const vocab: string[] = [];
   const vocabIndexByTerm = new Map<string, number>();
-  const positions: Array<[number, number, number]> = [];
+  const positions: number[] = []; // vocabIndex, charStart, charEnd each
   const termFrequency = new Map<string, number>();
   const tokens = textProcessor.tokenize(text);
 
@@ -46,7 +47,7 @@ function buildDocumentIndex(
       vocab.push(token.term);
       vocabIndexByTerm.set(token.term, vocabIndex);
     }
-    positions.push([vocabIndex, token.charStart, token.charEnd]);
+    positions.push(vocabIndex, token.charStart, token.charEnd);
 
     const stem = textProcessor.stemWord(token.normalized);
     termFrequency.set(stem, (termFrequency.get(stem) ?? 0) + 1);
@@ -63,12 +64,10 @@ function buildDocumentIndex(
       ...metadata,
     },
     vocab,
-    positions,
+    positions: TokenPositions.fromFlat(positions),
     joints: findJoints(text, tokens),
     termFrequency,
-    wordCount: positions.filter(
-      ([vocabIndex]) => !isNumberTerm(vocab[vocabIndex]),
-    ).length,
+    wordCount: tokens.filter((token) => !isNumberTerm(token.term)).length,
   };
 }
 

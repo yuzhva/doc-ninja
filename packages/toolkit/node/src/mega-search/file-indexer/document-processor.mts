@@ -12,6 +12,7 @@ import {
   findJoints,
   isNumberTerm,
 } from '../text-processor.mjs';
+import { TokenPositions } from '../token-positions.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
 
@@ -284,10 +285,11 @@ class DocumentProcessor {
       const termFrequency = new Map<string, number>();
       const vocab: string[] = [];
       const vocabMap = new Map<string, number>();
-      const positions: Array<[number, number, number]> = [];
+      // vocabIndex, charStart, charEnd of each token in turn
+      const positions = new Array<number>(rawTokens.length * 3);
       const stemCache = new Map<string, string>();
 
-      rawTokens.forEach((token) => {
+      rawTokens.forEach((token, tokenIndex) => {
         let vocabIndex = vocabMap.get(token.term);
         if (vocabIndex === undefined) {
           vocabIndex = vocab.length;
@@ -295,7 +297,9 @@ class DocumentProcessor {
           vocabMap.set(token.term, vocabIndex);
         }
 
-        positions.push([vocabIndex, token.charStart, token.charEnd]);
+        positions[tokenIndex * 3] = vocabIndex;
+        positions[tokenIndex * 3 + 1] = token.charStart;
+        positions[tokenIndex * 3 + 2] = token.charEnd;
 
         let stemmedTerm = stemCache.get(token.normalized);
         if (stemmedTerm === undefined) {
@@ -321,7 +325,7 @@ class DocumentProcessor {
           textFilePath: this.getTextCachePath(metadata.originalFilePath),
         },
         vocab,
-        positions,
+        positions: TokenPositions.fromFlat(positions),
         joints: findJoints(text, rawTokens),
         termFrequency,
         // Words only: numbers leave BM25 document lengths as they were
@@ -382,7 +386,7 @@ class DocumentProcessor {
       );
       return null;
     }
-    return cached;
+    return { ...cached, positions: TokenPositions.fromFlat(cached.positions) };
   }
 
   private createEmptyIndex(metadata: DocumentMetadata): DocumentIndex {
@@ -395,7 +399,7 @@ class DocumentProcessor {
         textFilePath: this.getTextCachePath(metadata.originalFilePath),
       },
       vocab: [],
-      positions: [],
+      positions: TokenPositions.EMPTY,
       joints: {},
       termFrequency: new Map(),
       wordCount: 0,
