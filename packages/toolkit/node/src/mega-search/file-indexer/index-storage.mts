@@ -9,6 +9,7 @@ import { resolveCachePaths } from '../cache-paths.mjs';
 import type { ResolvedCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
+import { TokenPositions } from '../token-positions.mjs';
 import { DocumentIndex, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
@@ -49,15 +50,9 @@ class IndexStorage {
       estimatedSize += entries.length * 8;
     });
 
-    documentCache.forEach((doc) => {
-      estimatedSize += 500;
-      estimatedSize += doc.vocab.reduce(
-        (sum, term) => sum + term.length * 2,
-        0,
-      );
-      estimatedSize += doc.positions.length * 12;
-      estimatedSize += doc.termFrequency.size * 30;
-    });
+    // Documents go in with their metadata only: their words stay in the
+    // per-document indexes, and reading them would load every one from disk
+    estimatedSize += documentCache.size * 500;
     return Math.round(estimatedSize * 1.3);
   }
 
@@ -490,7 +485,7 @@ class IndexStorage {
   private makeDocumentLazy(doc: DocumentIndex): void {
     const indexPath = this.getIndexCachePath(doc.metadata.originalFilePath);
     let _vocab: string[] | null = doc.vocab || null;
-    let _positions: [number, number, number][] | null = doc.positions || null;
+    let _positions: TokenPositions | null = doc.positions || null;
     let _joints: Record<number, string> | null = doc.joints || null;
 
     const loadFromDisk = () => {
@@ -505,13 +500,14 @@ class IndexStorage {
       try {
         const content = fs.readFileSync(indexPath, 'utf8');
         const fullDoc = JSON.parse(content);
+        fullDoc.positions = TokenPositions.fromFlat(fullDoc.positions);
         _vocab = fullDoc.vocab || [];
-        _positions = fullDoc.positions || [];
+        _positions = fullDoc.positions;
         _joints = fullDoc.joints || {};
         this.documentLRU.set(doc.metadata.originalFilePath, fullDoc);
       } catch (e) {
         _vocab = [];
-        _positions = [];
+        _positions = TokenPositions.EMPTY;
         _joints = {};
       }
     };

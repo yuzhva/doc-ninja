@@ -9,7 +9,7 @@ import { DocumentIndex, ProcessedSearchToken } from './types.mjs';
  * search for words finds what it found before numbers were indexed.
  */
 export function isWordAt(doc: DocumentIndex, position: number): boolean {
-  return !isNumberTerm(doc.vocab[doc.positions[position][0]]);
+  return !isNumberTerm(doc.vocab[doc.positions.vocabIndex(position)]);
 }
 
 /**
@@ -22,7 +22,7 @@ export function getDocumentToken(
   if (position < 0 || position >= doc.positions.length) {
     return null;
   }
-  const [vocabIndex, charStart, charEnd] = doc.positions[position];
+  const [vocabIndex, charStart, charEnd] = doc.positions.at(position);
   const term = doc.vocab[vocabIndex];
 
   return {

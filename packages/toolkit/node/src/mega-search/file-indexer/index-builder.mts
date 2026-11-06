@@ -244,8 +244,7 @@ export class IndexBuilder {
     }
 
     for (let i = 0; i < docIndex.positions.length; i++) {
-      const [vocabIndex] = docIndex.positions[i];
-      const stemmedTerm = vocabStemMap[vocabIndex];
+      const stemmedTerm = vocabStemMap[docIndex.positions.vocabIndex(i)];
 
       if (!stemmedTerm) continue;
 

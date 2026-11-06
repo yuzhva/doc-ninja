@@ -84,7 +84,7 @@ class WordMatch {
       for (const position of stemPositions) {
         if (
           forms === null ||
-          forms.has(doc.vocab[doc.positions[position][0]])
+          forms.has(doc.vocab[doc.positions.vocabIndex(position)])
         ) {
           positions.push(position);
         }
