@@ -31,11 +31,13 @@ class UkrainianTextProcessor {
     let match;
 
     while ((match = regex.exec(text)) !== null) {
-      // Inside a word an apostrophe is part of it (as in a Ukrainian "p'yat'");
-      // at its edges it can only be a quote mark, which must stay out of the
-      // token's span.
-      const withoutLeading = match[0].replace(/^['\u2019\u02BC]+/, '');
-      const term = withoutLeading.replace(/['\u2019\u02BC]+$/, '');
+      // Inside a word an apostrophe or a hyphen is part of it (a Ukrainian
+      // "p'yat'", "\u043F\u0456\u0432\u043D\u0456\u0447\u043D\u043E-\u0441\u0445\u0456\u0434\u043D\u0438\u0439"). At its edges an apostrophe can only be a
+      // quote mark, and a hyphen is left over from a compound broken by a
+      // space ("\u0432\u043E\u0434\u0456\u044F- \u0435\u043B\u0435\u043A\u0442\u0440\u0438\u043A\u0430", "\u0406\u0432\u0430\u043D\u043E- \u0424\u0440\u0430\u043D\u043A\u0456\u0432\u0441\u044C\u043A") or from a dash, so both
+      // stay out of the token: "\u0432\u043E\u0434\u0456\u044F-" is the word "\u0432\u043E\u0434\u0456\u044F".
+      const withoutLeading = match[0].replace(/^['\u2019\u02BC-]+/, '');
+      const term = withoutLeading.replace(/['\u2019\u02BC-]+$/, '');
       const charStart = match.index + (match[0].length - withoutLeading.length);
       const normalizedTerm = this.normalize(term);
 
