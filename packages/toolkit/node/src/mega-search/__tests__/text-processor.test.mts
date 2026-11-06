@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { knownBug } from '../test-utils/known-bug.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
 
 const processor = new UkrainianTextProcessor();
@@ -10,7 +9,10 @@ const terms = (text: string) => processor.tokenize(text).map((t) => t.term);
 describe('UkrainianTextProcessor', () => {
   describe('normalize()', () => {
     it('lowercases, removes apostrophes and punctuation, collapses whitespace', () => {
-      assert.equal(processor.normalize("  П'ЯТЬ,   Об’єкт! "), 'пять обєкт');
+      assert.equal(
+        processor.normalize("  П'ЯТЬ,   Об’єкт  Обʼєкт! "),
+        'пять обєкт обєкт',
+      );
     });
   });
 
@@ -63,17 +65,26 @@ describe('UkrainianTextProcessor', () => {
       ]);
     });
 
-    it(
-      'keeps a word written with the typographic apostrophe (’) as one token',
-      knownBug(
-        "the token regex lists the ASCII apostrophe twice ('') instead of ' and ’, so the " +
-          'apostrophe Word inserts automatically splits «Об’єкт» into «об» + «єкт», ' +
-          'and such words can no longer be found',
-      ),
-      () => {
-        assert.deepEqual(terms('Об’єкт передано'), ['обєкт', 'передано']);
-      },
-    );
+    it('keeps words written with any Ukrainian apostrophe as one token', () => {
+      // Regression guard: the token regex listed the ASCII apostrophe twice
+      // instead of ' and ’, so the apostrophe Word inserts automatically split
+      // «Об’єкт» into «об» + «єкт», and such words could not be found.
+      assert.deepEqual(terms("Об'єкт, Об’єкт, Обʼєкт"), [
+        'обєкт',
+        'обєкт',
+        'обєкт',
+      ]);
+    });
+
+    it('keeps quote marks at word edges out of the token span', () => {
+      const text = "Слово ‘наказ’ та 'бюджет'";
+      const tokens = processor.tokenize(text);
+
+      assert.deepEqual(
+        tokens.map((t) => text.slice(t.charStart, t.charEnd)),
+        ['Слово', 'наказ', 'бюджет'],
+      );
+    });
   });
 
   describe('stemWord()', () => {

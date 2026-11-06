@@ -184,7 +184,23 @@ export class SnippetGenerator {
   }
 
   /**
+   * In token mode, the query term a document term stands for: the term
+   * itself when it is one of the query tokens, or — via `termAliases` — the
+   * query token it was matched to through typo tolerance.
+   */
+  private resolveQueryTerm(
+    docTerm: string,
+    queryTokens: string[],
+    termAliases: ReadonlyMap<string, string>,
+  ): string | undefined {
+    return queryTokens.includes(docTerm) ? docTerm : termAliases.get(docTerm);
+  }
+
+  /**
    * Generate all highlights for a document.
+   *
+   * @param termAliases Token mode only: index terms the query matched through
+   *   typo tolerance, mapped to the query token each one stands for.
    */
   generateHighlights(
     docId: string,
@@ -192,6 +208,7 @@ export class SnippetGenerator {
     originalPhraseOrStemmedTokens: string[],
     isPhrase: boolean,
     isTypoToleranceEnabled: boolean,
+    termAliases: ReadonlyMap<string, string> = new Map(),
   ): HighlightInfo[] {
     const start = Date.now();
     const highlights: HighlightInfo[] = [];
@@ -251,10 +268,15 @@ export class SnippetGenerator {
       }
 
       const matchingVocabIndices = new Set<number>();
-      const queryTokenSet = new Set(originalPhraseOrStemmedTokens);
 
       stemmedVocab.forEach((docTokenStem, index) => {
-        if (queryTokenSet.has(docTokenStem)) {
+        if (
+          this.resolveQueryTerm(
+            docTokenStem,
+            originalPhraseOrStemmedTokens,
+            termAliases,
+          ) !== undefined
+        ) {
           matchingVocabIndices.add(index);
         }
       });
@@ -264,8 +286,10 @@ export class SnippetGenerator {
           if (matchingVocabIndices.has(p[0])) {
             const docTokenTerm = doc.vocab[p[0]];
             const docTokenStem = stemmedVocab![p[0]];
-            const queryToken = originalPhraseOrStemmedTokens.find(
-              (t) => t === docTokenStem,
+            const queryToken = this.resolveQueryTerm(
+              docTokenStem,
+              originalPhraseOrStemmedTokens,
+              termAliases,
             );
 
             highlights.push({
@@ -297,6 +321,8 @@ export class SnippetGenerator {
 
   /**
    * Main entry point for snippet generation.
+   *
+   * @param termAliases See generateHighlights.
    */
   async generateSnippets(
     doc: DocumentIndex,
@@ -307,6 +333,7 @@ export class SnippetGenerator {
     matchPositions: number[][] | undefined,
     contextBefore: number,
     contextAfter: number,
+    termAliases: ReadonlyMap<string, string> = new Map(),
   ): Promise<SnippetInfo[]> {
     const start = Date.now();
     let snippets: SnippetInfo[] = [];
@@ -328,6 +355,7 @@ export class SnippetGenerator {
         isTypoToleranceEnabled,
         contextBefore,
         contextAfter,
+        termAliases,
       );
     }
 
@@ -389,6 +417,7 @@ export class SnippetGenerator {
     isTypoToleranceEnabled: boolean,
     contextBefore: number,
     contextAfter: number,
+    termAliases: ReadonlyMap<string, string>,
   ): Promise<SnippetInfo[]> {
     const snippets: SnippetInfo[] = [];
     const processedBounds = new Set<string>();
@@ -399,7 +428,13 @@ export class SnippetGenerator {
       const docTokenToCompare = isTypoToleranceEnabled
         ? this.textProcessor.stemWord(docTokenTerm)
         : docTokenTerm.toLowerCase();
-      if (originalPhraseOrStemmedTokens.includes(docTokenToCompare)) {
+      if (
+        this.resolveQueryTerm(
+          docTokenToCompare,
+          originalPhraseOrStemmedTokens,
+          termAliases,
+        ) !== undefined
+      ) {
         matchedTokenIndices.add(tokenIndex);
       }
     });
@@ -411,8 +446,10 @@ export class SnippetGenerator {
       const docTokenToCompare = isTypoToleranceEnabled
         ? this.textProcessor.stemWord(docToken.term)
         : docToken.term.toLowerCase();
-      const queryToken = originalPhraseOrStemmedTokens.find(
-        (qt) => qt === docTokenToCompare,
+      const queryToken = this.resolveQueryTerm(
+        docTokenToCompare,
+        originalPhraseOrStemmedTokens,
+        termAliases,
       );
       if (!queryToken) continue;
 
@@ -672,7 +709,12 @@ export class SnippetGenerator {
       const pattern = uniqueTerms
         .map((t) => this.escapeRegExp(t.originalWord))
         .join('|');
-      const regex = new RegExp(`\\b(${pattern})\\b`, 'gi');
+      // `\b` only knows ASCII word characters, so it never matches around
+      // Cyrillic words — use Unicode-aware lookarounds instead.
+      const regex = new RegExp(
+        `(?<![\\p{L}\\p{N}_])(${pattern})(?![\\p{L}\\p{N}_])`,
+        'giu',
+      );
 
       text = text.replace(regex, (match) => {
         highlightedWords.push(match);

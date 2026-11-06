@@ -4,7 +4,6 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { createLogger } from '../../shared/logger.mjs';
-import { knownBug } from '../../test-utils/known-bug.mjs';
 import { createTempCorpus, later } from '../../test-utils/temp-corpus.mjs';
 import type { TempCorpus } from '../../test-utils/temp-corpus.mjs';
 import { UkrainianTextProcessor } from '../../text-processor.mjs';
@@ -167,29 +166,28 @@ describe('DocumentProcessor', () => {
       );
     });
 
-    it(
-      're-extracts a source edited after it was cached (same process)',
-      knownBug(
-        'extractTextFromFile serves text from an in-memory LRU keyed by path only, so the old ' +
-          'text is re-indexed — and written back as a per-document index newer than the source, ' +
-          'which keeps the stale content even after a restart',
-      ),
-      async () => {
-        const processor = newProcessor();
-        await processor.indexDocument(await discovered('orders/order.txt'));
-        await corpus.write(
-          'orders/order.txt',
-          'Кошторис затверджено.',
-          later(),
-        );
+    it('re-extracts a source edited after it was cached (same process)', async () => {
+      // Regression guard: the in-memory text LRU was keyed by path only, so
+      // the old text was re-indexed — and written back as a per-document
+      // index newer than the source, which kept it stale across restarts.
+      const processor = newProcessor();
+      await processor.indexDocument(await discovered('orders/order.txt'));
+      await corpus.write('orders/order.txt', 'Кошторис затверджено.', later());
 
-        const doc = await processor.indexDocument(
-          await discovered('orders/order.txt'),
-        );
+      const doc = await processor.indexDocument(
+        await discovered('orders/order.txt'),
+      );
 
-        assert.deepEqual(doc.vocab, ['кошторис', 'затверджено']);
-      },
-    );
+      assert.deepEqual(doc.vocab, ['кошторис', 'затверджено']);
+      assert.deepEqual(
+        (
+          await newProcessor().indexDocument(
+            await discovered('orders/order.txt'),
+          )
+        ).vocab,
+        ['кошторис', 'затверджено'],
+      );
+    });
   });
 
   describe('needsReindexing()', () => {

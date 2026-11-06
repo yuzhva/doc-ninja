@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { knownBug } from '../../test-utils/known-bug.mjs';
 import { createTempCorpus, later } from '../../test-utils/temp-corpus.mjs';
 import type { TempCorpus } from '../../test-utils/temp-corpus.mjs';
 import { UkrainianTextProcessor } from '../../text-processor.mjs';
@@ -17,11 +16,6 @@ const docsWithWord = (indexer: FileIndexer, word: string) =>
   (indexer.getInvertedIndex().get(textProcessor.stemWord(word)) ?? [])
     .map((entry) => path.basename(entry.documentId))
     .sort();
-
-const STALE_EDIT_CAUSE =
-  'an edited file that is already in the document cache is tallied as "cached-loaded" instead ' +
-  'of "newly-indexed", so actuallyProcessed stays 0 — the inverted-index rebuild and the ' +
-  'global-index save are both skipped and the old postings keep being served';
 
 describe('FileIndexer', () => {
   let corpus: TempCorpus;
@@ -88,6 +82,19 @@ describe('FileIndexer', () => {
     assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
   });
 
+  it('rebuilds the postings from per-document caches when the global index is gone', async () => {
+    // e.g. a deleted/corrupted marker, or a legacy format that loadGlobalIndex()
+    // deliberately rejects "for a rebuild": every file is still cached, so none
+    // of them counts as changed — the rebuild must happen anyway.
+    await indexed();
+    await corpus.remove('.cache/global-inverted-index.json.gz');
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
+    assert.deepEqual(docsWithWord(await indexed(), 'наказ'), ['a.txt']);
+  });
+
   it('picks up a single added file on rebuild', async () => {
     // Regression guard for 31f37498: one changed file must be enough to
     // trigger the inverted-index rebuild (the threshold used to be exclusive).
@@ -110,53 +117,43 @@ describe('FileIndexer', () => {
     assert.equal((await indexed()).getStats().documentsCount, 1);
   });
 
-  it(
-    'drops a deleted file from the postings too',
-    knownBug(
-      'when nothing else changed, buildFullIndex takes the "all files up to date" early return, ' +
-        'which saves the index without rebuilding it. Search hides the orphaned postings (their ' +
-        'document is gone), but they still inflate document frequencies and fail validateIndexHealth()',
-    ),
-    async () => {
-      const indexer = await indexed();
-      await corpus.remove('b.txt');
+  it('drops a deleted file from the postings too', async () => {
+    // Regression guard: with nothing else changed, the "all files up to date"
+    // early return saved the index without rebuilding it, leaving orphaned
+    // postings that inflated document frequencies.
+    const indexer = await indexed();
+    await corpus.remove('b.txt');
 
-      await indexer.buildFullIndex();
+    await indexer.buildFullIndex();
 
-      assert.deepEqual(docsWithWord(indexer, 'бюджет'), []);
-      assert.equal((await indexer.validateIndexHealth()).isHealthy, true);
-    },
-  );
+    assert.deepEqual(docsWithWord(indexer, 'бюджет'), []);
+    assert.equal((await indexer.validateIndexHealth()).isHealthy, true);
+  });
 
-  it(
-    're-indexes a file edited while the app was closed',
-    knownBug(STALE_EDIT_CAUSE),
-    async () => {
-      await indexed();
-      await corpus.write('a.txt', 'Кошторис затверджено.', later());
+  // Regression guards: an edited file already in the document cache was
+  // tallied as "cached-loaded" instead of indexed, so the inverted-index
+  // rebuild and the global-index save were both skipped.
+  it('re-indexes a file edited while the app was closed', async () => {
+    await indexed();
+    await corpus.write('a.txt', 'Кошторис затверджено.', later());
 
-      const restarted = await indexed();
+    const restarted = await indexed();
 
-      assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
-      assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
-    },
-  );
+    assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
+    assert.deepEqual(docsWithWord(await indexed(), 'кошторис'), ['a.txt']);
+  });
 
-  it(
-    're-indexes a file edited while the app is running',
-    knownBug(
-      `${STALE_EDIT_CAUSE}; on top of that the text-extraction LRU still returns the old text`,
-    ),
-    async () => {
-      const indexer = await indexed();
-      await corpus.write('a.txt', 'Кошторис затверджено.', later());
+  it('re-indexes a file edited while the app is running', async () => {
+    const indexer = await indexed();
+    await corpus.write('a.txt', 'Кошторис затверджено.', later());
 
-      await indexer.buildFullIndex();
+    await indexer.buildFullIndex();
 
-      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
-      assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
-    },
-  );
+    assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    assert.deepEqual(docsWithWord(await indexed(), 'кошторис'), ['a.txt']);
+  });
 
   describe('indexSpecificPaths()', () => {
     it('adds the documents found under the given paths', async () => {
@@ -168,21 +165,17 @@ describe('FileIndexer', () => {
       assert.equal(indexer.getStats().documentsCount, 3);
     });
 
-    it(
-      'makes the added documents searchable',
-      knownBug(
-        'it calls the batch builders with {} as rebuild thresholds, so ' +
-          'Math.max(undefined, NaN) turns the rebuild condition into "n >= NaN" — always false',
-      ),
-      async () => {
-        const indexer = await indexed();
-        await corpus.write('extra/c.txt', 'Квартальний звіт.');
+    it('makes the added documents searchable', async () => {
+      // Regression guard: it passed {} as rebuild thresholds, so
+      // Math.max(undefined, NaN) made the rebuild condition "n >= NaN".
+      const indexer = await indexed();
+      await corpus.write('extra/c.txt', 'Квартальний звіт.');
 
-        await indexer.indexSpecificPaths([corpus.pathOf('extra')]);
+      await indexer.indexSpecificPaths([corpus.pathOf('extra')]);
 
-        assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
-      },
-    );
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt']);
+    });
   });
 
   it('clearCache() wipes caches on disk — including a globalIndexPath outside cacheRoot — and in memory', async () => {
