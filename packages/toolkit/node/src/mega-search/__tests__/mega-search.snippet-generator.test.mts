@@ -27,8 +27,8 @@ const DOCS = {
   'apostrophe.txt': "Об'єкт прийнято. Отримано П'ять примірників.",
   'sentences.txt':
     'Перше речення без збігу. Бюджет міста затверджено радою! Наступне речення теж без збігу.',
-  // речення0 збігу1 бюджет2 міста3 затверджено4 радою5 наступне6 речення7 теж8 збігу9
-  'repeat.txt': 'The car hit another car.',
+  // перше0 речення1 без2 збігу3 бюджет4 міста5 затверджено6 радою7 наступне8 речення9 теж10 без11 збігу12
+  'repeat.txt': 'The car hit another car.', // the0 car1 hit2 another3 car4
   'typo.txt': 'Rech car spotted.',
   'orders.txt':
     'Начальник управління підписав наказ. Наказ начальника управління.',
@@ -36,7 +36,7 @@ const DOCS = {
   // оплатити0 рахунок1 оплатити2 рахунок3 оплатити4 рахунок5
   'numbered.txt':
     'Рішення від 21.11.2022. Затвердити кошторис на 2023 рік та план робіт.',
-  // рішення0 21(1) 11(2) 2022(3) затвердити4 кошторис5 2023(6) план7 робіт8
+  // рішення0 від1 21(2) 11(3) 2022(4) затвердити5 кошторис6 на7 2023(8) рік9 та10 план11 робіт12
 };
 
 /** Where each occurrence of `word` starts in `text`. */
@@ -165,10 +165,10 @@ describe('SnippetGenerator', () => {
       assert.equal(snippet.context, 'Бюджет міста <b>затверджено</b> радою...');
     });
 
-    it('counts the context in words: numbers neither use it up nor end a sentence', async () => {
+    it('counts the context in words: numbers and function words do not use it up, numbers end no sentence', async () => {
       const [snippet] = await tokenSnippets('numbered.txt', 'кошторис', {
         contextBefore: 2,
-        contextAfter: 3,
+        contextAfter: 4,
       });
 
       assert.equal(
@@ -350,7 +350,7 @@ describe('SnippetGenerator', () => {
 
     it('returns a number glued from parts as the text writes it', async () => {
       const [snippet] = await phraseSnippets('numbered.txt', '21.11.2022', [
-        [1, 2, 3],
+        [2, 3, 4],
       ]);
 
       assert.equal(snippet.match, '21.11.2022');
@@ -366,7 +366,7 @@ describe('SnippetGenerator', () => {
     });
 
     it('labels strict matches as exact-phrase with full confidence', async () => {
-      const [snippet] = await phraseSnippets('repeat.txt', 'car', [[0]], false);
+      const [snippet] = await phraseSnippets('repeat.txt', 'car', [[1]], false);
 
       assert.equal(snippet.matchType, 'exact-phrase');
       assert.equal(snippet.confidence, 1);

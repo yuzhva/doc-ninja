@@ -3,7 +3,7 @@
  * stemmed into vocab, positions and postings.
  *
  * Bump it with every change that indexes the same text differently: the
- * tokenizer, normalization, stop words, the stemmer. On the next start the
+ * tokenizer, normalization, function words, the stemmer. On the next start the
  * global index and every per-document index from another version are rebuilt.
  * The extracted-text cache is kept, so no document is parsed again.
  *
@@ -17,7 +17,10 @@
  *    ("22.12.2024" → "." twice), so a glued query finds it as written
  * 6. positions saved flat, three numbers a token in one array
  *    ([vocabIndex, charStart, charEnd, …]), not an array per token
+ * 7. every word indexed: no stop words left out; function words (see
+ *    isFunctionWord) under themselves, not their stem, and out of the stem
+ *    dictionary; wordCount counts neither numbers nor function words
  */
-const INDEX_VERSION = 6;
+const INDEX_VERSION = 7;
 
 export { INDEX_VERSION };

@@ -30,7 +30,7 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 📄 **Document Processing**
 
 - **Multiple Formats**: .doc, .docx, .txt support
-- **Ukrainian Text Processing**: Proper tokenization, stemming, stop words
+- **Ukrainian Text Processing**: Proper tokenization, stemming, function words
 - **Language Detection**: Automatic detection of document language
 - **Error Resilience**: Graceful handling of corrupted files
 
@@ -240,7 +240,10 @@ Main search method with full feature support.
 The system includes sophisticated Ukrainian language processing:
 
 - **Stemming**: Handles Ukrainian morphology (управління → управлінн)
-- **Stop Words**: Comprehensive Ukrainian stop word list
+- **Every Word Indexed**: nothing is left out as a stop word. Function words (prepositions,
+  conjunctions, particles: "про", "та", "лише") match only as typed, don't count toward phrase
+  distance, and a word-by-word search skips them unless the query holds nothing else — a phrase
+  holds them as written ("наказ про відпустку" is not "наказ на відпустку")
 - **Case Handling**: Proper Unicode case normalization
 - **Mixed Language**: Handles documents with both Ukrainian and English
 
@@ -281,7 +284,7 @@ Multi-level intelligent caching:
 4. **LRU Memory Cache**: Hot data in memory for fast access
 
 Levels 2 and 3 are stamped with `INDEX_VERSION` (`file-indexer/index-version.mts`). Bump it with any
-change that indexes the same text differently (tokenizer, normalization, stop words, stemmer): the
+change that indexes the same text differently (tokenizer, normalization, function words, stemmer): the
 next start rebuilds both from the cached text (level 1), so no document is parsed again.
 
 A few changed or deleted files update the inverted index for those documents only. A full rebuild,

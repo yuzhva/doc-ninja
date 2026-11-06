@@ -1,15 +1,16 @@
 import { editDistance } from './fuzzy.mjs';
-import { isNumberTerm } from './text-processor.mjs';
+import { countsAsWord } from './text-processor.mjs';
 import { DocumentIndex, ProcessedSearchToken } from './types.mjs';
 
 /**
- * Whether the token at `position` is a word, not a number. Numbers are
- * indexed, but wherever distance is counted in words — phrase gaps, snippet
- * windows and sentence ends, document length — they don't count, so a
- * search for words finds what it found before numbers were indexed.
+ * Whether the token at `position` counts as a word: not a number, nor a
+ * function word. Both are indexed, but wherever distance is counted in words
+ * — phrase gaps, snippet windows and sentence ends, document length — they
+ * don't count, so a search for words finds what it found before they were
+ * indexed.
  */
 export function isWordAt(doc: DocumentIndex, position: number): boolean {
-  return !isNumberTerm(doc.vocab[doc.positions.vocabIndex(position)]);
+  return countsAsWord(doc.vocab[doc.positions.vocabIndex(position)]);
 }
 
 /**
