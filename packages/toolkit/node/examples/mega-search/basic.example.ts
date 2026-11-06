@@ -135,7 +135,7 @@ async function main() {
 
     const searchOptions: SearchOptions = {
       topN: Number(process.env.TOP_N) || 50,
-      isTypoToleranceEnabled: process.env.FUZZY !== 'false', // default true
+      isInflectedWordFormsAllowed: process.env.FUZZY !== 'false', // default true
       maxTypoDistance: Number(process.env.FUZZY_THRESHOLD) || 1,
       snippetsLimit:
         process.env.SNIPPETS_LIMIT === 'ALL'

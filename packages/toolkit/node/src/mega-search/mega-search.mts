@@ -649,7 +649,7 @@ class MegaSearch {
     logger.info(`🔍 [START] Search request: "${query}"`);
 
     const {
-      isTypoToleranceEnabled = true,
+      isInflectedWordFormsAllowed = true,
       maxTypoDistance = 1,
       isPhraseProximityEnabled = false,
       maxWordsInPhraseDistance = 0,
@@ -707,7 +707,7 @@ class MegaSearch {
       const words = queryData.words.map((word) =>
         this.termMatcher.match(
           word,
-          { isFuzzy: isTypoToleranceEnabled, maxTypoDistance },
+          { isFuzzy: isInflectedWordFormsAllowed, maxTypoDistance },
           { invertedIndex, stemDictionary },
         ),
       );
@@ -732,7 +732,7 @@ class MegaSearch {
               maxWordsBetween: isPhraseProximityEnabled
                 ? maxWordsInPhraseDistance
                 : 0,
-              isFuzzy: isTypoToleranceEnabled,
+              isFuzzy: isInflectedWordFormsAllowed,
             })
           : this.scoreTokenSearch(scoringParams);
 
@@ -777,7 +777,7 @@ class MegaSearch {
         snippetRequest: {
           queryTokens: words.map((word) => word.queryToken),
           matchedWords: mergeMatchedWords(words),
-          isFuzzy: isTypoToleranceEnabled,
+          isFuzzy: isInflectedWordFormsAllowed,
           isPhrase: queryData.isPhrase,
           contextBefore: snippetContextBefore,
           contextAfter: snippetContextAfter,

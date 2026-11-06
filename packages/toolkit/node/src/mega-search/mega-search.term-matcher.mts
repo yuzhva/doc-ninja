@@ -5,7 +5,7 @@ import type { DocumentIndex, InvertedIndexEntry } from './types.mjs';
 
 type TermMatchOptions = {
   /**
-   * "Allow fuzzy match" (SearchOptions.isTypoToleranceEnabled): any inflected
+   * "Allow fuzzy match" (SearchOptions.isInflectedWordFormsAllowed): any inflected
    * form of the word matches, not only the form typed.
    */
   isFuzzy: boolean;
