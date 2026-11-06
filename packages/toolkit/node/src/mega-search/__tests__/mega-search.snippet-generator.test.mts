@@ -18,6 +18,7 @@ import {
 } from '../test-utils/in-memory-index.mjs';
 import type { SearchData } from '../test-utils/in-memory-index.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
+import type { DocumentIndex } from '../types.mjs';
 
 const textProcessor = new UkrainianTextProcessor();
 const termMatcher = new TermMatcher(textProcessor);
@@ -206,6 +207,38 @@ describe('SnippetGenerator', () => {
       assert.deepEqual(
         snippets.map((s) => [s.match, s.highlights[0].term, s.confidence]),
         [['начальника', 'начальника', 1]],
+      );
+    });
+
+    it('cuts a reindexed document from its new text, not the one read before', async () => {
+      // Regression guard: raw text was cached by file path alone, so after
+      // an edit the new positions cut the old text ("Наказ" → "Нака").
+      const textFilePath = path.join(rawTextDir, 'edited.txt');
+      const versionOf = async (text: string, lastModified: number) => {
+        await fs.promises.writeFile(textFilePath, text, 'utf8');
+        return buildDocumentIndex('edited.txt', text, {
+          textFilePath,
+          lastModified,
+        });
+      };
+      const snippetsOf = (doc: DocumentIndex, word: string) =>
+        generator.generateSnippets(doc, {
+          queryTokens: [word],
+          matchedWords: new Map([[word, { queryToken: word, confidence: 1 }]]),
+          isFuzzy: false,
+          isPhrase: false,
+          contextBefore: 0,
+          contextAfter: 30,
+        });
+
+      const before = await versionOf('Наказ про відпустку.', 1);
+      assert.equal((await snippetsOf(before, 'наказ'))[0].match, 'Наказ');
+
+      const after = await versionOf('Кошторис затверджено радою.', 2);
+      const [snippet] = await snippetsOf(after, 'кошторис');
+      assert.deepEqual(
+        [snippet.match, snippet.context],
+        ['Кошторис', '<b>Кошторис</b> затверджено радою...'],
       );
     });
 

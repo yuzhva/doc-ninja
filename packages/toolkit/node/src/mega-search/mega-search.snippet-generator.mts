@@ -29,8 +29,9 @@ type SnippetRequest = {
 export type { SnippetRequest };
 
 export class SnippetGenerator {
-  // Cache for raw (pre-normalization) document text, keyed by docId.
-  // Full text is heavy per entry, hence the small cap.
+  // Raw (pre-normalization) text per version of a document. A reindexed
+  // document has new positions, so the text of its previous version must
+  // never be cut by them. Full text is heavy per entry, hence the small cap.
   private rawTextCache = new LRUCache<string, string>(50);
 
   /**
@@ -42,7 +43,8 @@ export class SnippetGenerator {
    * callers can fall back to vocab-reconstructed text.
    */
   private async getRawText(doc: DocumentIndex): Promise<string | null> {
-    const cacheKey = doc.metadata.originalFilePath;
+    const { originalFilePath, lastModified } = doc.metadata;
+    const cacheKey = `${originalFilePath}\u0000${lastModified}`;
     const cached = this.rawTextCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
