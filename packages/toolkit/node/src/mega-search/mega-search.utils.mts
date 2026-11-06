@@ -1,4 +1,4 @@
-import { levenshtein } from './fuzzy.mjs';
+import { editDistance } from './fuzzy.mjs';
 import { DocumentIndex, ProcessedSearchToken } from './types.mjs';
 
 /**
@@ -24,7 +24,7 @@ export function getDocumentToken(
 }
 
 /**
- * Calculate confidence score based on Levenshtein distance.
+ * Calculate confidence score based on the typo distance (editDistance).
  */
 export function calculateMatchConfidence(
   queryTerm: string,
@@ -32,7 +32,7 @@ export function calculateMatchConfidence(
 ): number {
   if (queryTerm === matchedTerm) return 1.0;
 
-  const distance = levenshtein(queryTerm, matchedTerm);
+  const distance = editDistance(queryTerm, matchedTerm);
   const maxLength = Math.max(queryTerm.length, matchedTerm.length);
 
   return Math.max(0, (maxLength - distance) / maxLength);
