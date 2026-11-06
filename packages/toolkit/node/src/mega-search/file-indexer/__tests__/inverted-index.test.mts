@@ -20,6 +20,26 @@ describe('InvertedIndex', () => {
     ]);
   });
 
+  it('returns only the postings of the documents asked for', () => {
+    const index = sampleIndex();
+
+    assert.deepEqual(index.get('наказ', new Set(['/docs/b.txt'])), [
+      { documentId: '/docs/b.txt', frequency: 1, positions: [2] },
+    ]);
+    assert.deepEqual(index.get('бюджет', new Set(['/docs/a.txt'])), []);
+    assert.equal(index.get('unknown', new Set(['/docs/a.txt'])), undefined);
+  });
+
+  it('counts the documents holding any of the terms, each once', () => {
+    const index = sampleIndex();
+
+    assert.equal(index.countDocuments(['наказ']), 2);
+    assert.equal(index.countDocuments(['бюджет']), 1);
+    assert.equal(index.countDocuments(['наказ', 'бюджет']), 2);
+    assert.equal(index.countDocuments(['бюджет', 'unknown']), 1);
+    assert.equal(index.countDocuments([]), 0);
+  });
+
   it('registers each document path once and shares its id across terms', () => {
     assert.deepEqual(sampleIndex().getDocMapping(), [
       '/docs/a.txt',

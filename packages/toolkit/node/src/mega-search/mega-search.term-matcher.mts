@@ -4,7 +4,11 @@ import {
   UkrainianTextProcessor,
   matchesItselfOnly,
 } from './text-processor.mjs';
-import type { DocumentIndex, SearchSnapshot } from './types.mjs';
+import type {
+  DocumentFilter,
+  DocumentIndex,
+  SearchSnapshot,
+} from './types.mjs';
 import { VocabularyIndex } from './vocabulary-index.mjs';
 
 type TermMatchOptions = {
@@ -22,7 +26,13 @@ type TermMatchOptions = {
   maxTypoDistance: number;
 };
 
-type SearchIndex = Pick<SearchSnapshot, 'invertedIndex' | 'stemDictionary'>;
+type SearchIndex = Pick<SearchSnapshot, 'invertedIndex' | 'stemDictionary'> & {
+  /**
+   * The documents searched, when not all: a search in some folders. Matches
+   * hold these documents only, and count the others for scoring alone.
+   */
+  documents?: DocumentFilter;
+};
 
 /** A document word that a query word matched. */
 type MatchedWord = {
@@ -51,24 +61,25 @@ class WordMatch {
     readonly queryToken: string,
     /** Every document word that counts as this query word. */
     readonly words: ReadonlyMap<string, MatchedWord>,
+    /** Of the documents searched only (see SearchIndex.documents). */
     private readonly postingsByDoc: ReadonlyMap<string, StemPosting[]>,
+    /**
+     * How many documents hold a matched stem — the document frequency for
+     * scoring. Of all documents, also in a search of some: a document scores
+     * the same whichever folders are searched. Counted per stem in both
+     * modes, so it needs no document loads.
+     */
+    readonly documentCount: number = postingsByDoc.size,
   ) {}
 
   /**
-   * Documents holding a matched stem. Where only some forms of a stem count
-   * (fuzzy match off, or a stem the stemmer cut short) this is a superset: a
-   * document may hold only other forms of the stem (see positionsIn).
+   * Documents searched that hold a matched stem. Where only some forms of a
+   * stem count (fuzzy match off, or a stem the stemmer cut short) this is a
+   * superset: a document may hold only other forms of the stem (see
+   * positionsIn).
    */
   documentIds(): IterableIterator<string> {
     return this.postingsByDoc.keys();
-  }
-
-  /**
-   * How many documents hold a matched stem — the document frequency for
-   * scoring. Counted per stem in both modes, so it needs no document loads.
-   */
-  get documentCount(): number {
-    return this.postingsByDoc.size;
   }
 
   /**
@@ -361,12 +372,12 @@ class TermMatcher {
     queryToken: string,
     forms: ReadonlyMap<string, ReadonlySet<string> | null>,
     words: ReadonlyMap<string, MatchedWord>,
-    { invertedIndex }: SearchIndex,
+    { invertedIndex, documents }: SearchIndex,
   ): WordMatch {
     const postingsByDoc = new Map<string, StemPosting[]>();
 
     for (const [stem, stemForms] of forms) {
-      for (const entry of invertedIndex.get(stem) ?? []) {
+      for (const entry of invertedIndex.get(stem, documents) ?? []) {
         let postings = postingsByDoc.get(entry.documentId);
         if (!postings) {
           postings = [];
@@ -376,7 +387,12 @@ class TermMatcher {
       }
     }
 
-    return new WordMatch(queryToken, words, postingsByDoc);
+    return new WordMatch(
+      queryToken,
+      words,
+      postingsByDoc,
+      documents ? invertedIndex.countDocuments(forms.keys()) : undefined,
+    );
   }
 }
 
