@@ -21,6 +21,8 @@
     "build": "ms-cli source-code --exec compile --config ./tsconfig.build.json",
     "test": "node --import tsx --import ./node/test-utils/setup.mts --test \"node/src/**/*.test.mts\"",
     "test:watch": "node --import tsx --import ./node/test-utils/setup.mts --test --watch \"node/src/**/*.test.mts\"",
+    "mega-search:snapshot": "node --import tsx --import ./node/test-utils/setup.mts ./node/src/mega-search/test-utils/regression/snapshot.mts",
+    "mega-search:compare": "node --import tsx ./node/src/mega-search/test-utils/regression/compare.mts",
     "nlp:models--install": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts",
     "nlp:models--install-default": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts --default --verify",
     "nlp:models--install-list": "tsx ./node/src/nlp-analyzer/scripts/install-models.ts --list",
