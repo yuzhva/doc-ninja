@@ -9,6 +9,13 @@ import { InvertedIndex } from './inverted-index.mjs';
 /** Files a document word under its stem in a stem dictionary. */
 type AddWord = (stem: string, word: string) => void;
 
+/**
+ * The key each vocab word is indexed under, null for none, worked out once a
+ * build: documents share most of their words (on 362 documents, 36 thousand
+ * distinct words in 337 thousand vocab entries).
+ */
+type IndexKeys = Map<string, string | null>;
+
 /** Adds to a stem dictionary no search reads yet. */
 const addingTo =
   (stems: Map<string, Set<string>>): AddWord =>
@@ -72,6 +79,7 @@ export class IndexBuilder {
     const updatedIndex = invertedIndex.fork();
     const updatedStems = new Map(stemDictionary);
     const addWord = addingToCopy(updatedStems);
+    const keys: IndexKeys = new Map();
 
     for (const stem of updatedIndex.removeDocuments(paths)) {
       updatedStems.delete(stem);
@@ -79,7 +87,7 @@ export class IndexBuilder {
     for (const docPath of paths) {
       const doc = documentCache.get(docPath);
       if (doc?.metadata.indexed) {
-        this.addDocument(doc, updatedIndex, addWord);
+        this.addDocument(doc, updatedIndex, addWord, keys);
       }
     }
     return { invertedIndex: updatedIndex, stemDictionary: updatedStems };
@@ -101,6 +109,7 @@ export class IndexBuilder {
       invertedIndex.clear();
       stemDictionary.clear();
       const addWord = addingTo(stemDictionary);
+      const keys: IndexKeys = new Map();
 
       const allDocuments = Array.from(documentCache.values()).filter(
         (doc) => doc.metadata.indexed,
@@ -134,6 +143,7 @@ export class IndexBuilder {
             docIndex,
             invertedIndex,
             addWord,
+            keys,
           );
 
           totalTermsProcessed += docIndex.vocab.length;
@@ -222,23 +232,16 @@ export class IndexBuilder {
     docIndex: DocumentIndex,
     invertedIndex: InvertedIndex,
     addWord: AddWord,
+    keys: IndexKeys,
   ): number {
     const termPositions = new Map<string, number[]>();
     const vocabStemMap = new Array<string | null>(docIndex.vocab.length);
 
     for (let v = 0; v < docIndex.vocab.length; v++) {
       const term = docIndex.vocab[v];
-      const normalized = this.textProcessor.tokenize(term)[0]?.normalized;
-
-      if (!normalized) {
-        vocabStemMap[v] = null;
-        continue;
-      }
-
-      // REVIEW: the {isInflectedWordFormsAllowed} been used before
-      const stemmedTerm = this.textProcessor.stemWord(normalized);
-
+      const stemmedTerm = this.keyOf(term, keys);
       vocabStemMap[v] = stemmedTerm;
+      if (stemmedTerm === null) continue;
 
       // A number or a function word has no other forms to look up: it is
       // matched from its postings alone (TermMatcher), so the dictionary
@@ -266,5 +269,17 @@ export class IndexBuilder {
       );
     });
     return termPositions.size;
+  }
+
+  /** The key a vocab word is indexed under, its stem; null when it is no token. */
+  private keyOf(word: string, keys: IndexKeys): string | null {
+    let key = keys.get(word);
+    if (key === undefined) {
+      const normalized = this.textProcessor.tokenize(word)[0]?.normalized;
+      // REVIEW: the {isInflectedWordFormsAllowed} been used before
+      key = normalized ? this.textProcessor.stemWord(normalized) : null;
+      keys.set(word, key);
+    }
+    return key;
   }
 }
