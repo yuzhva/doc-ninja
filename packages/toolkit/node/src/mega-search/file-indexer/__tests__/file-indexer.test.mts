@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { createTempCorpus, later } from '../../test-utils/temp-corpus.mjs';
+import {
+  FIXTURE_MTIME,
+  createTempCorpus,
+  later,
+} from '../../test-utils/temp-corpus.mjs';
 import type { TempCorpus } from '../../test-utils/temp-corpus.mjs';
 import { UkrainianTextProcessor } from '../../text-processor.mjs';
 import type { SearchConfig } from '../../types.mjs';
@@ -104,6 +108,27 @@ describe('FileIndexer', () => {
 
     assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
     assert.deepEqual(docsWithWord(await indexed(), 'наказ'), ['a.txt']);
+  });
+
+  it('after a rebuild from per-document caches, re-indexes nothing on the next start', async () => {
+    // Regression guard: a document read back from its per-document cache
+    // kept fs.stat's fractions of a millisecond, while discovery reports
+    // whole ones — so from then on every start took every document for
+    // changed, re-read them all and rebuilt the index.
+    const seconds = FIXTURE_MTIME.getTime() / 1000 + 0.1234567;
+    for (const file of ['a.txt', 'b.txt']) {
+      fs.utimesSync(corpus.pathOf(file), seconds, seconds);
+    }
+    const globalIndex = '.cache/global-inverted-index.json.gz';
+    await indexed();
+    await corpus.remove(globalIndex);
+    await indexed();
+    const savedAt = fs.statSync(corpus.pathOf(globalIndex)).mtimeMs;
+
+    const restarted = await indexed();
+
+    assert.equal(fs.statSync(corpus.pathOf(globalIndex)).mtimeMs, savedAt);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
   });
 
   it('picks up a single added file on rebuild', async () => {
