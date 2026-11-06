@@ -12,6 +12,7 @@ import { DocumentProcessor } from '../document-processor.mjs';
 import { FileScannerIndexer } from '../file-scanner.indexer.mjs';
 import { IndexBuilder } from '../index-builder.mjs';
 import { IndexStorage } from '../index-storage.mjs';
+import { INDEX_VERSION } from '../index-version.mjs';
 import { InvertedIndex } from '../inverted-index.mjs';
 
 const logger = createLogger('test:index-storage');
@@ -122,6 +123,27 @@ describe('IndexStorage', () => {
     await saveIndex();
     await writeMarker(JSON.stringify({ format: 'v8-chunked' }));
 
+    assert.equal(await newStorage().loadGlobalIndex(), null);
+  });
+
+  it('treats an index from another index version as missing, so the index gets rebuilt', async () => {
+    await saveIndex();
+    const marker = JSON.parse(
+      await fs.promises.readFile(
+        resolveCachePaths(config).globalIndexPath,
+        'utf8',
+      ),
+    );
+    assert.equal(marker.indexVersion, INDEX_VERSION);
+    assert.ok(await newStorage().loadGlobalIndex());
+
+    const { indexVersion, ...unversioned } = marker; // before versioning
+    await writeMarker(JSON.stringify(unversioned));
+    assert.equal(await newStorage().loadGlobalIndex(), null);
+
+    await writeMarker(
+      JSON.stringify({ ...marker, indexVersion: INDEX_VERSION + 1 }),
+    );
     assert.equal(await newStorage().loadGlobalIndex(), null);
   });
 

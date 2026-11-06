@@ -13,6 +13,7 @@ import type {
   SearchConfig,
 } from '../../types.mjs';
 import { DocumentProcessor } from '../document-processor.mjs';
+import { INDEX_VERSION } from '../index-version.mjs';
 
 const ORDER_TEXT = 'Наказ про бюджет. Наказ виконано.';
 
@@ -41,6 +42,20 @@ describe('DocumentProcessor', () => {
 
   const indexCacheFile = (relativePath: string) =>
     `.cache/index/${relativePath}.index.json`;
+
+  /**
+   * Rewrites a per-document index as an install from before index versioning
+   * left it, optionally with the vocab an older tokenizer produced.
+   */
+  const makeUnversioned = async (relativePath: string, vocab?: string[]) => {
+    const file = indexCacheFile(relativePath);
+    const { indexVersion, ...cached } = JSON.parse(await corpus.read(file));
+    await corpus.write(
+      file,
+      JSON.stringify(vocab ? { ...cached, vocab } : cached),
+      later(),
+    );
+  };
 
   beforeEach(async () => {
     corpus = await createTempCorpus({ 'orders/order.txt': ORDER_TEXT });
@@ -151,6 +166,34 @@ describe('DocumentProcessor', () => {
       assert.deepEqual(doc.vocab, ['наказ', 'бюджет', 'виконано']);
     });
 
+    it('stamps the per-document index with the INDEX_VERSION that built it', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+
+      const cached = JSON.parse(
+        await corpus.read(indexCacheFile('orders/order.txt')),
+      );
+      assert.equal(cached.indexVersion, INDEX_VERSION);
+    });
+
+    it('re-tokenizes a per-document index from another index version, from the cached text', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+      await makeUnversioned('orders/order.txt', ['старий', 'токенізатор', 'x']);
+      // new content with the old mtime: the extracted text cache stays valid,
+      // so a re-extraction would show up as "Інший зміст"
+      await corpus.write('orders/order.txt', 'Інший зміст.');
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.deepEqual(doc.vocab, ['наказ', 'бюджет', 'виконано']);
+      assert.equal(
+        JSON.parse(await corpus.read(indexCacheFile('orders/order.txt')))
+          .indexVersion,
+        INDEX_VERSION,
+      );
+    });
+
     it('re-extracts a source edited after it was cached (next app start)', async () => {
       await newProcessor().indexDocument(await discovered('orders/order.txt'));
       await corpus.write('orders/order.txt', 'Кошторис затверджено.', later());
@@ -250,6 +293,19 @@ describe('DocumentProcessor', () => {
         ),
         true,
       );
+    });
+
+    it('is true when the cached per-document index is from another index version', async () => {
+      const metadata = await discovered('orders/order.txt');
+      await newProcessor().indexDocument(metadata);
+      await makeUnversioned('orders/order.txt');
+      const documentCache = new Map<string, DocumentIndex>();
+
+      assert.equal(
+        await newProcessor().needsReindexing(metadata, documentCache),
+        true,
+      );
+      assert.equal(documentCache.size, 0);
     });
 
     it('is true when the cached per-document index is corrupted', async () => {

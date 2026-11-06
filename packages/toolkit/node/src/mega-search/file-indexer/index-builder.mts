@@ -11,11 +11,41 @@ export class IndexBuilder {
     private logger: Logger,
   ) {}
 
+  /**
+   * Brings the inverted index up to date for the given documents only: drops
+   * their old postings and adds their current ones, without reading any other
+   * document. Stems no document holds any more leave the stem dictionary.
+   * A word that just disappeared from a stem that other documents still hold
+   * stays listed under it until the next full rebuild. It matches no position,
+   * so search results are the same.
+   */
+  updateDocuments(
+    documentCache: Map<string, DocumentIndex>,
+    invertedIndex: InvertedIndex,
+    stemDictionary: Map<string, Set<string>>,
+    documentPaths: Iterable<string>,
+  ): void {
+    const paths = new Set(documentPaths);
+    this.logger.info(
+      `🔗 Updating the inverted index for ${paths.size} documents...`,
+    );
+
+    for (const stem of invertedIndex.removeDocuments(paths)) {
+      stemDictionary.delete(stem);
+    }
+    for (const docPath of paths) {
+      const doc = documentCache.get(docPath);
+      if (doc?.metadata.indexed) {
+        this.addDocument(doc, invertedIndex, stemDictionary);
+      }
+    }
+  }
+
+  /** Rebuilds the inverted index and the stem dictionary from every document. */
   async updateInvertedIndexBatch(
     documentCache: Map<string, DocumentIndex>,
     invertedIndex: InvertedIndex,
     stemDictionary: Map<string, Set<string>>,
-    documentPaths?: string[],
   ): Promise<void> {
     const startTime = Date.now();
     this.logger.info(`🔗 Starting inverted index rebuild...`);
@@ -55,49 +85,11 @@ export class IndexBuilder {
         let docTermsProcessed = 0;
 
         try {
-          const termPositions = new Map<string, number[]>();
-          const vocabStemMap = new Array<string | null>(docIndex.vocab.length);
-
-          for (let v = 0; v < docIndex.vocab.length; v++) {
-            const term = docIndex.vocab[v];
-            const normalized = this.textProcessor.tokenize(term)[0]?.normalized;
-
-            if (!normalized) {
-              vocabStemMap[v] = null;
-              continue;
-            }
-
-            // REVIEW: the {isTypoToleranceEnabled} been used before
-            const stemmedTerm = this.textProcessor.stemWord(normalized);
-
-            vocabStemMap[v] = stemmedTerm;
-
-            if (!stemDictionary.has(stemmedTerm)) {
-              stemDictionary.set(stemmedTerm, new Set());
-            }
-            stemDictionary.get(stemmedTerm)!.add(term);
-          }
-
-          for (let i = 0; i < docIndex.positions.length; i++) {
-            const [vocabIndex] = docIndex.positions[i];
-            const stemmedTerm = vocabStemMap[vocabIndex];
-
-            if (!stemmedTerm) continue;
-
-            if (!termPositions.has(stemmedTerm)) {
-              termPositions.set(stemmedTerm, []);
-            }
-            termPositions.get(stemmedTerm)!.push(i);
-          }
-
-          termPositions.forEach((positions, stemmedTerm) => {
-            invertedIndex.addEntry(
-              stemmedTerm,
-              docIndex.metadata.originalFilePath,
-              positions,
-            );
-            docTermsProcessed++;
-          });
+          docTermsProcessed = this.addDocument(
+            docIndex,
+            invertedIndex,
+            stemDictionary,
+          );
 
           totalTermsProcessed += docIndex.vocab.length;
           processedDocs++;
@@ -175,5 +167,59 @@ export class IndexBuilder {
       );
       throw error;
     }
+  }
+
+  /**
+   * Adds one document's postings and words to the index.
+   * @returns how many terms it added
+   */
+  private addDocument(
+    docIndex: DocumentIndex,
+    invertedIndex: InvertedIndex,
+    stemDictionary: Map<string, Set<string>>,
+  ): number {
+    const termPositions = new Map<string, number[]>();
+    const vocabStemMap = new Array<string | null>(docIndex.vocab.length);
+
+    for (let v = 0; v < docIndex.vocab.length; v++) {
+      const term = docIndex.vocab[v];
+      const normalized = this.textProcessor.tokenize(term)[0]?.normalized;
+
+      if (!normalized) {
+        vocabStemMap[v] = null;
+        continue;
+      }
+
+      // REVIEW: the {isTypoToleranceEnabled} been used before
+      const stemmedTerm = this.textProcessor.stemWord(normalized);
+
+      vocabStemMap[v] = stemmedTerm;
+
+      if (!stemDictionary.has(stemmedTerm)) {
+        stemDictionary.set(stemmedTerm, new Set());
+      }
+      stemDictionary.get(stemmedTerm)!.add(term);
+    }
+
+    for (let i = 0; i < docIndex.positions.length; i++) {
+      const [vocabIndex] = docIndex.positions[i];
+      const stemmedTerm = vocabStemMap[vocabIndex];
+
+      if (!stemmedTerm) continue;
+
+      if (!termPositions.has(stemmedTerm)) {
+        termPositions.set(stemmedTerm, []);
+      }
+      termPositions.get(stemmedTerm)!.push(i);
+    }
+
+    termPositions.forEach((positions, stemmedTerm) => {
+      invertedIndex.addEntry(
+        stemmedTerm,
+        docIndex.metadata.originalFilePath,
+        positions,
+      );
+    });
+    return termPositions.size;
   }
 }
