@@ -64,10 +64,21 @@ interface InvertedIndexEntry {
   positions: number[];
 }
 
+/** Which documents a search reads, by path: see PostingsReader.get. */
+type DocumentFilter = Pick<ReadonlySet<string>, 'has'>;
+
 /** What a search reads from the inverted index. */
 interface PostingsReader {
-  /** The term's postings, one per document holding it; undefined if none does. */
-  get(term: string): InvertedIndexEntry[] | undefined;
+  /**
+   * The term's postings, one per document holding it; undefined if none does.
+   * With `documents`, only theirs: the others' positions aren't even read.
+   */
+  get(
+    term: string,
+    documents?: DocumentFilter,
+  ): InvertedIndexEntry[] | undefined;
+  /** How many documents hold at least one of the terms, of all indexed. */
+  countDocuments(terms: Iterable<string>): number;
 }
 
 /**
@@ -168,6 +179,7 @@ interface SafeSearchResult<T> {
 }
 
 export type {
+  DocumentFilter,
   DocumentIndex,
   DocumentMetadata,
   InvertedIndexEntry,
