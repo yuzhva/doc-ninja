@@ -11,6 +11,24 @@ import { UkrainianTextProcessor } from '../text-processor.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
 
+/**
+ * Whether `doc` was indexed from the file as discovery reports it now.
+ *
+ * Discovery reports whole milliseconds, while a document read back from its
+ * per-document cache carries fs.stat's fractions of one. Times less than
+ * 1 ms apart are the same version — compared exactly, every such document
+ * counted as changed on every start, and the whole index was rebuilt.
+ */
+function isIndexedAsIs(
+  doc: DocumentIndex | undefined,
+  file: DocumentMetadata,
+): boolean {
+  return (
+    !!doc?.metadata.indexed &&
+    Math.abs(doc.metadata.lastModified - file.lastModified) < 1
+  );
+}
+
 class DocumentProcessor {
   private textProcessor = new UkrainianTextProcessor();
   private documentExtractor = new DocumentExtractor();
@@ -104,11 +122,7 @@ class DocumentProcessor {
     documentCache: Map<string, DocumentIndex>,
   ): Promise<boolean> {
     const cached = documentCache.get(metadata.originalFilePath);
-    if (cached) {
-      if (!cached.metadata.indexed) return true;
-      if (cached.metadata.lastModified !== metadata.lastModified) return true;
-      return false;
-    }
+    if (cached) return !isIndexedAsIs(cached, metadata);
 
     const indexPath = this.getIndexCachePath(metadata.originalFilePath);
     try {
