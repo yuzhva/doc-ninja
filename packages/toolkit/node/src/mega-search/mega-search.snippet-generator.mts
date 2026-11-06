@@ -60,12 +60,23 @@ type SnippetRequest = {
 
 export type { SnippetRequest };
 
+/**
+ * How much document text snippets keep in memory, in characters — 2 bytes
+ * each, as the text is mostly Cyrillic, so 64 MB at most. A folder of 362
+ * office documents holds 25 million. A text that isn't kept is read from
+ * disk and decoded again for every search showing that document, which
+ * made a search listing all of them take up to half a second.
+ */
+const TEXT_KEPT_CHARACTERS = 32_000_000;
+
 export class SnippetGenerator {
   // Raw (pre-normalization) text per version of a document — null for a
   // version whose text is gone. A reindexed document has new positions, so
-  // the text of its previous version must never be cut by them. Full text is
-  // heavy per entry, hence the small cap.
-  private rawTextCache = new LRUCache<string, string | null>(50);
+  // the text of its previous version must never be cut by them.
+  private rawTextCache = new LRUCache<string, string | null>(
+    TEXT_KEPT_CHARACTERS,
+    (text) => text?.length ?? 1,
+  );
 
   /**
    * Read the original raw document text (as written to disk pre-normalization),
