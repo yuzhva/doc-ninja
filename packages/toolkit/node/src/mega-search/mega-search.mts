@@ -1,5 +1,4 @@
 import path from 'path';
-import * as v8 from 'v8';
 
 import { SUPPORTED_EXTENSIONS } from '../document-extractor/index.mjs';
 import { BM25Scorer } from './bm25-scorer.mjs';
@@ -123,25 +122,6 @@ class MegaSearch {
       k1: config.bm25K1 ?? 1.2,
       b: config.bm25B ?? 0.75,
     });
-  }
-
-  /**
-   * Monitors memory usage and pauses execution if heap usage is high.
-   * Prevents OOM during heavy search operations.
-   */
-  private async manageMemoryPressure(): Promise<void> {
-    const heapUsed = process.memoryUsage().heapUsed;
-    const heapLimit = v8.getHeapStatistics().heap_size_limit;
-    const usageRatio = heapUsed / heapLimit;
-
-    if (usageRatio > 0.9) {
-      logger.warn(
-        `⚠️ Critical memory usage (${(usageRatio * 100).toFixed(1)}%) during search. Pausing...`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } else if (usageRatio > 0.8) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
   }
 
   async initialize(): Promise<void> {
@@ -633,11 +613,7 @@ class MegaSearch {
       });
   }
 
-  /**
-   * Generate snippets/highlights for a page of scored results, yielding to
-   * the event loop periodically so memory pressure can be checked during
-   * heavy snippet generation.
-   */
+  /** Generate snippets/highlights for a page of scored results. */
   private async buildPaginatedResults(
     params: BuildPaginatedResultsParams,
   ): Promise<PaginatedSearchResult['results']> {
@@ -664,11 +640,6 @@ class MegaSearch {
           includeHighlights,
         ),
       );
-
-      // Check memory pressure every 5 documents during heavy snippet generation
-      if (i % 5 === 0) {
-        await this.manageMemoryPressure();
-      }
     }
 
     return paginatedResults;
@@ -977,86 +948,6 @@ class MegaSearch {
       snippets,
       highlights,
     };
-  }
-
-  async testDocumentParsing(): Promise<void> {
-    logger.info('Testing document parsing...');
-    const overallStartTime = Date.now(); // ✅ Renamed to avoid shadowing
-
-    const files = await this.fileIndexer.discoverFiles();
-    logger.info(`Found ${files.length} files to test`);
-
-    for (const file of files.slice(0, 5)) {
-      try {
-        logger.info(`\n${'='.repeat(50)}`);
-        logger.info(
-          `Testing: ${file.fileName} (${(file.size / 1024).toFixed(1)} KB)`,
-        );
-        logger.info(`Original path: ${file.originalFilePath}`);
-        if (file.textFilePath) {
-          logger.info(`Text cache path: ${file.textFilePath}`);
-        }
-
-        const extractionStartTime = Date.now(); // ✅ Renamed for clarity
-        // Use FileIndexer to get text - this uses the cached .txt if available
-        // This ensures we are testing against the actual content used for indexing
-        const text = await this.fileIndexer.extractTextFromFile(
-          file.originalFilePath,
-        );
-        const extractionTime = Date.now() - extractionStartTime;
-
-        logger.info(
-          `Extracted ${text.length} characters in ${extractionTime}ms`,
-        );
-
-        if (text.length > 0) {
-          const language = this.textProcessor.detectLanguage(text);
-          logger.info(`Detected language: ${language}`);
-
-          const preview = text.substring(0, 300).replace(/\s+/g, ' ');
-          logger.info(`Preview: "${preview}${text.length > 300 ? '...' : ''}"`);
-
-          const tokens = this.textProcessor.tokenize(text);
-          logger.info(`Tokenized into ${tokens.length} tokens`);
-
-          if (tokens.length > 0) {
-            logger.info(
-              `First 15 tokens: ${tokens
-                .slice(0, 15)
-                .map((t) => t.term)
-                .join(', ')}`,
-            );
-
-            const uniqueTokens = new Set(tokens.map((t) => t.term));
-            logger.info(`Unique tokens: ${uniqueTokens.size}`);
-
-            const ukrainianTokens = tokens.filter((t) =>
-              /[а-яїієґ]/.test(t.term),
-            );
-            const englishTokens = tokens.filter(
-              (t) => /[a-z]/.test(t.term) && !/[а-яїієґ]/.test(t.term),
-            );
-            logger.info(
-              `Language breakdown: ${ukrainianTokens.length} Ukrainian, ${englishTokens.length} English tokens`,
-            );
-          }
-        } else {
-          logger.info(
-            '⚠️  No text extracted - this file might be corrupted or use unsupported encoding',
-          );
-        }
-      } catch (error) {
-        logger.error(
-          `❌ Failed to parse ${file.fileName}:`,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-
-    logger.info(`\n${'='.repeat(50)}`);
-    logger.info(
-      `Document parsing test completed in ${Date.now() - overallStartTime}ms`,
-    );
   }
 
   /**

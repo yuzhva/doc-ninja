@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as v8 from 'v8';
 
 import { resolveCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
@@ -413,9 +412,6 @@ class FileIndexer {
         if (results[i]) indexed.push(file.originalFilePath);
         else errors++;
       });
-
-      // Replaced manual GC with memory pressure management
-      await this.manageMemoryPressure();
     }
     return { indexed, errors };
   }
@@ -433,15 +429,12 @@ class FileIndexer {
     let errors = 0;
 
     const runWorker = async (chunk: DocumentMetadata[]) => {
-      let workerIndexed = 0;
       for (const file of chunk) {
         if (!(await this.indexInto(file, documentCache))) {
           errors++;
           continue;
         }
         indexed.push(file.originalFilePath);
-        // Check memory pressure periodically within worker
-        if (++workerIndexed % 5 === 0) await this.manageMemoryPressure();
       }
     };
 
@@ -451,31 +444,6 @@ class FileIndexer {
     }
     await Promise.all(chunks.map(runWorker));
     return { indexed, errors };
-  }
-
-  /**
-   * Monitors memory usage and pauses execution if heap usage is high.
-   * This allows V8's garbage collector to run naturally without blocking the main thread
-   * via global.gc(), and prevents OOM crashes by slowing down allocation rate.
-   */
-  private async manageMemoryPressure(): Promise<void> {
-    const heapUsed = process.memoryUsage().heapUsed;
-    const heapLimit = v8.getHeapStatistics().heap_size_limit;
-    const usageRatio = heapUsed / heapLimit;
-
-    if (usageRatio > 0.85) {
-      this.logger.warn(
-        `⚠️ High memory usage (${(usageRatio * 100).toFixed(1)}%). Pausing for GC...`,
-      );
-      // Long pause (5s) to allow V8 to perform major GC cycles
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    } else if (usageRatio > 0.7) {
-      // Short pause (200ms) to allow minor GC / incremental marking
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    } else {
-      // Minimal pause to yield to event loop
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
   }
 
   private async selectIndexingMethod(
