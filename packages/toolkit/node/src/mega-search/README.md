@@ -290,7 +290,7 @@ change that indexes the same text differently (tokenizer, normalization, functio
 next start rebuilds both from the cached text (level 1), so no document is parsed again.
 
 A few changed or deleted files update the inverted index for those documents only. A full rebuild,
-which reads every document, happens once `indexRebuildThreshold` (default 0.1%) of the documents
+which reads every document, happens once `indexRebuildThreshold` (default 20%) of the documents
 changed.
 
 Searches read the index in place, never a copy of it, and never see an update half-done: until

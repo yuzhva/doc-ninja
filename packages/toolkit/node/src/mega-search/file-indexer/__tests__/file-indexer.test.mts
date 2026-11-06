@@ -216,6 +216,24 @@ describe('FileIndexer', () => {
     assert.deepEqual(docsWithWord(await indexed(), 'кошторис'), ['a.txt']);
   });
 
+  it('by default, updates the index in place for a change to a few documents', async () => {
+    // Regression guard: with a threshold of 0.1%, one edit in a folder of
+    // under 1000 documents rebuilt the index from every document
+    for (let i = 1; i <= 8; i++) {
+      await corpus.write(`report-${i}.txt`, `Звіт номер ${i}.`);
+    }
+    await indexed();
+    await corpus.write('a.txt', 'Кошторис затверджено.', later());
+    // a full rebuild reads every document, and would drop b.txt without it
+    await corpus.remove('.cache/index/b.txt.index.json');
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
+    assert.deepEqual(docsWithWord(restarted, 'бюджет'), ['b.txt']);
+  });
+
   describe('with fewer changes than a full rebuild takes', () => {
     // with indexRebuildThreshold 1, only a change to every document rebuilds
     // the inverted index from all of them, as 1–4 changes in 5000 documents
