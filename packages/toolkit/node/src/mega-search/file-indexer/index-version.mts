@@ -10,7 +10,7 @@
  * History:
  * 1. (unversioned) everything before versioning
  * 2. apostrophes: U+2019 and U+02BC inside words, none at their edges
- * 3. no hyphens at word edges ("водія- електрика" → "водія", "електрика")
+ * 3. no hyphens at word edges ("інженера- конструктора" → "інженера", "конструктора")
  */
 const INDEX_VERSION = 3;
 

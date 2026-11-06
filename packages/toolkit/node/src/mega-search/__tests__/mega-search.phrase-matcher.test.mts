@@ -34,13 +34,21 @@ describe('PhraseMatcher', () => {
   const phrase = (
     query: string,
     maxWordsBetween: number,
-    { isFuzzy = true, maxTypoDistance = 0 }: Partial<TermMatchOptions> = {},
+    {
+      isFuzzy = true,
+      isRelatedWordsAllowed = true,
+      maxTypoDistance = 0,
+    }: Partial<TermMatchOptions> = {},
   ) =>
     matcher.findPhrases(
       textProcessor
         .tokenize(query)
         .map((token) =>
-          termMatcher.match(token.term, { isFuzzy, maxTypoDistance }, data),
+          termMatcher.match(
+            token.term,
+            { isFuzzy, isRelatedWordsAllowed, maxTypoDistance },
+            data,
+          ),
         ),
       maxWordsBetween,
       data.docCache,
