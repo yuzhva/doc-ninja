@@ -25,7 +25,7 @@ class FileScannerIndexer {
 
   async discoverFiles(): Promise<DocumentMetadata[]> {
     try {
-      this.logger.info(`Starting file discovery ${this.config.rootDirectory}`);
+      this.logger.debug(`Starting file discovery ${this.config.rootDirectory}`);
 
       const items = await FileScannerNode.scanDirectory(
         this.config.rootDirectory,

@@ -260,7 +260,7 @@ export class SnippetGenerator {
 
     const duration = Date.now() - start;
     if (duration > 10) {
-      logger.info(
+      logger.debug(
         `[PERF] Highlights generation for ${doc.metadata.fileName}: ${duration}ms`,
       );
     }
@@ -299,7 +299,7 @@ export class SnippetGenerator {
 
     const duration = Date.now() - start;
     if (duration > 10) {
-      logger.info(
+      logger.debug(
         `[PERF] Snippet extraction for ${doc.metadata.fileName}: ${duration}ms`,
       );
     }
