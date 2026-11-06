@@ -124,8 +124,8 @@ interface SearchConfig {
    * The share of indexed documents that need re-indexing to rebuild the
    * inverted index from every document. Fewer changes update it for the
    * changed documents only, which reads no other document from disk. Either
-   * way every change is applied. A lower value means more frequent full
-   * rebuilds. Default: 0.001 (0.1%).
+   * way every change is applied, in the next search. A lower value means
+   * more frequent full rebuilds. Default: 0.2 (a fifth).
    */
   indexRebuildThreshold?: number;
   /**

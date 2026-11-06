@@ -240,14 +240,22 @@ class FileIndexer {
   /**
    * How many re-indexed files it takes to rebuild the inverted index from
    * every document rather than update it for the changed ones only.
+   *
+   * Either way the change is in the next search. An update in place reads
+   * the changed documents only, and takes a pass over the postings: on 362
+   * documents, 39 ms for one changed, 540 ms for 100. A full rebuild reads
+   * every document: 1.9 s. In place is quicker all the way up, but it runs
+   * in one go — a search waits for it to finish, while a full rebuild lets
+   * searches read the index from before. Past a fifth of the documents, the
+   * wait isn't worth it.
    */
   private getRebuildThresholds(): {
     rebuildThreshold: number;
     minFiles: number;
   } {
     return {
-      // a full rebuild once at least 0.1% of the indexed documents changed
-      rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001,
+      // a full rebuild once at least a fifth of the indexed documents changed
+      rebuildThreshold: this.config.indexRebuildThreshold ?? 0.2,
       // ... and at least N files
       minFiles: this.config.minFilesForRebuild ?? 1,
     };
