@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { createLogger } from '../../shared/logger.mjs';
 import { createTempCorpus, later } from '../../test-utils/temp-corpus.mjs';
 import type { TempCorpus } from '../../test-utils/temp-corpus.mjs';
-import { UkrainianTextProcessor } from '../../text-processor.mjs';
 import type {
   DocumentIndex,
   DocumentMetadata,
@@ -114,25 +113,20 @@ describe('DocumentProcessor', () => {
       assert.ok(corpus.exists(indexCacheFile('orders/order.txt')));
     });
 
-    it('persists stemmed term frequencies on disk but keeps them out of memory', async () => {
-      const doc = await newProcessor().indexDocument(
-        await discovered('orders/order.txt'),
-      );
+    it('saves what a document is read back with, and nothing else', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
       const onDisk = JSON.parse(
         await corpus.read(indexCacheFile('orders/order.txt')),
       );
 
-      const stem = (word: string) =>
-        new UkrainianTextProcessor().stemWord(word);
-
-      assert.deepEqual(onDisk.termFrequency, {
-        [stem('наказ')]: 2,
-        [stem('про')]: 1,
-        [stem('бюджет')]: 1,
-        [stem('виконано')]: 1,
-      });
-      // memory optimization — the inverted index carries frequencies instead
-      assert.equal(doc.termFrequency.size, 0);
+      assert.deepEqual(Object.keys(onDisk).sort(), [
+        'indexVersion',
+        'joints',
+        'metadata',
+        'positions',
+        'vocab',
+        'wordCount',
+      ]);
     });
 
     it('keeps what glues the parts of a number together, in memory, on disk and when read back', async () => {

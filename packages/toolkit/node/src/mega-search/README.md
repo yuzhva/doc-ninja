@@ -286,7 +286,7 @@ The system uses BM25 by default (like modern search engines):
 Multi-level intelligent caching:
 
 1. **Text Extraction Cache**: Saves .txt files to avoid re-parsing
-2. **Document Index Cache**: Saves tokenization and frequency data
+2. **Document Index Cache**: Saves each document's words and where they are
 3. **Global Inverted Index**: Compressed full-text search index
 4. **LRU Memory Cache**: Hot data in memory for fast access
 

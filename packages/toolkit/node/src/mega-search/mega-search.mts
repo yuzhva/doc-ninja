@@ -450,9 +450,8 @@ class MegaSearch {
       `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
     );
 
-    // Term frequencies come from the matched positions, not
-    // doc.termFrequency, which is emptied in memory once a document is
-    // indexed (see DocumentProcessor) — reading it scored every phrase 0.
+    // Term frequencies come from the matched positions: a document keeps no
+    // others (it once kept them empty in memory, and every phrase scored 0).
     const scoringWords = this.uniqueByQueryToken(words);
 
     for (const docId of filteredDocIds) {

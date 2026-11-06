@@ -53,7 +53,6 @@ interface DocumentIndex {
    * findJoints.
    */
   joints: Record<number, string>;
-  termFrequency: Map<string, number>;
   /** Words only: the numbers among `positions` don't count. */
   wordCount: number;
   paragraphs?: ParagraphInfo[]; // Add paragraph structure

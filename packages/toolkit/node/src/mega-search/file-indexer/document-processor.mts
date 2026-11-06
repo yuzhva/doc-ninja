@@ -147,7 +147,6 @@ class DocumentProcessor {
         try {
           const cached = await this.readCachedIndex(indexPath, metadata);
           if (!cached) return true;
-          cached.termFrequency = new Map();
           cached.metadata.lastModified = sourceStat.mtimeMs;
           cached.metadata.size = sourceStat.size;
 
@@ -229,7 +228,6 @@ class DocumentProcessor {
             ? await this.readCachedIndex(indexPath, metadata)
             : null;
         if (cached) {
-          cached.termFrequency = new Map(Object.entries(cached.termFrequency));
           cached.metadata.lastModified = srcStat.mtimeMs;
           cached.metadata.size = srcStat.size;
           cached.metadata.indexed = true;
@@ -282,12 +280,14 @@ class DocumentProcessor {
       }
 
       const tIndexStart = Date.now();
-      const termFrequency = new Map<string, number>();
       const vocab: string[] = [];
       const vocabMap = new Map<string, number>();
       // vocabIndex, charStart, charEnd of each token in turn
-      const positions = new Array<number>(rawTokens.length * 3);
-      const stemCache = new Map<string, string>();
+      const positions = new Uint32Array(rawTokens.length * 3);
+      // Words only: numbers and function words leave BM25 document lengths
+      // as they were
+      let wordCount = 0;
+      const vocabCountsAsWord: boolean[] = [];
 
       rawTokens.forEach((token, tokenIndex) => {
         let vocabIndex = vocabMap.get(token.term);
@@ -295,23 +295,13 @@ class DocumentProcessor {
           vocabIndex = vocab.length;
           vocab.push(token.term);
           vocabMap.set(token.term, vocabIndex);
+          vocabCountsAsWord.push(countsAsWord(token.term));
         }
+        if (vocabCountsAsWord[vocabIndex]) wordCount++;
 
         positions[tokenIndex * 3] = vocabIndex;
         positions[tokenIndex * 3 + 1] = token.charStart;
         positions[tokenIndex * 3 + 2] = token.charEnd;
-
-        let stemmedTerm = stemCache.get(token.normalized);
-        if (stemmedTerm === undefined) {
-          // REVIEW: the {isInflectedWordFormsAllowed} been used before
-          stemmedTerm = this.textProcessor.stemWord(token.normalized);
-          stemCache.set(token.normalized, stemmedTerm);
-        }
-
-        termFrequency.set(
-          stemmedTerm,
-          (termFrequency.get(stemmedTerm) || 0) + 1,
-        );
       });
       const tIndexEnd = Date.now();
 
@@ -327,17 +317,12 @@ class DocumentProcessor {
         vocab,
         positions: TokenPositions.fromFlat(positions),
         joints: findJoints(text, rawTokens),
-        termFrequency,
-        // Words only: numbers and function words leave BM25 document
-        // lengths as they were
-        wordCount: rawTokens.filter((token) => countsAsWord(token.term)).length,
+        wordCount,
       };
 
       const tSaveStart = Date.now();
       await this.saveIndexToDisk(documentIndex);
       const tSaveEnd = Date.now();
-
-      documentIndex.termFrequency = new Map();
 
       const endTime = Date.now();
       const duration = endTime - startTime;
@@ -377,9 +362,12 @@ class DocumentProcessor {
     indexPath: string,
     metadata: DocumentMetadata,
   ): Promise<any | null> {
-    const { indexVersion = 1, ...cached } = JSON.parse(
-      await promisify(fs.readFile)(indexPath, 'utf8'),
-    );
+    // Files saved before hold term frequencies too, which nothing reads
+    const {
+      indexVersion = 1,
+      termFrequency,
+      ...cached
+    } = JSON.parse(await promisify(fs.readFile)(indexPath, 'utf8'));
     if (indexVersion !== INDEX_VERSION) {
       this.logger.debug(
         `📋 Cached index for ${metadata.fileName} is from index version ${indexVersion}, will rebuild`,
@@ -401,7 +389,6 @@ class DocumentProcessor {
       vocab: [],
       positions: TokenPositions.EMPTY,
       joints: {},
-      termFrequency: new Map(),
       wordCount: 0,
     };
   }
@@ -413,11 +400,7 @@ class DocumentProcessor {
       );
       await this.ensureDirectory(path.dirname(indexPath));
 
-      const toSave = {
-        indexVersion: INDEX_VERSION,
-        ...documentIndex,
-        termFrequency: Object.fromEntries(documentIndex.termFrequency),
-      };
+      const toSave = { indexVersion: INDEX_VERSION, ...documentIndex };
       await promisify(fs.writeFile)(indexPath, JSON.stringify(toSave), 'utf8');
       this.logger.debug(
         `💾 Cached index for ${documentIndex.metadata.fileName}`,
