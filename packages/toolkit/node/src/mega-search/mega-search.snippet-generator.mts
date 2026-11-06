@@ -28,15 +28,16 @@ const WORDS_COMPARED = 32;
 function isTextOf(text: string, doc: DocumentIndex): boolean {
   const { positions, vocab } = doc;
   if (positions.length === 0) return true;
-  if (text.length < positions[positions.length - 1][2]) return false;
+  if (text.length < positions.charEnd(positions.length - 1)) return false;
 
   const steps = Math.min(WORDS_COMPARED, positions.length) - 1;
   for (let step = 0; step <= steps; step++) {
     const i =
       steps === 0 ? 0 : Math.round((step * (positions.length - 1)) / steps);
-    const [vocabIndex, charStart, charEnd] = positions[i];
-    const word = textProcessor.normalize(text.slice(charStart, charEnd));
-    if (word !== vocab[vocabIndex]) return false;
+    const word = textProcessor.normalize(
+      text.slice(positions.charStart(i), positions.charEnd(i)),
+    );
+    if (word !== vocab[positions.vocabIndex(i)]) return false;
   }
   return true;
 }
@@ -120,26 +121,26 @@ export class SnippetGenerator {
     doc: DocumentIndex,
     snippetBounds: { start: number; end: number },
   ): Promise<{ text: string; rawCharStart: number | null }> {
-    const boundTokens = doc.positions.slice(
-      snippetBounds.start,
-      snippetBounds.end,
-    );
-    if (boundTokens.length === 0) return { text: '', rawCharStart: null };
+    const { positions } = doc;
+    const first = snippetBounds.start;
+    const last = Math.min(snippetBounds.end, positions.length) - 1;
+    if (last < first) return { text: '', rawCharStart: null };
 
     const rawText = await this.getRawText(doc);
     if (rawText !== null) {
-      const charStart = boundTokens[0][1];
-      const charEnd = boundTokens[boundTokens.length - 1][2];
+      const charStart = positions.charStart(first);
+      const charEnd = positions.charEnd(last);
       return {
         text: rawText.slice(charStart, charEnd),
         rawCharStart: charStart,
       };
     }
 
-    return {
-      text: boundTokens.map((p) => doc.vocab[p[0]]).join(' '),
-      rawCharStart: null,
-    };
+    const words: string[] = [];
+    for (let i = first; i <= last; i++) {
+      words.push(doc.vocab[positions.vocabIndex(i)]);
+    }
+    return { text: words.join(' '), rawCharStart: null };
   }
 
   /**
@@ -240,10 +241,13 @@ export class SnippetGenerator {
     const start = Date.now();
     const highlights: HighlightInfo[] = [];
 
-    for (const [vocabIndex, charStart, charEnd] of doc.positions) {
-      const originalWord = doc.vocab[vocabIndex];
+    const { positions } = doc;
+    for (let token = 0; token < positions.length; token++) {
+      const originalWord = doc.vocab[positions.vocabIndex(token)];
       const matched = matchedWords.get(originalWord);
       if (!matched) continue;
+      const charStart = positions.charStart(token);
+      const charEnd = positions.charEnd(token);
 
       highlights.push({
         term: matched.queryToken,
@@ -359,7 +363,9 @@ export class SnippetGenerator {
     const processedBounds = new Set<string>();
 
     for (let tokenIndex = 0; tokenIndex < doc.positions.length; tokenIndex++) {
-      const matched = matchedWords.get(doc.vocab[doc.positions[tokenIndex][0]]);
+      const matched = matchedWords.get(
+        doc.vocab[doc.positions.vocabIndex(tokenIndex)],
+      );
       if (!matched) continue;
       const { queryToken, confidence } = matched;
 
@@ -527,13 +533,13 @@ export class SnippetGenerator {
 
     const isBoundaryToken = (tokenIndex: number): boolean => {
       if (rawText !== null) {
-        const charEnd = doc.positions[tokenIndex][2];
+        const charEnd = doc.positions.charEnd(tokenIndex);
         return charEnd < rawText.length && '.!?;'.includes(rawText[charEnd]);
       }
 
       // Degraded fallback when raw text is unavailable: preserves the old
       // (effectively dead) behavior rather than failing outright.
-      const token = doc.vocab[doc.positions[tokenIndex][0]];
+      const token = doc.vocab[doc.positions.vocabIndex(tokenIndex)];
       return /[.!?;]$/.test(token) || ['?', '!', ';', '.'].includes(token);
     };
 

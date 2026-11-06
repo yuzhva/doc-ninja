@@ -15,7 +15,9 @@
  *    wordCount counts words only
  * 5. joints: what glues a number to the token before or after it
  *    ("22.12.2024" → "." twice), so a glued query finds it as written
+ * 6. positions saved flat, three numbers a token in one array
+ *    ([vocabIndex, charStart, charEnd, …]), not an array per token
  */
-const INDEX_VERSION = 5;
+const INDEX_VERSION = 6;
 
 export { INDEX_VERSION };
