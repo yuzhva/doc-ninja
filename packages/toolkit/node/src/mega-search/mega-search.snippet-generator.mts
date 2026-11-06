@@ -269,11 +269,13 @@ export class SnippetGenerator {
   }
 
   /**
-   * Main entry point for snippet generation.
+   * The document's snippets, in text order — the first `limit` of them,
+   * the rest never generated.
    */
   async generateSnippets(
     doc: DocumentIndex,
     request: SnippetRequest,
+    limit = Infinity,
   ): Promise<SnippetInfo[]> {
     const start = Date.now();
     let snippets: SnippetInfo[] = [];
@@ -287,6 +289,7 @@ export class SnippetGenerator {
         request.isFuzzy,
         request.contextBefore,
         request.contextAfter,
+        limit,
       );
     } else {
       snippets = await this.extractTokenSnippets(
@@ -294,6 +297,7 @@ export class SnippetGenerator {
         request.matchedWords,
         request.contextBefore,
         request.contextAfter,
+        limit,
       );
     }
 
@@ -318,12 +322,14 @@ export class SnippetGenerator {
     isFuzzy: boolean,
     contextBefore: number,
     contextAfter: number,
+    limit: number,
   ): Promise<SnippetInfo[]> {
     if (!sequences || sequences.length === 0) return [];
 
     const snippets: SnippetInfo[] = [];
 
     for (const sequencePositions of sequences) {
+      if (snippets.length >= limit) break;
       if (sequencePositions.length !== originalPhraseOrStemmedTokens.length)
         continue;
 
@@ -358,11 +364,13 @@ export class SnippetGenerator {
     matchedWords: ReadonlyMap<string, MatchedWord>,
     contextBefore: number,
     contextAfter: number,
+    limit: number,
   ): Promise<SnippetInfo[]> {
     const snippets: SnippetInfo[] = [];
     const processedBounds = new Set<string>();
 
     for (let tokenIndex = 0; tokenIndex < doc.positions.length; tokenIndex++) {
+      if (snippets.length >= limit) break;
       const matched = matchedWords.get(
         doc.vocab[doc.positions.vocabIndex(tokenIndex)],
       );
