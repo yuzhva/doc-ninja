@@ -142,7 +142,7 @@ export class IndexBuilder {
           const docProcessTime = Date.now() - docStartTime;
 
           if (processedDocs <= 5 || processedDocs % 10 === 0) {
-            this.logger.info(
+            this.logger.debug(
               `  📄 Doc ${processedDocs}/${allDocuments.length}: ${docIndex.metadata.fileName} (${docTermsProcessed} terms, ${docProcessTime}ms)`,
             );
           }

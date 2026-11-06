@@ -679,7 +679,8 @@ class MegaSearch {
     options: SearchOptions = {},
   ): Promise<PaginatedSearchResult> {
     const searchStartTime = Date.now();
-    logger.info(`🔍 [START] Search request: "${query}"`);
+    // Search text holds people's names: out of the info log
+    logger.debug(`🔍 [START] Search request: "${query}"`);
 
     const {
       isInflectedWordFormsAllowed = true,
@@ -709,7 +710,7 @@ class MegaSearch {
 
     const cachedResult = this.searchCache.get(cacheKey);
     if (cachedResult) {
-      logger.info(`📋 Using cached search result for: "${query}"`);
+      logger.debug(`📋 Using cached search result for: "${query}"`);
       logger.info(
         `✅ [END] Search completed in ${Date.now() - searchStartTime}ms (from cache)`,
       );
@@ -732,7 +733,7 @@ class MegaSearch {
       }
 
       if (queryData.words.length === 0) {
-        logger.info(`No valid tokens found in query: "${query}"`);
+        logger.debug(`No valid tokens found in query: "${query}"`);
         return this.createEmptyResult(page, pageSize);
       }
 
@@ -865,9 +866,10 @@ class MegaSearch {
       return result;
     } catch (error) {
       logger.error(
-        `Search failed for query "${query}":`,
+        'Search failed:',
         error instanceof Error ? error.message : String(error),
       );
+      logger.debug(`Failed search: "${query}"`);
       throw new Error(
         `Search operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -968,7 +970,7 @@ class MegaSearch {
 
     const totalDuration = Date.now() - start; // PERF
     if (totalDuration > 20) {
-      logger.info(
+      logger.debug(
         `[PERF] processSearchResult for ${doc?.metadata.fileName || docId}: ${totalDuration}ms`,
       );
     }

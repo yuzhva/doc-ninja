@@ -243,7 +243,7 @@ class DocumentProcessor {
             );
           }
 
-          this.logger.info(`📋 Loaded cached index for ${metadata.fileName}`);
+          this.logger.debug(`📋 Loaded cached index for ${metadata.fileName}`);
           return cached;
         }
       } catch (cacheError) {
@@ -343,7 +343,7 @@ class DocumentProcessor {
       const duration = endTime - startTime;
 
       if (duration > 1000) {
-        this.logger.info(
+        this.logger.debug(
           `🐢 Slow indexing (${duration}ms) for ${metadata.fileName}:`,
           {
             extract: tExtractEnd - tExtractStart,
@@ -354,7 +354,7 @@ class DocumentProcessor {
         );
       }
 
-      this.logger.info('💾 Document indexing completed', {
+      this.logger.debug('💾 Document indexing completed', {
         fileName: metadata.fileName,
         tokens: documentIndex.wordCount,
         duration,
