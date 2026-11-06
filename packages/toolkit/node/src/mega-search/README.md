@@ -194,8 +194,10 @@ Main search method with full feature support.
 ```typescript
 {
   topN?: number;                    // Max results to process (default: 50)
-  isTypoToleranceEnabled?: boolean;                  // Enable fuzzy matching (default: true)
-  maxTypoDistance?: number;          // Levenshtein threshold (default: 1)
+  isTypoToleranceEnabled?: boolean; // "Allow fuzzy match": any inflected form; off = the form typed (default: true)
+  maxTypoDistance?: number;          // Typo edits per word, fuzzy match on or off; 0 = none (default: 1)
+  isPhraseProximityEnabled?: boolean; // Every query is a phrase, quoted or not (default: false)
+  maxWordsInPhraseDistance?: number; // Words allowed between phrase words, 0 = adjacent (default: 0)
   snippetsLimit?: number | 'ALL';   // Snippets per result (default: 3)
   page?: number;                    // Page number (default: 1)
   pageSize?: number;                // Results per page (default: 10)

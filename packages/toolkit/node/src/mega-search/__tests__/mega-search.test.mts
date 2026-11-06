@@ -46,18 +46,36 @@ const ORDERS = [
   'наказ 10.10.25.txt',
 ];
 
-const STRICT_MODE_DECISION =
-  'Pending decision on what strict mode ("Allow fuzzy match" off) means: the same word in any ' +
-  'inflected form without typos, or the exact word form only';
-
 /** How be-krang's DocumentIntelligenceService searches every query. */
 const PRODUCTION_OPTIONS: SearchOptions = {
   maxTypoDistance: 1,
   isPhraseProximityEnabled: true,
-  maxWordsInPhraseDistance: 2,
+  maxWordsInPhraseDistance: 1,
   snippetsLimit: 'ALL',
   sortBy: 'date',
 };
+
+/**
+ * One name and one English word, a different form of it in each document —
+ * the examples "Allow fuzzy match" is specified with.
+ */
+const FORMS_CORPUS = {
+  'genitive.txt': 'Наказ видано на користь Євгена Петренка.',
+  'nominative.txt': 'Заяву подав Євген Петренко.',
+  'dative.txt': 'Лист надіслано Євгену Петренку.',
+  'full-name.txt': 'Документ підписав Євгеній Коваль.',
+  'parked.txt': 'The car was parked outside.',
+  'parking.txt': 'Free parking near the office.',
+  'parks.txt': 'Two parks in town.',
+};
+
+const EVHEN_FORMS = [
+  'dative.txt',
+  'full-name.txt',
+  'genitive.txt',
+  'nominative.txt',
+];
+const PARK_FORMS = ['parked.txt', 'parking.txt', 'parks.txt'];
 
 describe('MegaSearch', () => {
   let fixture: SearchFixture;
@@ -222,27 +240,21 @@ describe('MegaSearch', () => {
       },
     );
 
-    it('with typo tolerance off, still finds an exact word whose stem is the word itself', async () => {
+    it('with fuzzy match off, finds a word whose stem is the word itself', async () => {
       assert.deepEqual(await find('car', { isTypoToleranceEnabled: false }), [
         'cars.txt',
       ]);
     });
 
-    it(
-      'with typo tolerance off, finds an inflected word spelled exactly as in the text',
-      knownBug(
-        'strict mode looks the unstemmed query word up in the inverted index, whose keys are stems, ' +
-          'so any word that differs from its stem ("управління" → "управлін", "cars" → "car") is never found. ' +
-          STRICT_MODE_DECISION,
-      ),
-      async () => {
-        assert.ok(
-          (
-            await find('управління', { isTypoToleranceEnabled: false })
-          ).includes('наказ 01.02.2024.txt'),
-        );
-      },
-    );
+    it('with fuzzy match off, finds an inflected word spelled exactly as in the text', async () => {
+      // Regression guard: strict mode looked the unstemmed query word up in
+      // the inverted index, whose keys are stems, so a word that differs
+      // from its stem ("управління" → "управлін") was never found.
+      assert.deepEqual(
+        await find('управління', { isTypoToleranceEnabled: false }),
+        ['наказ 01.02.2024.txt'],
+      );
+    });
   });
 
   describe('search() — "quoted" phrases', () => {
@@ -260,21 +272,16 @@ describe('MegaSearch', () => {
       ]);
     });
 
-    it(
-      'with typo tolerance off, matches a phrase of inflected words spelled exactly as in the text',
-      knownBug(
-        'strict mode compares the unstemmed query words with stems, as for single words. ' +
-          STRICT_MODE_DECISION,
-      ),
-      async () => {
-        assert.deepEqual(
-          await find('"начальник управління"', {
-            isTypoToleranceEnabled: false,
-          }),
-          ['наказ 01.02.2024.txt'],
-        );
-      },
-    );
+    it('with fuzzy match off, matches a phrase of inflected words spelled exactly as in the text', async () => {
+      // Regression guard: strict mode compared the unstemmed query words
+      // with stems, as for single words.
+      assert.deepEqual(
+        await find('"начальник управління"', {
+          isTypoToleranceEnabled: false,
+        }),
+        ['наказ 01.02.2024.txt'],
+      );
+    });
 
     it('returns snippets for phrase matches', async () => {
       // Regression guard: the strict phrase path counted matches but never
@@ -319,17 +326,22 @@ describe('MegaSearch', () => {
         maxWordsInPhraseDistance,
       });
 
-    it('maxWordsInPhraseDistance: 1 matches adjacent words only', async () => {
-      const result = await proximity('rich car', 1);
+    it('maxWordsInPhraseDistance: 0 (the default) matches adjacent words only', async () => {
+      // Regression guard: the distance was compared as a position step
+      // (adjacent = 1), so the default 0 never matched a multi-word phrase
+      // and every value meant one word fewer than SearchOptions documents.
+      for (const maxWordsInPhraseDistance of [undefined, 0]) {
+        const result = await proximity('rich car', maxWordsInPhraseDistance);
 
-      assert.deepEqual(
-        result.results[0].snippets.map((s) => s.match),
-        ['Rich car'],
-      );
+        assert.deepEqual(
+          result.results[0].snippets.map((s) => s.match),
+          ['Rich car'],
+        );
+      }
     });
 
-    it('maxWordsInPhraseDistance: 2 also bridges one word in between', async () => {
-      const result = await proximity('rich car', 2);
+    it('maxWordsInPhraseDistance: 1 also bridges one word in between', async () => {
+      const result = await proximity('rich car', 1);
       const [snippet] = result.results[0].snippets;
 
       assert.deepEqual(
@@ -353,18 +365,149 @@ describe('MegaSearch', () => {
         );
       }
     });
+  });
 
-    it(
-      'with the default maxWordsInPhraseDistance (0), matches adjacent words as SearchOptions documents',
-      knownBug(
-        'the distance is compared as a position step (adjacent = 1), so the default 0 never matches ' +
-          'a multi-word phrase; SearchOptions documents it as words *between* (0 = adjacent, 1 = one-word gap). ' +
-          'Pending decision: make the code match the docs (and move be-krang from 2 to 1), or keep it and fix the docs + default',
-      ),
-      async () => {
-        assert.deepEqual(fileNames(await proximity('rich car')), ['cars.txt']);
-      },
-    );
+  it('treats a query searched both with and without proximity as each asks', async () => {
+    // Regression guard: the tokenization cache ignored proximity, so a query
+    // first searched word by word stayed word-by-word with proximity on.
+    const query = 'rich car';
+    const wordByWord = await search(query);
+    const asPhrase = await search(query, { isPhraseProximityEnabled: true });
+
+    assert.equal(wordByWord.results[0].snippets[0].matchType, 'token');
+    assert.equal(asPhrase.results[0].snippets[0].matchType, 'fuzzy-phrase');
+  });
+
+  describe('search() — "Allow fuzzy match" (isTypoToleranceEnabled) and typos (maxTypoDistance)', () => {
+    let forms: SearchFixture;
+
+    before(async () => {
+      forms = await createSearchFixture(FORMS_CORPUS);
+    });
+
+    after(() => forms.cleanup());
+
+    const fuzzy = (maxTypoDistance = 1): SearchOptions => ({
+      isTypoToleranceEnabled: true,
+      maxTypoDistance,
+    });
+    const strict = (maxTypoDistance = 1): SearchOptions => ({
+      isTypoToleranceEnabled: false,
+      maxTypoDistance,
+    });
+
+    const SEARCH_MODES: Array<[string, SearchOptions]> = [
+      ['as be-krang searches (phrase proximity)', PRODUCTION_OPTIONS],
+      ['word by word', {}],
+    ];
+
+    for (const [mode, modeOptions] of SEARCH_MODES) {
+      describe(mode, () => {
+        const searchForms = (query: string, options: SearchOptions) =>
+          forms.megaSearch.search(query, { ...modeOptions, ...options });
+        const findForms = async (query: string, options: SearchOptions) =>
+          fileNames(await searchForms(query, options)).sort();
+
+        it('fuzzy match on: finds every inflected form of the word', async () => {
+          assert.deepEqual(await findForms('Євгена', fuzzy()), EVHEN_FORMS);
+          assert.deepEqual(await findForms('parked', fuzzy()), PARK_FORMS);
+        });
+
+        it('fuzzy match off: finds only the form typed, even though other forms are 1 edit away', async () => {
+          assert.deepEqual(await findForms('Євгена', strict()), [
+            'genitive.txt',
+          ]);
+          assert.deepEqual(await findForms('parked', strict()), ['parked.txt']);
+        });
+
+        it('fuzzy match off: still finds a misspelled word within maxTypoDistance', async () => {
+          assert.deepEqual(await findForms('єгена', strict()), [
+            'genitive.txt',
+          ]);
+          assert.deepEqual(await findForms('prked', strict()), ['parked.txt']);
+        });
+
+        it('fuzzy match on: typos and inflections combine', async () => {
+          assert.deepEqual(await findForms('єгена', fuzzy()), EVHEN_FORMS);
+          // "prked" hides its stem from the stemmer, yet is 1 edit from "parked"
+          assert.deepEqual(await findForms('prked', fuzzy()), PARK_FORMS);
+        });
+
+        it('maxTypoDistance 0 turns typo tolerance off, in both modes', async () => {
+          assert.deepEqual(await findForms('єгена', fuzzy(0)), []);
+          assert.deepEqual(await findForms('єгена', strict(0)), []);
+          assert.deepEqual(await findForms('Євгена', fuzzy(0)), EVHEN_FORMS);
+          assert.deepEqual(await findForms('Євгена', strict(0)), [
+            'genitive.txt',
+          ]);
+        });
+
+        it('returns snippets of what matched, at lower confidence for a typo', async () => {
+          const [exact] = (await searchForms('Євгена', strict())).results;
+          const [typo] = (await searchForms('єгена', strict())).results;
+
+          assert.deepEqual(
+            exact.snippets.map((s) => [s.match, s.confidence]),
+            [['Євгена', 1]],
+          );
+          assert.deepEqual(
+            typo.snippets.map((s) => s.match),
+            ['Євгена'],
+          );
+          assert.ok(typo.snippets[0].confidence < 1);
+
+          for (const query of ['Євгена', 'єгена', 'parked']) {
+            for (const { results } of [
+              await searchForms(query, fuzzy()),
+              await searchForms(query, strict()),
+            ]) {
+              assert.ok(
+                results.every((r) => r.snippets.length > 0),
+                `every result has snippets: "${query}"`,
+              );
+            }
+          }
+        });
+      });
+    }
+
+    describe('phrases', () => {
+      const PHRASES: Array<[string, string, SearchOptions]> = [
+        ['as be-krang searches', 'Євгена Петренка', PRODUCTION_OPTIONS],
+        ['"quoted"', '"Євгена Петренка"', {}],
+      ];
+
+      for (const [mode, query, modeOptions] of PHRASES) {
+        it(`match word by word the same way — ${mode}`, async () => {
+          const findPhrase = async (options: SearchOptions) =>
+            fileNames(
+              await forms.megaSearch.search(query, {
+                ...modeOptions,
+                ...options,
+              }),
+            ).sort();
+
+          assert.deepEqual(await findPhrase(fuzzy()), [
+            'dative.txt',
+            'genitive.txt',
+            'nominative.txt',
+          ]);
+          assert.deepEqual(await findPhrase(strict()), ['genitive.txt']);
+        });
+      }
+
+      it('a strict phrase with a typo still renders its snippet', async () => {
+        // Regression guard: exact-phrase snippets dropped any typo match.
+        const [result] = (
+          await forms.megaSearch.search('"єгена петренка"', strict())
+        ).results;
+
+        assert.deepEqual(
+          result.snippets.map((s) => [s.matchType, s.match]),
+          [['exact-phrase', 'Євгена Петренка']],
+        );
+      });
+    });
   });
 
   describe('search() — ranking', () => {

@@ -26,6 +26,9 @@ function levenshtein(a: string, b: string): number {
  * Returns true if the Levenshtein distance between a and b is less than or equal to threshold.
  */
 function fuzzyMatch(a: string, b: string, threshold: number = 1): boolean {
+  // Every edit changes the length by at most one, so this rules most pairs
+  // out without building the distance matrix.
+  if (Math.abs(a.length - b.length) > threshold) return false;
   return levenshtein(a, b) <= threshold;
 }
 

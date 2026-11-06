@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 
 import { PhraseMatcher } from '../mega-search.phrase-matcher.mjs';
-import { buildSearchData, stemQuery } from '../test-utils/in-memory-index.mjs';
+import { TermMatcher } from '../mega-search.term-matcher.mjs';
+import type { TermMatchOptions } from '../mega-search.term-matcher.mjs';
+import { buildSearchData } from '../test-utils/in-memory-index.mjs';
 import type { SearchData } from '../test-utils/in-memory-index.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
 
-const matcher = new PhraseMatcher(new UkrainianTextProcessor());
+const textProcessor = new UkrainianTextProcessor();
+const termMatcher = new TermMatcher(textProcessor);
+const matcher = new PhraseMatcher();
 
 // Token positions after stop-word removal are noted next to each text.
 const DOCS = {
@@ -15,7 +19,6 @@ const DOCS = {
   'wide-gap.txt': 'Rich people buy a very fast red car.', // rich0 … car5
   'reversed.txt': 'Car dealers are rich.', // car0 dealers1 rich2
   'typo.txt': 'Rech car spotted.', // rech0 car1 spotted2
-  'archive.txt': 'Передано до архіву документів.', // передано0 архіву1 документів2
   'orders.txt':
     'Начальник управління підписав наказ. Наказ начальника управління.',
   // начальник0 управління1 підписав2 наказ3 наказ4 начальника5 управління6
@@ -28,100 +31,31 @@ describe('PhraseMatcher', () => {
     data = await buildSearchData(DOCS);
   });
 
-  const fuzzyPhrase = (
+  const phrase = (
     query: string,
-    maxWordsInPhraseDistance: number,
-    maxTypoDistance = 1,
+    maxWordsBetween: number,
+    { isFuzzy = true, maxTypoDistance = 0 }: Partial<TermMatchOptions> = {},
   ) =>
-    matcher.findDocsWithFuzzyPhrase(
-      stemQuery(query),
-      { maxTypoDistance, maxWordsInPhraseDistance },
-      data.invertedIndex,
-      data.stemDictionary,
+    matcher.findPhrases(
+      textProcessor
+        .tokenize(query)
+        .map((token) =>
+          termMatcher.match(token.term, { isFuzzy, maxTypoDistance }, data),
+        ),
+      maxWordsBetween,
       data.docCache,
     );
 
-  describe('countExactPhrase()', () => {
-    it('counts every in-order occurrence, comparing against stemmed document tokens', () => {
-      const doc = data.docCache.get('orders.txt')!;
-
-      // "Начальник управління" + "начальника управління" share stems
-      assert.equal(
-        matcher.countExactPhrase(doc, stemQuery('начальник управління')),
-        2,
-      );
-      assert.equal(
-        matcher.countExactPhrase(doc, stemQuery('управління начальник')),
-        0,
-      );
-    });
-
-    it('expects stemmed phrase tokens — an unstemmed inflected word never matches', () => {
-      // Pins the contract of this helper; MegaSearch must pass stems (it once
-      // passed the unstemmed query words for "quoted" phrases).
-      const doc = data.docCache.get('orders.txt')!;
-      assert.equal(
-        matcher.countExactPhrase(doc, ['начальник', 'управління']),
-        0,
-      );
-    });
-
-    it('findExactPhraseSequences() returns the token positions of each occurrence', () => {
-      assert.deepEqual(
-        matcher.findExactPhraseSequences(
-          data.docCache.get('orders.txt')!,
-          stemQuery('начальник управління'),
-        ),
-        [
-          [0, 1],
-          [5, 6],
-        ],
-      );
-    });
-
-    it('returns 0 for an empty phrase', () => {
-      assert.equal(
-        matcher.countExactPhrase(data.docCache.get('orders.txt')!, []),
-        0,
-      );
-    });
-  });
-
-  describe('getCandidateDocsForPhrase()', () => {
-    it('returns documents containing every phrase word, in any order', () => {
-      assert.deepEqual(
-        matcher
-          .getCandidateDocsForPhrase(stemQuery('rich car'), data.invertedIndex)
-          .sort(),
-        ['adjacent.txt', 'one-gap.txt', 'reversed.txt', 'wide-gap.txt'],
-      );
-    });
-
-    it('returns nothing when a word is absent or the phrase is empty', () => {
-      assert.deepEqual(
-        matcher.getCandidateDocsForPhrase(
-          stemQuery('rich unicorn'),
-          data.invertedIndex,
-        ),
-        [],
-      );
-      assert.deepEqual(
-        matcher.getCandidateDocsForPhrase([], data.invertedIndex),
-        [],
-      );
-    });
-  });
-
-  describe('findDocsWithFuzzyPhrase()', () => {
-    it('treats maxWordsInPhraseDistance as a position step: 1 = adjacent words only', () => {
-      const matches = fuzzyPhrase('rich car', 1, 0);
+  describe('findPhrases()', () => {
+    it('counts maxWordsBetween as the words in between: 0 = adjacent only', () => {
+      const matches = phrase('rich car', 0);
 
       assert.deepEqual(matches.get('adjacent.txt'), [[0, 1]]);
       assert.equal(matches.has('one-gap.txt'), false);
     });
 
-    it('lets 2 bridge one word in between (the value be-krang searches with)', () => {
-      const matches = fuzzyPhrase('rich car', 2, 0);
+    it('lets 1 bridge one word in between (the value be-krang searches with)', () => {
+      const matches = phrase('rich car', 1);
 
       assert.deepEqual(matches.get('one-gap.txt'), [[0, 2]]);
       assert.deepEqual(matches.get('adjacent.txt'), [[0, 1]]);
@@ -129,45 +63,46 @@ describe('PhraseMatcher', () => {
     });
 
     it('keeps the phrase word order', () => {
-      const matches = fuzzyPhrase('rich car', 10, 0);
+      const matches = phrase('rich car', 10);
 
       assert.deepEqual(matches.get('wide-gap.txt'), [[0, 5]]);
       assert.equal(matches.has('reversed.txt'), false);
     });
 
     it('returns every matching sequence as document token positions', () => {
-      assert.deepEqual(fuzzyPhrase('rich car', 4, 0).get('adjacent.txt'), [
+      assert.deepEqual(phrase('rich car', 3).get('adjacent.txt'), [
         [0, 1],
         [0, 4],
       ]);
-      assert.deepEqual(
-        fuzzyPhrase('начальник управління', 1).get('orders.txt'),
-        [
-          [0, 1],
-          [5, 6],
-        ],
-      );
+      assert.deepEqual(phrase('начальник управління', 0).get('orders.txt'), [
+        [0, 1],
+        [5, 6],
+      ]);
     });
 
     it('matches a one-word phrase at each occurrence', () => {
-      assert.deepEqual(fuzzyPhrase('наказ', 0).get('orders.txt'), [[3], [4]]);
+      assert.deepEqual(phrase('наказ', 0).get('orders.txt'), [[3], [4]]);
     });
 
-    it('tolerates typos up to maxTypoDistance', () => {
-      assert.deepEqual(fuzzyPhrase('rich car', 1, 1).get('typo.txt'), [[0, 1]]);
-      assert.equal(fuzzyPhrase('rich car', 1, 0).has('typo.txt'), false);
+    it('matches the words the way the TermMatcher matched them', () => {
+      // fuzzy match off: only the forms typed
+      assert.deepEqual(
+        phrase('начальника управління', 0, { isFuzzy: false }).get(
+          'orders.txt',
+        ),
+        [[5, 6]],
+      );
+      // typos within maxTypoDistance
+      assert.deepEqual(
+        phrase('rich car', 0, { maxTypoDistance: 1 }).get('typo.txt'),
+        [[0, 1]],
+      );
+      assert.equal(phrase('rich car', 0).has('typo.txt'), false);
     });
 
-    it('matches stems that differ only by a short suffix, even with no typo allowance', () => {
-      // The stemmer is inconsistent across declensions: "архів" → "арх" but
-      // "архіву" → "архів" (2 edits apart). The prefix rule bridges that gap.
-      assert.notEqual(stemQuery('архів')[0], stemQuery('архіву')[0]);
-      assert.deepEqual(fuzzyPhrase('архів', 0, 0).get('archive.txt'), [[1]]);
-    });
-
-    it('returns an empty map when any phrase word has no candidates', () => {
-      assert.equal(fuzzyPhrase('rich unicorn', 5).size, 0);
-      assert.equal(fuzzyPhrase('', 5).size, 0);
+    it('returns an empty map when any phrase word has no match', () => {
+      assert.equal(phrase('rich unicorn', 5).size, 0);
+      assert.equal(phrase('', 5).size, 0);
     });
   });
 });

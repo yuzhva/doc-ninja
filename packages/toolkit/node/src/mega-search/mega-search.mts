@@ -4,10 +4,15 @@ import * as v8 from 'v8';
 import { SUPPORTED_EXTENSIONS } from '../document-extractor/index.mjs';
 import { BM25Scorer } from './bm25-scorer.mjs';
 import { FileIndexer } from './file-indexer/index.mjs';
-import { levenshtein } from './fuzzy.mjs';
 import { LRUCache } from './lru-cache.mjs';
 import { PhraseMatcher } from './mega-search.phrase-matcher.mjs';
 import { SnippetGenerator } from './mega-search.snippet-generator.mjs';
+import type { SnippetRequest } from './mega-search.snippet-generator.mjs';
+import {
+  TermMatcher,
+  WordMatch,
+  mergeMatchedWords,
+} from './mega-search.term-matcher.mjs';
 import type {
   HighlightInfo,
   PaginatedSearchResult,
@@ -22,9 +27,8 @@ import { DocumentIndex, InvertedIndexEntry, SearchConfig } from './types.mjs';
 const logger = createLogger('MegaSearch');
 
 type QueryCacheEntry = {
-  originalPhraseTokens: string[]; // Exact words (for strict phrase)
-  stemmedTokens: string[]; // Stemmed words (for fuzzy matching)
-  uniqueScoringTokens: string[]; // Deduplicated stemmed (for scoring)
+  /** The query's normalized words, in order. */
+  words: string[];
   isPhrase: boolean;
   timestamp: number;
 };
@@ -36,35 +40,21 @@ type ScoringResult = {
   docScores: Map<string, number>;
   docMatchCounts: Map<string, number>;
   phraseMatches: Map<string, number[][]>;
-  /** Index terms matched through typo tolerance → the query term each stands for. */
-  termAliases: Map<string, string>;
 };
 
-type PhraseScoringParams = {
-  tokensToUse: string[];
-  queryData: QueryCacheEntry;
-  isPhraseProximityEnabled: boolean;
-  maxTypoDistance: number;
-  maxWordsInPhraseDistance: number;
-  invertedIndex: Map<string, InvertedIndexEntry[]>;
-  stemDictionary: Map<string, string[]>;
+type ScoringParams = {
+  /** One match per query word, in query order. */
+  words: WordMatch[];
   docCache: Map<string, DocumentIndex>;
   resolvedScopedPaths: string[];
-  isTypoToleranceEnabled: boolean;
   useBM25: boolean;
   docCount: number;
 };
 
-type TokenScoringParams = {
-  tokensToUse: string[];
-  invertedIndex: Map<string, InvertedIndexEntry[]>;
-  stemDictionary: Map<string, string[]>;
-  docCache: Map<string, DocumentIndex>;
-  resolvedScopedPaths: string[];
-  isTypoToleranceEnabled: boolean;
-  maxTypoDistance: number;
-  useBM25: boolean;
-  docCount: number;
+type PhraseScoringParams = ScoringParams & {
+  /** Words allowed between consecutive phrase words (0 = adjacent). */
+  maxWordsBetween: number;
+  isFuzzy: boolean;
 };
 
 type PaginationBounds = {
@@ -77,27 +67,23 @@ type PaginationBounds = {
 type BuildPaginatedResultsParams = {
   rawResults: [string, number][];
   docCache: Map<string, DocumentIndex>;
-  invertedIndex: Map<string, InvertedIndexEntry[]>;
-  tokensToUse: string[];
-  isTypoToleranceEnabled: boolean;
-  isPhrase: boolean;
   snippetsLimit: number | 'ALL';
   phraseMatches: Map<string, number[][]>;
-  termAliases: Map<string, string>;
   includeHighlights: boolean;
-  snippetContextBefore: number;
-  snippetContextAfter: number;
+  /** Everything but the per-document phrase sequences. */
+  snippetRequest: Omit<SnippetRequest, 'phraseSequences'>;
 };
 
 class MegaSearch {
   private fileIndexer: FileIndexer;
   private textProcessor: UkrainianTextProcessor;
   private bm25Scorer: BM25Scorer;
+  private termMatcher: TermMatcher;
   private phraseMatcher: PhraseMatcher;
   private snippetGenerator: SnippetGenerator;
 
-  // Query preprocessing cache (tokenization/stemming is re-derived per unique
-  // query+typo-tolerance combination, so caching it avoids repeat work).
+  // Query preprocessing cache (tokenization is re-derived per unique
+  // query + phrase-mode combination, so caching it avoids repeat work).
   private queryCache = new LRUCache<string, QueryCacheEntry>(1000);
   private readonly QUERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -107,8 +93,9 @@ class MegaSearch {
   constructor(private config: SearchConfig) {
     this.fileIndexer = new FileIndexer(config);
     this.textProcessor = new UkrainianTextProcessor();
-    this.phraseMatcher = new PhraseMatcher(this.textProcessor);
-    this.snippetGenerator = new SnippetGenerator(this.textProcessor);
+    this.termMatcher = new TermMatcher(this.textProcessor);
+    this.phraseMatcher = new PhraseMatcher();
+    this.snippetGenerator = new SnippetGenerator();
 
     // Initialize BM25 scorer with config or defaults
     this.bm25Scorer = new BM25Scorer({
@@ -369,15 +356,17 @@ class MegaSearch {
   }
 
   /**
-   * Resolve tokenization/stemming for a query, using the query cache when
-   * the same query + typo-tolerance combination was seen recently.
+   * Resolve tokenization for a query, using the query cache when the same
+   * query + phrase-mode combination was seen recently.
    */
   private getOrCreateQueryData(
     query: string,
-    isTypoToleranceEnabled: boolean,
     isPhraseProximityEnabled: boolean,
   ): QueryCacheEntry {
-    const tokenizationCacheKey = `${query}|${isTypoToleranceEnabled}`;
+    // Proximity decides whether an unquoted query is a phrase, so it must be
+    // part of the key — it once wasn't, and a query first searched without
+    // proximity kept being searched word by word with it.
+    const tokenizationCacheKey = `${query}|${isPhraseProximityEnabled}`;
 
     const cached = this.getFromQueryCache(tokenizationCacheKey);
     if (cached) return cached;
@@ -387,25 +376,11 @@ class MegaSearch {
     // Phrase search: query is wrapped in quotes, or proximity search is on
     const phraseMatch = query.match(/^"(.*)"$/);
     const isPhrase = !!phraseMatch || isPhraseProximityEnabled;
-    const phrase = phraseMatch
-      ? phraseMatch[1]
-      : isPhraseProximityEnabled
-        ? query
-        : null;
-
-    const rawTokens = this.textProcessor.tokenize(phrase || query);
-
-    // Three token variants for different purposes:
-    const originalPhraseTokens = rawTokens.map((t) => t.term.toLowerCase()); // Exact words
-    const stemmedTokens = rawTokens.map((t) =>
-      this.textProcessor.stemWord(t.term),
-    ); // Stemmed
-    const uniqueScoringTokens = Array.from(new Set(stemmedTokens)); // Deduplicated
 
     const queryData: QueryCacheEntry = {
-      originalPhraseTokens, // For strict phrase matching (preserves exact spelling)
-      stemmedTokens, // For fuzzy phrase matching (allows word variations)
-      uniqueScoringTokens, // For BM25/TF-IDF scoring (deduplicated)
+      words: this.textProcessor
+        .tokenize(phraseMatch ? phraseMatch[1] : query)
+        .map((token) => token.term),
       isPhrase,
       timestamp: Date.now(),
     };
@@ -423,66 +398,29 @@ class MegaSearch {
    */
   private scorePhraseSearch(params: PhraseScoringParams): ScoringResult {
     const {
-      tokensToUse,
-      queryData,
-      isPhraseProximityEnabled,
-      maxTypoDistance,
-      maxWordsInPhraseDistance,
-      invertedIndex,
-      stemDictionary,
+      words,
+      maxWordsBetween,
       docCache,
       resolvedScopedPaths,
-      isTypoToleranceEnabled,
+      isFuzzy,
       useBM25,
       docCount,
     } = params;
 
     const docScores = new Map<string, number>();
     const docMatchCounts = new Map<string, number>();
-    const phraseMatches = new Map<string, number[][]>();
 
     const phraseFilterStartTime = Date.now();
 
-    let filteredDocIds: string[];
-    if (isPhraseProximityEnabled) {
-      // Index-based fuzzy phrase search
-      const matches = this.phraseMatcher.findDocsWithFuzzyPhrase(
-        tokensToUse,
-        { maxTypoDistance, maxWordsInPhraseDistance },
-        invertedIndex,
-        stemDictionary,
-        docCache,
-      );
-
-      filteredDocIds = Array.from(matches.keys());
-      matches.forEach((value, key) => {
-        phraseMatches.set(key, value);
-        docMatchCounts.set(key, value.length);
-      });
-    } else {
-      const candidateDocIds = this.phraseMatcher.getCandidateDocsForPhrase(
-        tokensToUse,
-        invertedIndex,
-      );
-      filteredDocIds = candidateDocIds.filter((docId) => {
-        const doc = docCache.get(docId);
-        if (!doc) return false;
-
-        // Compare with the same tokens the candidates were looked up with:
-        // stems when typo tolerance is on. The positions feed the snippets.
-        const sequences = this.phraseMatcher.findExactPhraseSequences(
-          doc,
-          tokensToUse,
-        );
-
-        if (sequences.length > 0) {
-          docMatchCounts.set(docId, sequences.length);
-          phraseMatches.set(docId, sequences);
-          return true;
-        }
-        return false;
-      });
-    }
+    const phraseMatches = this.phraseMatcher.findPhrases(
+      words,
+      maxWordsBetween,
+      docCache,
+    );
+    let filteredDocIds = Array.from(phraseMatches.keys());
+    phraseMatches.forEach((sequences, docId) =>
+      docMatchCounts.set(docId, sequences.length),
+    );
 
     if (resolvedScopedPaths.length > 0) {
       filteredDocIds = filteredDocIds.filter((docId) => {
@@ -499,39 +437,31 @@ class MegaSearch {
       `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
     );
 
-    // Term frequencies come from the postings: doc.termFrequency is emptied in
-    // memory once a document is indexed (see DocumentProcessor), which used to
-    // score every phrase result 0.
-    const scoringTerms = queryData.uniqueScoringTokens.map((term) => {
-      const postings = invertedIndex.get(term) ?? [];
-      return {
-        docFrequency: postings.length,
-        frequencyByDoc: new Map(
-          postings.map((entry) => [entry.documentId, entry.frequency]),
-        ),
-      };
-    });
+    // Term frequencies come from the matched positions, not
+    // doc.termFrequency, which is emptied in memory once a document is
+    // indexed (see DocumentProcessor) — reading it scored every phrase 0.
+    const scoringWords = this.uniqueByQueryToken(words);
 
     for (const docId of filteredDocIds) {
       let score = 0;
       const doc = docCache.get(docId);
       if (!doc) continue;
 
-      for (const { docFrequency, frequencyByDoc } of scoringTerms) {
-        const tf = frequencyByDoc.get(docId) ?? 0;
+      for (const word of scoringWords) {
+        const tf = word.positionsIn(docId, doc).length;
         if (tf === 0) continue;
 
         score += this.scoreTerm(
           tf,
           doc.wordCount,
-          docFrequency,
+          word.documentCount,
           docCount,
           useBM25,
         );
       }
 
-      // Exact phrase matches get a higher boost than fuzzy proximity matches
-      score *= isTypoToleranceEnabled ? 1.2 : 1.5;
+      // Exact-form phrase matches get a higher boost than fuzzy ones
+      score *= isFuzzy ? 1.2 : 1.5;
 
       docScores.set(docId, score);
     }
@@ -541,96 +471,51 @@ class MegaSearch {
       docScores,
       docMatchCounts,
       phraseMatches,
-      termAliases: new Map(),
     };
+  }
+
+  /**
+   * Query words that would score twice — "кошторис кошторису" with fuzzy
+   * match on — count once.
+   */
+  private uniqueByQueryToken(words: WordMatch[]): WordMatch[] {
+    return [...new Map(words.map((word) => [word.queryToken, word])).values()];
   }
 
   /**
    * Score + filter documents for a plain (non-phrase) token query.
    */
-  private scoreTokenSearch(params: TokenScoringParams): ScoringResult {
-    const {
-      tokensToUse,
-      invertedIndex,
-      stemDictionary,
-      docCache,
-      resolvedScopedPaths,
-      isTypoToleranceEnabled,
-      maxTypoDistance,
-      useBM25,
-      docCount,
-    } = params;
+  private scoreTokenSearch(params: ScoringParams): ScoringResult {
+    const { words, docCache, resolvedScopedPaths, useBM25, docCount } = params;
 
     const docScores = new Map<string, number>();
     const docMatchCounts = new Map<string, number>();
-    const termAliases = new Map<string, string>();
 
-    const uniqueTokensToUse = Array.from(new Set(tokensToUse));
+    for (const word of this.uniqueByQueryToken(words)) {
+      for (const docId of word.documentIds()) {
+        const doc = docCache.get(docId);
+        if (!doc) continue;
 
-    for (const term of uniqueTokensToUse) {
-      let candidateTerms: string[] = [term];
-      if (isTypoToleranceEnabled) {
-        // Use stemDictionary for fast candidate lookup
-        const candidates = stemDictionary.get(term);
-        if (candidates) {
-          // Exact stem match — the stemmed index is authoritative
-          candidateTerms = [term];
-        } else {
-          // Fallback for terms not in the stem dictionary (e.g. misspellings)
-          candidateTerms = Array.from(invertedIndex.keys()).filter(
-            (idxTerm: string) => levenshtein(term, idxTerm) <= maxTypoDistance,
-          );
-        }
-      }
-
-      for (const idxTerm of candidateTerms) {
-        const postings = invertedIndex.get(idxTerm);
-        if (!postings) continue;
-
-        const df = postings.length; // Document frequency
-
-        if (!Array.isArray(postings)) {
-          logger.warn(`Invalid postings for term "${idxTerm}". Skipping.`);
+        if (
+          resolvedScopedPaths.length > 0 &&
+          !this.isInScope(doc.metadata.originalFilePath, resolvedScopedPaths)
+        ) {
           continue;
         }
 
-        // Snippets/highlights must find the index term the typo matched,
-        // and still report the query term it stands for.
-        if (idxTerm !== term && !termAliases.has(idxTerm)) {
-          termAliases.set(idxTerm, term);
-        }
+        const tf = word.positionsIn(docId, doc).length;
+        if (tf === 0) continue; // only other forms of the stem
 
-        for (const entry of postings) {
-          const tf = entry.frequency; // Term frequency
-          const doc = docCache.get(entry.documentId);
+        const score = this.scoreTerm(
+          tf,
+          doc.wordCount,
+          word.documentCount,
+          docCount,
+          useBM25,
+        );
 
-          if (!doc) continue;
-
-          if (
-            resolvedScopedPaths.length > 0 &&
-            !this.isInScope(doc.metadata.originalFilePath, resolvedScopedPaths)
-          ) {
-            continue;
-          }
-
-          const score = this.scoreTerm(
-            tf,
-            doc.wordCount,
-            df,
-            docCount,
-            useBM25,
-          );
-
-          docScores.set(
-            entry.documentId,
-            (docScores.get(entry.documentId) || 0) + score,
-          );
-
-          docMatchCounts.set(
-            entry.documentId,
-            (docMatchCounts.get(entry.documentId) || 0) + entry.frequency,
-          );
-        }
+        docScores.set(docId, (docScores.get(docId) || 0) + score);
+        docMatchCounts.set(docId, (docMatchCounts.get(docId) || 0) + tf);
       }
     }
 
@@ -639,7 +524,6 @@ class MegaSearch {
       docScores,
       docMatchCounts,
       phraseMatches: new Map(),
-      termAliases,
     };
   }
 
@@ -727,16 +611,10 @@ class MegaSearch {
     const {
       rawResults,
       docCache,
-      invertedIndex,
-      tokensToUse,
-      isTypoToleranceEnabled,
-      isPhrase,
       snippetsLimit,
       phraseMatches,
-      termAliases,
       includeHighlights,
-      snippetContextBefore,
-      snippetContextAfter,
+      snippetRequest,
     } = params;
 
     const paginatedResults: PaginatedSearchResult['results'] = [];
@@ -748,16 +626,9 @@ class MegaSearch {
           docId,
           score,
           docCache,
-          invertedIndex,
-          tokensToUse,
-          isTypoToleranceEnabled,
-          isPhrase,
+          { ...snippetRequest, phraseSequences: phraseMatches.get(docId) },
           snippetsLimit,
-          phraseMatches.get(docId),
           includeHighlights,
-          snippetContextBefore,
-          snippetContextAfter,
-          termAliases,
         ),
       );
 
@@ -811,7 +682,6 @@ class MegaSearch {
     try {
       const queryData = this.getOrCreateQueryData(
         query,
-        isTypoToleranceEnabled,
         isPhraseProximityEnabled,
       );
 
@@ -825,13 +695,7 @@ class MegaSearch {
         return this.createEmptyResult(page, pageSize);
       }
 
-      // Always use stemmed tokens for scoring; typo tolerance governs which
-      // token variant drives matching (fuzzy vs. strict).
-      const tokensToUse = isTypoToleranceEnabled
-        ? queryData.stemmedTokens
-        : queryData.originalPhraseTokens;
-
-      if (tokensToUse.length === 0) {
+      if (queryData.words.length === 0) {
         logger.info(`No valid tokens found in query: "${query}"`);
         return this.createEmptyResult(page, pageSize);
       }
@@ -839,38 +703,38 @@ class MegaSearch {
       const scoringStart = Date.now();
       const useBM25 = this.config.useBM25 !== false;
 
-      const {
-        filteredDocIds,
-        docScores,
-        docMatchCounts,
-        phraseMatches,
-        termAliases,
-      } = queryData.isPhrase
-        ? this.scorePhraseSearch({
-            tokensToUse,
-            queryData,
-            isPhraseProximityEnabled,
-            maxTypoDistance,
-            maxWordsInPhraseDistance,
-            invertedIndex,
-            stemDictionary,
-            docCache,
-            resolvedScopedPaths,
-            isTypoToleranceEnabled,
-            useBM25,
-            docCount,
-          })
-        : this.scoreTokenSearch({
-            tokensToUse,
-            invertedIndex,
-            stemDictionary,
-            docCache,
-            resolvedScopedPaths,
-            isTypoToleranceEnabled,
-            maxTypoDistance,
-            useBM25,
-            docCount,
-          });
+      // What each query word matches — every search mode below reads these.
+      const words = queryData.words.map((word) =>
+        this.termMatcher.match(
+          word,
+          { isFuzzy: isTypoToleranceEnabled, maxTypoDistance },
+          { invertedIndex, stemDictionary },
+        ),
+      );
+      logger.debug(
+        `Query words matched in ${Date.now() - scoringStart}ms: ${words
+          .map((word) => `${word.queryToken} → ${word.words.size} forms`)
+          .join(', ')}`,
+      );
+
+      const scoringParams = {
+        words,
+        docCache,
+        resolvedScopedPaths,
+        useBM25,
+        docCount,
+      };
+      const { filteredDocIds, docScores, docMatchCounts, phraseMatches } =
+        queryData.isPhrase
+          ? this.scorePhraseSearch({
+              ...scoringParams,
+              // A "quoted" phrase without proximity search is a strict one.
+              maxWordsBetween: isPhraseProximityEnabled
+                ? maxWordsInPhraseDistance
+                : 0,
+              isFuzzy: isTypoToleranceEnabled,
+            })
+          : this.scoreTokenSearch(scoringParams);
 
       logger.debug(
         `Scoring ${docScores.size} documents completed in ${Date.now() - scoringStart}ms`,
@@ -907,16 +771,17 @@ class MegaSearch {
       const paginatedResults = await this.buildPaginatedResults({
         rawResults,
         docCache,
-        invertedIndex,
-        tokensToUse,
-        isTypoToleranceEnabled,
-        isPhrase: queryData.isPhrase,
         snippetsLimit,
         phraseMatches,
-        termAliases,
         includeHighlights,
-        snippetContextBefore,
-        snippetContextAfter,
+        snippetRequest: {
+          queryTokens: words.map((word) => word.queryToken),
+          matchedWords: mergeMatchedWords(words),
+          isFuzzy: isTypoToleranceEnabled,
+          isPhrase: queryData.isPhrase,
+          contextBefore: snippetContextBefore,
+          contextAfter: snippetContextAfter,
+        },
       });
       logger.debug(
         `Snippet generation for ${paginatedResults.length} results completed in ${Date.now() - snippetGenerationStartTime}ms`,
@@ -1006,16 +871,9 @@ class MegaSearch {
     docId: string,
     score: number,
     docCache: Map<string, DocumentIndex>,
-    invertedIndex: Map<string, InvertedIndexEntry[]>,
-    originalPhraseOrStemmedTokens: string[],
-    isTypoToleranceEnabled: boolean,
-    isPhrase: boolean,
+    snippetRequest: SnippetRequest,
     snippetsLimit: number | 'ALL',
-    phraseMatchPositions?: number[][], // Phrase match positions (exact or fuzzy phrase search)
-    includeHighlights: boolean = false,
-    snippetContextBefore: number = 0,
-    snippetContextAfter: number = 50,
-    termAliases: Map<string, string> = new Map(),
+    includeHighlights: boolean,
   ): Promise<{
     doc: any;
     score: number;
@@ -1032,26 +890,15 @@ class MegaSearch {
         // Only generate full highlights if explicitly requested
         if (includeHighlights) {
           highlights = this.snippetGenerator.generateHighlights(
-            docId,
             doc,
-            originalPhraseOrStemmedTokens,
-            isPhrase,
-            isTypoToleranceEnabled,
-            termAliases,
+            snippetRequest.matchedWords,
           );
         }
 
         // ENHANCED: Extract rich snippets with position data
         snippets = await this.snippetGenerator.generateSnippets(
           doc,
-          originalPhraseOrStemmedTokens,
-          invertedIndex,
-          isPhrase,
-          isTypoToleranceEnabled,
-          phraseMatchPositions,
-          snippetContextBefore,
-          snippetContextAfter,
-          termAliases,
+          snippetRequest,
         );
 
         // Limit snippets if not 'ALL'
