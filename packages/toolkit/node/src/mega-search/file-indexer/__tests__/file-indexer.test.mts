@@ -437,6 +437,54 @@ describe('FileIndexer', () => {
       assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
     });
 
+    it('stops watching while it writes the index cache', async () => {
+      // Every cache write would be reported, and each report stalls the
+      // event loop (see FolderWatcher.pause)
+      const indexer = await watching();
+      const isWatching = () => (indexer as any).watcher.watcher !== null;
+      const watchingWhileWriting: boolean[] = [];
+      for (const [owner, method] of [
+        ['processor', 'indexDocument'],
+        ['storage', 'saveGlobalIndex'],
+      ]) {
+        const target = (indexer as any)[owner];
+        const original = target[method].bind(target);
+        target[method] = (...args: unknown[]) => {
+          watchingWhileWriting.push(isWatching());
+          return original(...args);
+        };
+      }
+      assert.equal(isWatching(), true);
+
+      await corpus.write('c.txt', 'Квартальний звіт.');
+      await settle();
+      await indexer.refreshIfChanged();
+
+      assert.deepEqual(watchingWhileWriting, [false, false]);
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+    });
+
+    it('picks up a change made while it wrote the index cache', async () => {
+      const indexer = await watching();
+      const processor = (indexer as any).processor;
+      const indexDocument = processor.indexDocument.bind(processor);
+      processor.indexDocument = async (file: unknown) => {
+        processor.indexDocument = indexDocument;
+        const indexedDocument = await indexDocument(file);
+        await corpus.write('a.txt', 'Кошторис затверджено.', later());
+        return indexedDocument;
+      };
+      await corpus.write('c.txt', 'Квартальний звіт.');
+      await settle();
+
+      // Indexes c.txt, and a.txt changes meanwhile, unwatched
+      await indexer.refreshIfChanged();
+      await settle();
+      await indexer.refreshIfChanged();
+
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+    });
+
     it('lists a folder again only after a change in it', async () => {
       await corpus.write('orders/c.txt', 'Квартальний звіт.');
       await corpus.write('reports/d.txt', 'Кошторис затверджено.');

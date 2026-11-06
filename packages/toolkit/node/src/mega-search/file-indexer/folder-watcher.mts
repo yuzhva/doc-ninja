@@ -20,8 +20,9 @@ const isWithin = (filePath: string, folder: string): boolean =>
  * due anyway `maxAgeMs` after the last one, and always while watching can't
  * run (the folder is missing, or the system can't watch a folder tree).
  *
- * On Windows, reading a file reports it changed too: a look that indexed
- * files is followed by one more, which finds nothing to do.
+ * It doesn't watch while the index cache is written (see pause), and on
+ * Windows reading a file reports it changed too: a look that indexed files
+ * is followed by one more, which finds nothing to do.
  */
 class FolderWatcher {
   private watcher: fs.FSWatcher | null = null;
@@ -83,6 +84,27 @@ class FolderWatcher {
   /** Makes every next look due: the last one failed, or the index was cleared. */
   markChanged(): void {
     this.looks.clear();
+  }
+
+  /**
+   * Stops watching until the next look begins: to call before writing the
+   * index cache. A change made meanwhile goes unseen, so every look is due
+   * after it — the next refresh lists the files once more.
+   *
+   * Why: the index cache (.cache) lives inside the folder watched, and
+   * fs.watch takes no list of what to ignore. The system reports every
+   * change in the tree, and handling each report stalls the event loop
+   * (~0.6 ms each on Windows, outside JavaScript); isIgnored drops a cache
+   * report only after that. Indexing a document writes ~4 reports' worth,
+   * so watching made a cold index ~5 ms per document slower: 350 documents
+   * indexed in 3.1 s instead of 0.8 s, 7,000 in 46 s instead of 12 s. Not
+   * watching the cache at all would take a watch per subfolder
+   * rather than one over the tree. The lasting fix is to keep the index
+   * cache out of the folder of documents — in the app's own data folder —
+   * so its writes are no change to it.
+   */
+  pause(): void {
+    this.stop();
   }
 
   /** Stops watching for good: every look is due from now on. */
