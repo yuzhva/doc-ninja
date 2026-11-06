@@ -288,9 +288,15 @@ A few changed or deleted files update the inverted index for those documents onl
 which reads every document, happens once `indexRebuildThreshold` (default 0.1%) of the documents
 changed.
 
-Searches never see an update half-done: until it's complete they read the index from before it,
-snippets included. Updates (`reindex()`, `indexSpecificPaths()`, `clearCache()`) run one at a time;
-`reindex()` calls made during an update share one more update, run after it.
+Searches read the index in place, never a copy of it, and never see an update half-done: until
+it's complete they read the index from before it, snippets included. An update never changes what
+a search reads. It works on a copy that shares what didn't change (a term's postings are copied
+only to change them), and the copy goes in whole. Updates (`reindex()`, `indexSpecificPaths()`,
+`clearCache()`) run one at a time; `reindex()` calls made during an update share one more update,
+run after it.
+
+Results are cached per index version: a `reindex()` that finds nothing changed keeps them, so an
+engine refreshed before every search (as be-krang does) still answers a repeated search at once.
 
 ## 🚀 Production Deployment
 

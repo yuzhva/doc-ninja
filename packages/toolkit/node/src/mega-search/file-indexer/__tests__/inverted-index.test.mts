@@ -113,6 +113,42 @@ describe('InvertedIndex', () => {
     });
   });
 
+  describe('fork()', () => {
+    it('takes changes and leaves the index it was forked from as it was', () => {
+      // Searches read the index in place while an update changes a fork
+      const index = sampleIndex();
+      const fork = index.fork();
+
+      fork.addEntry('наказ', '/docs/c.txt', [5]); // a list both hold
+      fork.addEntry('кошторис', '/docs/c.txt', [1]); // a new term
+      fork.removeDocuments(['/docs/b.txt']);
+
+      assert.deepEqual(index.toLegacyMap(), sampleIndex().toLegacyMap());
+      assert.deepEqual(index.getDocMapping(), ['/docs/a.txt', '/docs/b.txt']);
+      assert.deepEqual(fork.get('наказ'), [
+        { documentId: '/docs/a.txt', frequency: 2, positions: [0, 4] },
+        { documentId: '/docs/c.txt', frequency: 1, positions: [5] },
+      ]);
+      assert.deepEqual(fork.get('кошторис'), [
+        { documentId: '/docs/c.txt', frequency: 1, positions: [1] },
+      ]);
+      assert.equal(fork.has('бюджет'), false);
+    });
+
+    it('keeps the document ids, so both read the same postings the same way', () => {
+      const index = sampleIndex();
+      const fork = index.fork();
+      fork.addEntry('бюджет', '/docs/a.txt', [3]);
+
+      assert.deepEqual(fork.getDocMapping(), ['/docs/a.txt', '/docs/b.txt']);
+      assert.deepEqual(fork.get('бюджет'), [
+        { documentId: '/docs/b.txt', frequency: 1, positions: [7] },
+        { documentId: '/docs/a.txt', frequency: 1, positions: [3] },
+      ]);
+      assert.deepEqual(index.get('бюджет'), sampleIndex().get('бюджет'));
+    });
+  });
+
   it('get() returns a detached copy — mutating it leaves the index untouched', () => {
     // Removing a document goes through removeDocuments(): splicing the array
     // get() returns removes nothing.

@@ -11,6 +11,7 @@ import {
   DocumentMetadata,
   InvertedIndexEntry,
   SearchConfig,
+  SearchSnapshot,
 } from '../types.mjs';
 import { DocumentProcessor, isIndexedAsIs } from './document-processor.mjs';
 import { FileScannerIndexer } from './file-scanner.indexer.mjs';
@@ -21,11 +22,12 @@ import { InvertedIndex } from './inverted-index.mjs';
 /**
  * Keeps the index of a folder in step with its files.
  *
- * A search reads the index as it was when the search started (see
- * getSearchDataOptimized), so an update never shows it half-done: documents
- * are indexed into a copy of the document cache, and the copy goes in
- * together with its postings, in one synchronous step (see commit). Updates
- * run one at a time, in call order.
+ * A search reads the index in place, as it was when the search started
+ * (see getSearchSnapshot), so an update never shows it half-done and never
+ * changes what a search reads: documents are indexed into a copy of the
+ * document cache, postings into a copy of the index that shares what didn't
+ * change, and the copies go in together, in one synchronous step (see
+ * commit). Updates run one at a time, in call order.
  */
 class FileIndexer {
   private logger = createLogger('FileIndexer');
@@ -33,13 +35,6 @@ class FileIndexer {
   private invertedIndex = new InvertedIndex();
   private stemDictionary = new Map<string, Set<string>>();
   private documentLRU = new LRUCache<string, DocumentIndex>(50);
-  private searchCache?: {
-    termFrequencies: Map<string, number>;
-    documentLengths: Map<string, number>;
-    totalDocuments: number;
-    averageDocLength: number;
-    lastWarmed: number;
-  };
 
   /** Whether the index saved on disk was loaded (or found missing). */
   private isLoaded = false;
@@ -245,9 +240,10 @@ class FileIndexer {
    *
    * Enough changes (see getRebuildThresholds) rebuild the postings from every
    * document, into new ones that go in whole once complete. Fewer update the
-   * changed documents' postings, which reads no other document — in the same
-   * synchronous step that puts in the documents, so no search starts between
-   * the two. Either way every change is applied.
+   * changed documents' postings, which reads no other document, in a copy
+   * that shares the rest — in the same synchronous step that puts in the
+   * documents, so no search starts between the two. Either way every change
+   * is applied, and the index searches were reading stays as it was.
    */
   private async commit(
     documentCache: Map<string, DocumentIndex>,
@@ -272,12 +268,14 @@ class FileIndexer {
       this.invertedIndex = invertedIndex;
       this.stemDictionary = stemDictionary;
     } else {
-      this.builder.updateDocuments(
+      const updated = this.builder.updateDocuments(
         documentCache,
         this.invertedIndex,
         this.stemDictionary,
         changedPaths,
       );
+      this.invertedIndex = updated.invertedIndex;
+      this.stemDictionary = updated.stemDictionary;
     }
     this.documentCache = documentCache;
     this.generation++;
@@ -492,37 +490,6 @@ class FileIndexer {
     }
   }
 
-  async preWarmSearchCaches(): Promise<void> {
-    this.logger.debug('🔥 Pre-warming search caches...');
-    const startTime = Date.now();
-    try {
-      const termFrequencies = new Map<string, number>();
-      const documentLengths = new Map<string, number>();
-      this.documentCache.forEach((doc, docId) => {
-        documentLengths.set(docId, doc.wordCount);
-        doc.termFrequency.forEach((freq, term) =>
-          termFrequencies.set(term, (termFrequencies.get(term) || 0) + 1),
-        );
-      });
-      this.searchCache = {
-        termFrequencies,
-        documentLengths,
-        totalDocuments: this.documentCache.size,
-        averageDocLength:
-          Array.from(documentLengths.values()).reduce(
-            (sum, len) => sum + len,
-            0,
-          ) / documentLengths.size,
-        lastWarmed: Date.now(),
-      };
-      this.logger.debug(
-        `🔥 Search caches pre-warmed in ${Date.now() - startTime}ms`,
-      );
-    } catch (error) {
-      this.logger.warn('⚠️ Failed to pre-warm search caches:', error);
-    }
-  }
-
   getMemoryStats(): any {
     const memUsage = process.memoryUsage();
     return {
@@ -538,10 +505,26 @@ class FileIndexer {
     };
   }
 
+  /**
+   * The index as searches read it now, in place. What it holds never changes
+   * (see commit), so a search reads one version from start to end, whatever
+   * update goes in meanwhile.
+   */
+  getSearchSnapshot(): SearchSnapshot {
+    return {
+      generation: this.generation,
+      docCache: this.documentCache,
+      invertedIndex: this.invertedIndex,
+      stemDictionary: this.stemDictionary,
+    };
+  }
+
+  /** A copy of the postings, all decoded — to inspect, not to search. */
   getInvertedIndex(): Map<string, InvertedIndexEntry[]> {
     return this.invertedIndex.toLegacyMap();
   }
 
+  /** A copy of the stem dictionary — to inspect, not to search. */
   getStemDictionary(): Map<string, string[]> {
     const result = new Map<string, string[]>();
     this.stemDictionary.forEach((value, key) =>
@@ -550,6 +533,7 @@ class FileIndexer {
     return result;
   }
 
+  /** A copy of the document cache — to inspect, not to search. */
   getDocumentCache(): Map<string, DocumentIndex> {
     return new Map(this.documentCache);
   }
@@ -565,15 +549,6 @@ class FileIndexer {
         (sum, doc) => sum + doc.wordCount,
         0,
       ),
-    };
-  }
-
-  getSearchDataOptimized() {
-    return {
-      docCache: this.getDocumentCache(),
-      invertedIndex: this.getInvertedIndex(),
-      stemDictionary: this.getStemDictionary(),
-      searchCache: this.searchCache,
     };
   }
 
@@ -618,7 +593,6 @@ class FileIndexer {
     this.generation++;
     this.documentLRU.clear();
     this.processor.clearMemoryCache();
-    this.searchCache = undefined;
   }
 }
 

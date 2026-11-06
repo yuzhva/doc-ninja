@@ -62,6 +62,26 @@ interface InvertedIndexEntry {
   positions: number[];
 }
 
+/** What a search reads from the inverted index. */
+interface PostingsReader {
+  /** The term's postings, one per document holding it; undefined if none does. */
+  get(term: string): InvertedIndexEntry[] | undefined;
+}
+
+/**
+ * One version of the index, as a search reads it: in place, never copied
+ * (FileIndexer.getSearchSnapshot). Nothing in it changes once searches can
+ * read it, so a search reads the same version from start to end.
+ */
+interface SearchSnapshot {
+  /** The version: see FileIndexer.indexGeneration. */
+  generation: number;
+  docCache: ReadonlyMap<string, DocumentIndex>;
+  invertedIndex: PostingsReader;
+  /** Stem → its words. Words only: a number is its own term, with no forms. */
+  stemDictionary: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
 interface GlobalIndex {
   invertedIndex: Map<string, InvertedIndexEntry[]>;
   documentCache: Map<string, DocumentIndex>;
@@ -136,7 +156,9 @@ export type {
   DocumentMetadata,
   InvertedIndexEntry,
   GlobalIndex,
+  PostingsReader,
   SearchConfig,
+  SearchSnapshot,
   SearchMatch,
   SearchResult,
   SearchToken,

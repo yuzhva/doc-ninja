@@ -28,7 +28,7 @@ export class PhraseMatcher {
   findPhrases(
     words: readonly WordMatch[],
     maxWordsBetween: number,
-    docCache: Map<string, DocumentIndex>,
+    docCache: ReadonlyMap<string, DocumentIndex>,
     joints: Readonly<Record<number, string>> = {},
   ): Map<string, number[][]> {
     const phrases = new Map<string, number[][]>();

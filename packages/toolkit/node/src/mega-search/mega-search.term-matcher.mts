@@ -1,7 +1,7 @@
 import { fuzzyMatch } from './fuzzy.mjs';
 import { calculateMatchConfidence } from './mega-search.utils.mjs';
 import { UkrainianTextProcessor, isNumberTerm } from './text-processor.mjs';
-import type { DocumentIndex, InvertedIndexEntry } from './types.mjs';
+import type { DocumentIndex, SearchSnapshot } from './types.mjs';
 
 type TermMatchOptions = {
   /**
@@ -18,11 +18,7 @@ type TermMatchOptions = {
   maxTypoDistance: number;
 };
 
-type SearchIndex = {
-  invertedIndex: Map<string, InvertedIndexEntry[]>;
-  /** Stem → its words. Words only: a number is its own term, with no forms. */
-  stemDictionary: Map<string, string[]>;
-};
+type SearchIndex = Pick<SearchSnapshot, 'invertedIndex' | 'stemDictionary'>;
 
 /** A document word that a query word matched. */
 type MatchedWord = {
@@ -232,7 +228,7 @@ class TermMatcher {
     // Indexing stems every word the same way, so the word itself can only be
     // filed under its own stem.
     const queryStem = this.textProcessor.stemWord(queryWord);
-    if (index.stemDictionary.get(queryStem)?.includes(queryWord)) {
+    if (index.stemDictionary.get(queryStem)?.has(queryWord)) {
       add(queryStem, queryWord);
     }
 
@@ -290,12 +286,16 @@ class TermMatcher {
   private formsCutShort(
     queryStem: string,
     stem: string,
-    stemWords: readonly string[],
+    stemWords: ReadonlySet<string>,
   ): ReadonlySet<string> {
     if (stem.length >= queryStem.length || !queryStem.startsWith(stem)) {
       return NO_FORMS;
     }
-    return new Set(stemWords.filter((word) => word.startsWith(queryStem)));
+    const forms = new Set<string>();
+    for (const word of stemWords) {
+      if (word.startsWith(queryStem)) forms.add(word);
+    }
+    return forms;
   }
 
   private toWordMatch(
