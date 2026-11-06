@@ -7,7 +7,7 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 🎯 **Core Search Features**
 
 - **BM25 Scoring**: Industry-standard relevance ranking (used by Elasticsearch)
-- **Fuzzy Search**: every inflected form of a word, plus typo tolerance (edit distance, a swap of two letters counting as one typo)
+- **Fuzzy Search**: every inflected form of a word, plus typo tolerance (edit distance, a swap of two letters counting as one typo), and optionally related words (derived words, surnames derived from the one searched)
 - **Phrase Search**: Exact phrase matching with quotes (`"начальник управління"`)
 - **Multi-language Support**: Ukrainian and English with proper stemming
 - **Multiple Snippets**: Shows multiple context snippets per document
@@ -80,6 +80,7 @@ results.results.forEach((result) => {
 const results = await megaSearch.search('документ', {
   topN: 50, // Search through top 50 results
   isInflectedWordFormsAllowed: true, // "Allow fuzzy match": any inflected form of a word
+  isRelatedWordsAllowed: false, // Not "Бондарук" for "Бондар" (on by default)
   maxTypoDistance: 1, // Allow 1 typo per word (fuzzy match on or off)
   snippetsLimit: 5, // Show up to 5 snippets per result
   page: 1, // First page
@@ -195,6 +196,7 @@ Main search method with full feature support.
 {
   topN?: number;                    // Max results to process (default: 50)
   isInflectedWordFormsAllowed?: boolean; // "Allow fuzzy match": any inflected form; off = the form typed (default: true)
+  isRelatedWordsAllowed?: boolean;   // With fuzzy match: also stems ±2 letters — "столяр" → "столярного", "Бондар" → "Бондарук" (default: true)
   maxTypoDistance?: number;          // Typo edits per word, fuzzy match on or off; 0 = none (default: 1)
   isPhraseProximityEnabled?: boolean; // Every query is a phrase, quoted or not (default: false)
   maxWordsInPhraseDistance?: number; // Words allowed between phrase words, 0 = adjacent (default: 0)

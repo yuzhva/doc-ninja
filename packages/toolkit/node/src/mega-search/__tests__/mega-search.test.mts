@@ -507,6 +507,87 @@ describe('MegaSearch', () => {
     });
   });
 
+  describe('search() — names: inflected forms and related words (isRelatedWordsAllowed)', () => {
+    let names: SearchFixture;
+
+    before(async () => {
+      names = await createSearchFixture({
+        'kit.txt': 'Заяву подав Кіт Василь Петрович.',
+        'kota.txt': 'Прийняти на роботу Кота Василя Петровича.',
+        'kotyk.txt': 'Заяву подав Котик Василь Іванович.',
+        'kotyka.txt': 'Прийняти на роботу Котика Василя Івановича.',
+        'kyt.txt': 'Заяву подав Кит Василь Степанович.',
+        'myroslav.txt': 'Заяву подав Мирослав Бондар.',
+        'myroslava.txt': 'Призначити менеджером Мирослава Бондаря.',
+        'bondaruk.txt': 'Заяву подав Мирослав Бондарук.',
+      });
+    });
+
+    after(() => names.cleanup());
+
+    const searchNames = (query: string, options: SearchOptions = {}) =>
+      names.megaSearch.search(query, { ...PRODUCTION_OPTIONS, ...options });
+    const findNames = async (query: string, options: SearchOptions = {}) =>
+      fileNames(await searchNames(query, options)).sort();
+    const noRelated: SearchOptions = { isRelatedWordsAllowed: false };
+
+    it('related words are on by default, and find surnames derived from the one searched', async () => {
+      assert.deepEqual(await findNames('Кота Василя'), [
+        'kit.txt',
+        'kota.txt',
+        'kotyk.txt',
+        'kotyka.txt',
+        'kyt.txt',
+      ]);
+      assert.deepEqual(await findNames('Мирослав Бондар'), [
+        'bondaruk.txt',
+        'myroslav.txt',
+        'myroslava.txt',
+      ]);
+    });
+
+    it('without related words, finds every form of the name and no surname derived from it', async () => {
+      // "Кіт" and "Кит" are 1 typo from "Кота"; "Котик" is not a typo.
+      assert.deepEqual(await findNames('Кота Василя', noRelated), [
+        'kit.txt',
+        'kota.txt',
+        'kyt.txt',
+      ]);
+      // The stemmer files "Мирослав" and "Мирослава" under two stems.
+      for (const query of ['Мирослав Бондар', 'Мирослава Бондаря']) {
+        assert.deepEqual(
+          await findNames(query, { ...noRelated, maxTypoDistance: 0 }),
+          ['myroslav.txt', 'myroslava.txt'],
+          query,
+        );
+      }
+    });
+
+    it('a vowel change in the surname (Кіт → Кота) takes typo tolerance', async () => {
+      assert.deepEqual(await findNames('Кіт Василь', { maxTypoDistance: 0 }), [
+        'kit.txt',
+      ]);
+      assert.deepEqual(await findNames('Кіт Василь'), [
+        'kit.txt',
+        'kota.txt',
+        'kyt.txt',
+      ]);
+    });
+
+    it('highlights a related surname at lower confidence than a form of the name', async () => {
+      const { results } = await searchNames('Кота Василя', {
+        includeHighlights: true,
+      });
+      const confidenceOf = (word: string) =>
+        results
+          .flatMap((result) => result.highlights)
+          .find((highlight) => highlight.originalWord === word)!.confidence;
+
+      assert.equal(confidenceOf('кота'), 1);
+      assert.ok(confidenceOf('котика') < 1);
+    });
+  });
+
   describe('search() — ranking', () => {
     it('ranks by BM25 relevance — more occurrences first', async () => {
       const { results } = await search('кошторис');

@@ -650,6 +650,7 @@ class MegaSearch {
 
     const {
       isInflectedWordFormsAllowed = true,
+      isRelatedWordsAllowed = true,
       maxTypoDistance = 1,
       isPhraseProximityEnabled = false,
       maxWordsInPhraseDistance = 0,
@@ -707,7 +708,11 @@ class MegaSearch {
       const words = queryData.words.map((word) =>
         this.termMatcher.match(
           word,
-          { isFuzzy: isInflectedWordFormsAllowed, maxTypoDistance },
+          {
+            isFuzzy: isInflectedWordFormsAllowed,
+            isRelatedWordsAllowed,
+            maxTypoDistance,
+          },
           { invertedIndex, stemDictionary },
         ),
       );

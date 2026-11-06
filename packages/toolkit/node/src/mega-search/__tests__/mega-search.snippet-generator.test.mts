@@ -53,12 +53,20 @@ describe('SnippetGenerator', () => {
   /** What MegaSearch hands the generator for a query: tokens + matched words. */
   const matchQuery = (
     query: string,
-    { isFuzzy = true, maxTypoDistance = 1 }: Partial<TermMatchOptions> = {},
+    {
+      isFuzzy = true,
+      isRelatedWordsAllowed = true,
+      maxTypoDistance = 1,
+    }: Partial<TermMatchOptions> = {},
   ) => {
     const words = textProcessor
       .tokenize(query)
       .map((token) =>
-        termMatcher.match(token.term, { isFuzzy, maxTypoDistance }, data),
+        termMatcher.match(
+          token.term,
+          { isFuzzy, isRelatedWordsAllowed, maxTypoDistance },
+          data,
+        ),
       );
     return {
       queryTokens: words.map((word) => word.queryToken),
