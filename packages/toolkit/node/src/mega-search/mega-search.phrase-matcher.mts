@@ -8,6 +8,13 @@ export class PhraseMatcher {
    * What counts as each word — inflected forms, typos — was settled by the
    * TermMatcher that built `words`.
    *
+   * An occurrence is one per position of the first word, made of the nearest
+   * words after it that complete the phrase. Other ways to complete it from
+   * the same start are the same occurrence: "договір, договір оренди" holds
+   * "підписати договір" once, not twice. The same text at another place is
+   * another occurrence — documents repeat a sentence for every person, and
+   * be-krang extracts a row from each.
+   *
    * @returns docId → the token positions of each occurrence
    */
   findPhrases(
@@ -54,33 +61,29 @@ export class PhraseMatcher {
     // Adjacent words are one position apart, so a gap of N words is N + 1.
     const maxStep = maxWordsBetween + 1;
 
-    const findPaths = (
+    // Positions are ascending, so the first path found is the nearest one.
+    const findNearestPath = (
       wordIndex: number,
-      currentPath: number[],
-    ): number[][] => {
-      if (wordIndex === positionsByWord.length) {
-        return [currentPath];
-      }
+      path: number[],
+    ): number[] | null => {
+      if (wordIndex === positionsByWord.length) return path;
 
-      const lastPosition = currentPath[currentPath.length - 1];
-      let paths: number[][] = [];
-
+      const lastPosition = path[path.length - 1];
       for (const nextPosition of positionsByWord[wordIndex]) {
         const step = nextPosition - lastPosition;
-        if (step > 0 && step <= maxStep) {
-          paths = paths.concat(
-            findPaths(wordIndex + 1, [...currentPath, nextPosition]),
-          );
-        }
+        if (step <= 0) continue;
+        if (step > maxStep) break;
+        const found = findNearestPath(wordIndex + 1, [...path, nextPosition]);
+        if (found) return found;
       }
-      return paths;
+      return null;
     };
 
-    let allSequences: number[][] = [];
+    const sequences: number[][] = [];
     for (const startPosition of positionsByWord[0]) {
-      allSequences = allSequences.concat(findPaths(1, [startPosition]));
+      const sequence = findNearestPath(1, [startPosition]);
+      if (sequence) sequences.push(sequence);
     }
-
-    return allSequences;
+    return sequences;
   }
 }

@@ -31,7 +31,13 @@ const DOCS = {
   'typo.txt': 'Rech car spotted.',
   'orders.txt':
     'Начальник управління підписав наказ. Наказ начальника управління.',
+  'repeated.txt': 'Оплатити рахунок. Оплатити рахунок. Оплатити рахунок.',
+  // оплатити0 рахунок1 оплатити2 рахунок3 оплатити4 рахунок5
 };
+
+/** Where each occurrence of `word` starts in `text`. */
+const offsetsOf = (text: string, word: string) =>
+  [...text.matchAll(new RegExp(word, 'g'))].map((m) => m.index);
 
 const highlightedSpans = (context: string) =>
   [...context.matchAll(/<b>(.*?)<\/b>/g)].map((m) => m[1]);
@@ -167,6 +173,15 @@ describe('SnippetGenerator', () => {
       }
     });
 
+    it('gives the same text at each place a snippet of its own', async () => {
+      const snippets = await tokenSnippets('repeated.txt', 'рахунок');
+
+      assert.deepEqual(
+        snippets.map((s) => s.matchCharStart),
+        offsetsOf(DOCS['repeated.txt'], 'рахунок'),
+      );
+    });
+
     it('returns no snippets when no document word matched', async () => {
       assert.deepEqual(await tokenSnippets('repeat.txt', 'bicycle'), []);
     });
@@ -262,6 +277,26 @@ describe('SnippetGenerator', () => {
       assert.deepEqual(
         snippets[0].highlights.map((h) => h.tokenIndex),
         [0, 1],
+      );
+    });
+
+    it('renders every occurrence, the same text at each place included', async () => {
+      // Regression guard: snippets were deduplicated by their text, so a
+      // sentence repeated for every person gave one snippet — and be-krang,
+      // which extracts a row from each, lost the rest.
+      const snippets = await phraseSnippets(
+        'repeated.txt',
+        'оплатити рахунок',
+        [
+          [0, 1],
+          [2, 3],
+          [4, 5],
+        ],
+      );
+
+      assert.deepEqual(
+        snippets.map((s) => s.matchCharStart),
+        offsetsOf(DOCS['repeated.txt'], 'Оплатити'),
       );
     });
 
