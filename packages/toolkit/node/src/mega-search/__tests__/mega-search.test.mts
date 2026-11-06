@@ -1313,6 +1313,25 @@ describe('MegaSearch', () => {
         ['наказ 10.10.25.txt'],
       );
     });
+
+    it('scores a document the same as a search of every folder does', async () => {
+      // Word statistics are of all documents, whichever folders are searched
+      const scores = async (options: SearchOptions) =>
+        new Map(
+          (await search('наказ', { pageSize: 'ALL', ...options })).results.map(
+            (r) => [r.doc.fileName, r.score],
+          ),
+        );
+      const everywhere = await scores({});
+
+      for (const searchScopedPaths of [['orders'], ['orders', 'misc']]) {
+        const scoped = await scores({ searchScopedPaths });
+        assert.ok(scoped.size > 0 && scoped.size < everywhere.size);
+        for (const [fileName, score] of scoped) {
+          assert.equal(score, everywhere.get(fileName), fileName);
+        }
+      }
+    });
   });
 
   describe('search() — result cache', () => {

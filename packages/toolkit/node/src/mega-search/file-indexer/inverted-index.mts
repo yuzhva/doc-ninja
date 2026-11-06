@@ -1,4 +1,8 @@
-import type { InvertedIndexEntry, PostingsReader } from '../types.mjs';
+import type {
+  DocumentFilter,
+  InvertedIndexEntry,
+  PostingsReader,
+} from '../types.mjs';
 
 /**
  * A memory-efficient implementation of Inverted Index.
@@ -117,9 +121,13 @@ export class InvertedIndex implements PostingsReader {
   }
 
   /**
-   * Get entries for a specific term.
+   * The term's postings, decoded: of every document holding it, or of those
+   * in `documents` only — a search in a few folders of many reads only theirs.
    */
-  get(term: string): InvertedIndexEntry[] | undefined {
+  get(
+    term: string,
+    documents?: DocumentFilter,
+  ): InvertedIndexEntry[] | undefined {
     const list = this.index.get(term);
     if (!list) return undefined;
 
@@ -128,6 +136,10 @@ export class InvertedIndex implements PostingsReader {
     while (i < list.length) {
       const docId = list[i++];
       const freq = list[i++];
+      if (documents && !documents.has(this.idDocMap[docId])) {
+        i += freq;
+        continue;
+      }
       const positions: number[] = [];
       for (let j = 0; j < freq; j++) {
         positions.push(list[i++]);
@@ -140,6 +152,30 @@ export class InvertedIndex implements PostingsReader {
       });
     }
     return entries;
+  }
+
+  /**
+   * How many documents hold at least one of the terms, of all indexed:
+   * counted from the postings, with no positions decoded.
+   */
+  countDocuments(terms: Iterable<string>): number {
+    const lists: number[][] = [];
+    for (const term of terms) {
+      const list = this.index.get(term);
+      if (list) lists.push(list);
+    }
+
+    // [docId, freq, ...positions] per document; a document is in a term's
+    // list once, but may be in several lists
+    const docIds = new Set<number>();
+    let count = 0;
+    for (const list of lists) {
+      for (let i = 0; i < list.length; i += 2 + list[i + 1]) {
+        if (lists.length === 1) count++;
+        else docIds.add(list[i]);
+      }
+    }
+    return lists.length === 1 ? count : docIds.size;
   }
 
   /**

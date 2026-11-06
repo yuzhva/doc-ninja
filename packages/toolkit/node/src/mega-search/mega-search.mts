@@ -58,9 +58,10 @@ type ScoringResult = {
 type ScoringParams = {
   /** One match per query word, in query order. */
   words: WordMatch[];
+  /** The documents searched: all, or those in the folders searched. */
   docCache: ReadonlyMap<string, DocumentIndex>;
-  resolvedScopedPaths: string[];
   useBM25: boolean;
+  /** Of all documents, whichever are searched. */
   docCount: number;
 };
 
@@ -109,6 +110,13 @@ class MegaSearch {
   private searchCacheGeneration = -1;
   // The index generation BM25's average document length was computed for.
   private scorerIndexGeneration = -1;
+  // The documents of the folders searched lately (see documentsInScope), and
+  // the index generation they were picked from.
+  private scopedDocuments = new LRUCache<
+    string,
+    ReadonlyMap<string, DocumentIndex>
+  >(10);
+  private scopedDocumentsGeneration = -1;
 
   constructor(private config: SearchConfig) {
     this.fileIndexer = new FileIndexer(config);
@@ -188,17 +196,18 @@ class MegaSearch {
   }
 
   /**
-   * Drops cached results after an update went in. They're keyed by the
-   * index generation, so no search can reach them any more: this only gives
-   * their memory back. A refresh that found nothing to change keeps them, so
-   * a repeated search stays an instant one. Searches don't wait for it —
-   * they key what they derive from the index by its generation (see
-   * syncScorerWithIndex).
+   * Drops cached results, and the documents picked per folder, after an
+   * update went in. They're keyed by the index generation, so no search can
+   * reach them any more: this only gives their memory back. A refresh that
+   * found nothing to change keeps them, so a repeated search stays an
+   * instant one. Searches don't wait for it — they key what they derive
+   * from the index by its generation (see syncScorerWithIndex).
    */
   private dropStaleResults(): void {
     const generation = this.fileIndexer.indexGeneration;
     if (generation === this.searchCacheGeneration) return;
     this.searchCache.clear();
+    this.scopedDocuments.clear();
     this.searchCacheGeneration = generation;
   }
 
@@ -339,6 +348,35 @@ class MegaSearch {
     );
   }
 
+  /**
+   * The documents a search in `resolvedScopedPaths` reads: `docCache` itself
+   * when that's every folder, those in the folders otherwise — picked once
+   * per index generation, and kept for the next search in the same folders.
+   */
+  private documentsInScope(
+    docCache: ReadonlyMap<string, DocumentIndex>,
+    resolvedScopedPaths: string[],
+    indexGeneration: number,
+  ): ReadonlyMap<string, DocumentIndex> {
+    if (resolvedScopedPaths.length === 0) return docCache;
+
+    if (this.scopedDocumentsGeneration !== indexGeneration) {
+      this.scopedDocuments.clear();
+      this.scopedDocumentsGeneration = indexGeneration;
+    }
+    const key = [...resolvedScopedPaths].sort().join('\n');
+    let documents = this.scopedDocuments.get(key);
+    if (!documents) {
+      documents = new Map(
+        [...docCache].filter(([, doc]) =>
+          this.isInScope(doc.metadata.originalFilePath, resolvedScopedPaths),
+        ),
+      );
+      this.scopedDocuments.set(key, documents);
+    }
+    return documents;
+  }
+
   /** BM25 (or TF-IDF) contribution of one query term to one document. */
   private scoreTerm(
     termFrequency: number,
@@ -413,7 +451,6 @@ class MegaSearch {
       maxWordsBetween,
       joints,
       docCache,
-      resolvedScopedPaths,
       isFuzzy,
       useBM25,
       docCount,
@@ -430,21 +467,10 @@ class MegaSearch {
       docCache,
       joints,
     );
-    let filteredDocIds = Array.from(phraseMatches.keys());
+    const filteredDocIds = Array.from(phraseMatches.keys());
     phraseMatches.forEach((sequences, docId) =>
       docMatchCounts.set(docId, sequences.length),
     );
-
-    if (resolvedScopedPaths.length > 0) {
-      filteredDocIds = filteredDocIds.filter((docId) => {
-        const doc = docCache.get(docId);
-        if (!doc) return false;
-        return this.isInScope(
-          doc.metadata.originalFilePath,
-          resolvedScopedPaths,
-        );
-      });
-    }
 
     logger.debug(
       `Phrase filtering completed in ${Date.now() - phraseFilterStartTime}ms. ${filteredDocIds.length} documents remaining.`,
@@ -498,7 +524,7 @@ class MegaSearch {
    * Score + filter documents for a plain (non-phrase) token query.
    */
   private scoreTokenSearch(params: ScoringParams): ScoringResult {
-    const { words, docCache, resolvedScopedPaths, useBM25, docCount } = params;
+    const { words, docCache, useBM25, docCount } = params;
 
     const docScores = new Map<string, number>();
     const docMatchCounts = new Map<string, number>();
@@ -507,13 +533,6 @@ class MegaSearch {
       for (const docId of word.documentIds()) {
         const doc = docCache.get(docId);
         if (!doc) continue;
-
-        if (
-          resolvedScopedPaths.length > 0 &&
-          !this.isInScope(doc.metadata.originalFilePath, resolvedScopedPaths)
-        ) {
-          continue;
-        }
 
         const tf = word.positionsIn(docId, doc).length;
         if (tf === 0) continue; // only other forms of the stem
@@ -712,6 +731,15 @@ class MegaSearch {
       // Scoring below runs without a pause, so no update gets in between
       if (useBM25) this.syncScorerWithIndex(docCache, indexGeneration);
 
+      // The documents searched — those in the folders searched, if any. Only
+      // theirs are read: a search in one folder of many costs about what one
+      // in that folder alone would, not what one in all of them would.
+      const searched = this.documentsInScope(
+        docCache,
+        resolvedScopedPaths,
+        indexGeneration,
+      );
+
       // What each query word matches — every search mode below reads these.
       // A phrase holds its function words as written; a search word by word
       // skips them, unless they're all the query holds — "наказ про
@@ -728,7 +756,11 @@ class MegaSearch {
             isRelatedWordsAllowed,
             maxTypoDistance,
           },
-          { invertedIndex, stemDictionary },
+          {
+            invertedIndex,
+            stemDictionary,
+            documents: searched === docCache ? undefined : searched,
+          },
         ),
       );
       logger.debug(
@@ -737,13 +769,7 @@ class MegaSearch {
           .join(', ')}`,
       );
 
-      const scoringParams = {
-        words,
-        docCache,
-        resolvedScopedPaths,
-        useBM25,
-        docCount,
-      };
+      const scoringParams = { words, docCache: searched, useBM25, docCount };
       const { filteredDocIds, docScores, docMatchCounts, phraseMatches } =
         queryData.isPhrase
           ? this.scorePhraseSearch({
