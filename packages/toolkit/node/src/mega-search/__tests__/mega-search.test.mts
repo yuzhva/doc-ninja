@@ -984,6 +984,24 @@ describe('MegaSearch re-indexing and cache maintenance', () => {
     });
   });
 
+  describe('reindex() after editing a document whose snippets were shown', () => {
+    useFreshFixture();
+
+    it('cuts the snippets from the edited text', async () => {
+      // Regression guard: the snippet text cache kept the text from before
+      // the edit, and the new positions cut it ("Начальник" → "Начальни").
+      await fixture.megaSearch.search('наказ');
+      await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
+      await fixture.megaSearch.reindex();
+
+      const [result] = (await fixture.megaSearch.search('кошторис')).results;
+      assert.deepEqual(
+        result.snippets.map((s) => [s.match, s.context]),
+        [['Кошторис', '<b>Кошторис</b> затверджено...']],
+      );
+    });
+  });
+
   describe('a document edited while the app was closed', () => {
     useFreshFixture();
 
