@@ -59,9 +59,9 @@ describe('UkrainianTextProcessor', () => {
     });
 
     it('keeps a hyphenated compound as one token', () => {
-      assert.deepEqual(terms('північно-східний район'), [
-        'північно-східний',
-        'район',
+      assert.deepEqual(terms('науково-дослідний інститут'), [
+        'науково-дослідний',
+        'інститут',
       ]);
     });
 
@@ -77,34 +77,35 @@ describe('UkrainianTextProcessor', () => {
     });
 
     it('keeps hyphens at word edges out of the token', () => {
-      // A compound broken by a space ("водія- електрика") left the hyphen on
-      // the token, so "водія" found "водія-" only with typo tolerance on.
+      // A compound broken by a space ("інженера- конструктора") left the
+      // hyphen on the token, so "інженера" found "інженера-" only with typo
+      // tolerance on.
       const text =
-        'водія- електрика, Івано- Франківськ, -Залізничний, ВОС- 100 — штаб';
+        'інженера- конструктора, Івано- Франківськ, -Залізничний, ДСТУ- 3008 — офіс';
       const tokens = processor.tokenize(text);
 
       assert.deepEqual(
         tokens.map((t) => t.normalized),
         [
-          'водія',
-          'електрика',
+          'інженера',
+          'конструктора',
           'івано',
           'франківськ',
           'залізничний',
-          'вос',
-          'штаб',
+          'дсту',
+          'офіс',
         ],
       );
       assert.deepEqual(
         tokens.map((t) => text.slice(t.charStart, t.charEnd)),
         [
-          'водія',
-          'електрика',
+          'інженера',
+          'конструктора',
           'Івано',
           'Франківськ',
           'Залізничний',
-          'ВОС',
-          'штаб',
+          'ДСТУ',
+          'офіс',
         ],
       );
     });

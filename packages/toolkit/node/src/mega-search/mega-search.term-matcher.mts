@@ -9,6 +9,11 @@ type TermMatchOptions = {
    * form of the word matches, not only the form typed.
    */
   isFuzzy: boolean;
+  /**
+   * With fuzzy match on, related words match too (SearchOptions.isRelatedWordsAllowed):
+   * words whose stem is the query word's stem plus or minus up to 2 letters.
+   */
+  isRelatedWordsAllowed: boolean;
   /** Character edits a word may differ by (SearchOptions.maxTypoDistance). */
   maxTypoDistance: number;
 };
@@ -32,6 +37,8 @@ type StemPosting = {
   forms: ReadonlySet<string> | null;
 };
 
+const NO_FORMS: ReadonlySet<string> = new Set();
+
 /**
  * Everything one query word matched in the index — the single answer that
  * scoring, phrase matching, snippets and highlights all read, so they can
@@ -47,8 +54,9 @@ class WordMatch {
   ) {}
 
   /**
-   * Documents holding a matched stem. Without fuzzy match this is a superset:
-   * a document may hold only other forms of the stem (see positionsIn).
+   * Documents holding a matched stem. Where only some forms of a stem count
+   * (fuzzy match off, or a stem the stemmer cut short) this is a superset: a
+   * document may hold only other forms of the stem (see positionsIn).
    */
   documentIds(): IterableIterator<string> {
     return this.postingsByDoc.keys();
@@ -99,10 +107,32 @@ class WordMatch {
  * | off   | the word as typed (letter case aside), and words within N edits |
  * | on    | every form of each of those words, and of stems within N edits  |
  *
- * N is maxTypoDistance; 0 turns typo tolerance off in either mode. Fuzzy
+ * With related words, fuzzy match on also takes stems up to 2 letters longer
+ * or shorter (see isRelatedStem). N is maxTypoDistance; 0 turns typo tolerance off in either mode. Fuzzy
  * match on always finds at least what it finds off. Inflection and typos
  * stay apart even where they overlap: "Євгену" is 1 edit from "Євгена", but
  * as another form of the same word only fuzzy match finds it.
+ *
+ * "Every form" means every word under the same stem, and also the forms the
+ * stemmer filed under a stem of their own — it cuts off whatever looks like
+ * an ending, and so cuts some forms short of the others:
+ *
+ *   архів → арх       архіву, архівом → архів
+ *   паперова, паперове → папер     паперовий, паперового → паперов
+ *   Мирослав → миросл      Мирослава, Мирославу → мирослав
+ *
+ * The words show which stem was cut short: the longer stem is the start of
+ * the shorter stem's word ("паперова" starts with "паперов"). A word derived with
+ * a suffix does not ("Бондар" does not start with "бондарук", "Кота" not with
+ * "котик"), so this needs no list of endings and no length limit.
+ *
+ * What it cannot see is the opposite: a stem the stemmer left too long, with
+ * part of the ending still on it — most verbs ("призначила" → "призначил",
+ * "призначив" → "признач") and the "-ією"/"-ієм" forms ("Марією" → "маріє").
+ * Without a list of endings, a leftover "-ил" looks the same as the "-ук" of
+ * "Бондарук". Related words (on by default) find those, together with the
+ * derived words. A vowel change inside the stem ("Кіт" → "Кота") is for typo
+ * tolerance; no stem rule spans it.
  */
 class TermMatcher {
   constructor(private textProcessor: UkrainianTextProcessor) {}
@@ -114,13 +144,13 @@ class TermMatcher {
     index: SearchIndex,
   ): WordMatch {
     return options.isFuzzy
-      ? this.matchInflectedForms(queryWord, options.maxTypoDistance, index)
+      ? this.matchInflectedForms(queryWord, options, index)
       : this.matchWordForms(queryWord, options.maxTypoDistance, index);
   }
 
   private matchInflectedForms(
     queryWord: string,
-    maxTypoDistance: number,
+    { maxTypoDistance, isRelatedWordsAllowed }: TermMatchOptions,
     index: SearchIndex,
   ): WordMatch {
     const queryStem = this.textProcessor.stemWord(queryWord);
@@ -128,28 +158,41 @@ class TermMatcher {
     const words = new Map<string, MatchedWord>();
 
     for (const [stem, stemWords] of index.stemDictionary) {
-      let isMatch = this.isSameWordStem(queryStem, stem, maxTypoDistance);
-      let confidence = isMatch ? calculateMatchConfidence(queryStem, stem) : 0;
+      let confidence = this.matchStem(queryWord, queryStem, stem, {
+        maxTypoDistance,
+        isRelatedWordsAllowed,
+      });
 
       // A typo can keep the stemmer from finding the stem at all ("prked"
       // stays "prked", 3 edits from "park"), so the word as typed is checked
       // against the forms too — as it would be with fuzzy match off.
-      if (confidence < 1 && maxTypoDistance > 0) {
+      if ((confidence ?? 0) < 1 && maxTypoDistance > 0) {
         for (const word of stemWords) {
           if (fuzzyMatch(queryWord, word, maxTypoDistance)) {
-            isMatch = true;
             confidence = Math.max(
-              confidence,
+              confidence ?? 0,
               calculateMatchConfidence(queryWord, word),
             );
           }
         }
       }
-      if (!isMatch) continue;
 
-      forms.set(stem, null);
-      for (const word of stemWords) {
-        words.set(word, { queryToken: queryStem, confidence });
+      const cutShort = this.formsCutShort(queryStem, stem, stemWords);
+      if (confidence !== null) {
+        forms.set(stem, null);
+        for (const word of stemWords) {
+          words.set(word, {
+            queryToken: queryStem,
+            // Forms of the word itself, even where a related-words or typo
+            // match brought the whole stem in.
+            confidence: cutShort.has(word) ? 1 : confidence,
+          });
+        }
+      } else if (cutShort.size > 0) {
+        forms.set(stem, cutShort);
+        for (const word of cutShort) {
+          words.set(word, { queryToken: queryStem, confidence: 1 });
+        }
       }
     }
 
@@ -195,27 +238,50 @@ class TermMatcher {
   }
 
   /**
-   * Whether an index stem belongs to the query word: the same stem, one
-   * within maxTypoDistance edits, or one that differs only by a short ending.
-   * The last rule bridges the stemmer's inconsistencies across declensions
-   * ("архів" → "арх", but "архіву" → "архів"), and so applies whatever
-   * maxTypoDistance is.
+   * Whether every word under an index stem matches the query word, and how
+   * confidently; null when not.
+   * - 1: the same stem, or the stem of the query word's other forms where the
+   *   stemmer cut the query word short: "архів" → "арх", and the word
+   *   "архів" starts "архів", the stem of "архіву".
+   * - below 1: a stem within maxTypoDistance edits, or — with related words —
+   *   a stem up to 2 letters longer or shorter than the query word's.
    */
-  private isSameWordStem(
+  private matchStem(
+    queryWord: string,
     queryStem: string,
     stem: string,
-    maxTypoDistance: number,
-  ): boolean {
-    if (queryStem === stem) return true;
-    if (maxTypoDistance > 0 && fuzzyMatch(queryStem, stem, maxTypoDistance)) {
-      return true;
-    }
+    {
+      maxTypoDistance,
+      isRelatedWordsAllowed,
+    }: Pick<TermMatchOptions, 'maxTypoDistance' | 'isRelatedWordsAllowed'>,
+  ): number | null {
+    if (stem === queryStem) return 1;
+    if (stem.startsWith(queryStem) && queryWord.startsWith(stem)) return 1;
 
-    const lengthDifference = Math.abs(queryStem.length - stem.length);
-    return (
-      lengthDifference <= 2 &&
-      (queryStem.startsWith(stem) || stem.startsWith(queryStem))
-    );
+    const isTypo =
+      maxTypoDistance > 0 && fuzzyMatch(queryStem, stem, maxTypoDistance);
+    const isRelated = isRelatedWordsAllowed && isRelatedStem(queryStem, stem);
+    return isTypo || isRelated
+      ? calculateMatchConfidence(queryStem, stem)
+      : null;
+  }
+
+  /**
+   * The words under a shorter index stem that are forms of the query word,
+   * which the stemmer cut short: the words that start with the query word's
+   * stem ("архів" under "арх", for "архіву" → "архів"). Only those: other
+   * words under the same stem may be other words ("дмитр" holds "Дмитрів"
+   * and "Дмитро", so "Дмитріва" → "дмитрів" brings in "Дмитрів" alone).
+   */
+  private formsCutShort(
+    queryStem: string,
+    stem: string,
+    stemWords: readonly string[],
+  ): ReadonlySet<string> {
+    if (stem.length >= queryStem.length || !queryStem.startsWith(stem)) {
+      return NO_FORMS;
+    }
+    return new Set(stemWords.filter((word) => word.startsWith(queryStem)));
   }
 
   private toWordMatch(
@@ -239,6 +305,20 @@ class TermMatcher {
 
     return new WordMatch(queryToken, words, postingsByDoc);
   }
+}
+
+/**
+ * Related words: one stem is the other plus up to 2 letters. That takes in
+ * words derived with a short suffix ("столяр" → "столярного", "облік" →
+ * "обліковими"), the verb forms the stemmer splits ("призначив" →
+ * "призначила") — and surnames derived the same way ("Бондар" →
+ * "Бондарук", "Цап" → "Цапик", "Кота" → "Котика").
+ */
+function isRelatedStem(queryStem: string, stem: string): boolean {
+  return (
+    Math.abs(queryStem.length - stem.length) <= 2 &&
+    (queryStem.startsWith(stem) || stem.startsWith(queryStem))
+  );
 }
 
 /**

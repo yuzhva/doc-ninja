@@ -15,6 +15,20 @@ type SearchOptions = {
   isInflectedWordFormsAllowed?: boolean;
 
   /**
+   * With fuzzy match on, also match related words (default: true): words
+   * whose stem is the query word's plus or minus up to 2 letters. Ranked
+   * below the word's own forms. That takes in:
+   * - words derived with a short suffix: "столяр" finds "столярного",
+   *   "облік" finds "обліковими";
+   * - verb forms the stemmer splits: "призначив" finds "призначила";
+   * - surnames derived the same way: "Бондар" finds "Бондарук", "Цап" finds
+   *   "Цапик", "Кота" finds "Котика" — so turn it off to search names.
+   * Every inflected form of the word is found either way ("паперовий" finds
+   * "паперова", "Мирослав" finds "Мирослава"). No effect with fuzzy match off.
+   */
+  isRelatedWordsAllowed?: boolean;
+
+  /**
    * Max character edits allowed per word (default: 1; 0 = no typos), with
    * fuzzy match on and off alike: "єгена" finds "Євгена" either way — and,
    * with fuzzy match on, the other forms of "Євген" too.

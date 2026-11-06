@@ -26,8 +26,16 @@ const DOCS = {
   'mixed.txt': 'Rech car, rich man.', // rech0 car1 rich2 man3
 };
 
-const FUZZY: TermMatchOptions = { isFuzzy: true, maxTypoDistance: 1 };
-const STRICT: TermMatchOptions = { isFuzzy: false, maxTypoDistance: 1 };
+const FUZZY: TermMatchOptions = {
+  isFuzzy: true,
+  isRelatedWordsAllowed: false,
+  maxTypoDistance: 1,
+};
+const STRICT: TermMatchOptions = {
+  isFuzzy: false,
+  isRelatedWordsAllowed: false,
+  maxTypoDistance: 1,
+};
 
 describe('TermMatcher', () => {
   let data: SearchData;
@@ -109,14 +117,12 @@ describe('TermMatcher', () => {
       ]);
     });
 
-    it('matches stems that differ only by a short ending, even with maxTypoDistance 0', () => {
-      // The stemmer is inconsistent across declensions: "архів" → "арх" but
-      // "архіву" → "архів" (2 edits apart). The prefix rule bridges that gap.
+    it('matches a form the stemmer filed under another stem, even with maxTypoDistance 0', () => {
+      // "архів" → "арх" but "архіву" → "архів" (see the forms tests below).
       assert.notEqual(stemQuery('архів')[0], stemQuery('архіву')[0]);
-      assert.deepEqual(
-        docsWith('архів', { isFuzzy: true, maxTypoDistance: 0 }),
-        ['archive.txt'],
-      );
+      assert.deepEqual(docsWith('архів', { ...FUZZY, maxTypoDistance: 0 }), [
+        'archive.txt',
+      ]);
     });
   });
 
@@ -169,15 +175,14 @@ describe('TermMatcher', () => {
     it('turns typo tolerance off in both modes', () => {
       for (const isFuzzy of [true, false]) {
         assert.deepEqual(
-          docsWith('єгена', { isFuzzy, maxTypoDistance: 0 }),
+          docsWith('єгена', { ...FUZZY, isFuzzy, maxTypoDistance: 0 }),
           [],
           `isFuzzy: ${isFuzzy}`,
         );
       }
-      assert.deepEqual(
-        docsWith('євгена', { isFuzzy: false, maxTypoDistance: 0 }),
-        ['genitive.txt'],
-      );
+      assert.deepEqual(docsWith('євгена', { ...STRICT, maxTypoDistance: 0 }), [
+        'genitive.txt',
+      ]);
     });
   });
 
@@ -217,6 +222,225 @@ describe('TermMatcher', () => {
         queryToken: 'rich',
         confidence: 1,
       });
+    });
+  });
+});
+
+/**
+ * Declensions the stemmer files under two stems: it cuts off whatever looks
+ * like an ending, so "паперова" → "папер" while "паперовий" → "паперов",
+ * "архів" → "арх" while "архіву" → "архів". Each one is a document of its own.
+ */
+const FORMS_OF_ONE_WORD: Record<string, string[]> = {
+  паперовий: [
+    'паперовий',
+    'паперового',
+    'паперовому',
+    'паперовим',
+    'паперовім',
+    'паперова',
+    'паперової',
+    'паперовій',
+    'паперову',
+    'паперовою',
+    'паперове',
+    'паперові',
+    'паперових',
+    'паперовими',
+  ],
+  грошовий: [
+    'грошовий',
+    'грошового',
+    'грошовому',
+    'грошовим',
+    'грошова',
+    'грошової',
+    'грошовій',
+    'грошову',
+    'грошовою',
+    'грошове',
+    'грошові',
+    'грошових',
+  ],
+  архів: [
+    'архів',
+    'архіву',
+    'архівом',
+    'архіві',
+    'архіви',
+    'архівів',
+    'архівах',
+  ],
+  умова: [
+    'умова',
+    'умови',
+    'умові',
+    'умову',
+    'умовою',
+    'умов',
+    'умовам',
+    'умовах',
+  ],
+  система: [
+    'система',
+    'системи',
+    'системі',
+    'систему',
+    'системою',
+    'систем',
+    'системах',
+  ],
+  диплом: ['диплом', 'диплому', 'дипломом', 'дипломі', 'дипломи', 'дипломів'],
+  сертифікат: [
+    'сертифікат',
+    'сертифіката',
+    'сертифікатом',
+    'сертифікати',
+    'сертифікатів',
+  ],
+  Мирослав: ['мирослав', 'мирослава', 'мирославу', 'мирославові', 'мирославом'],
+  Василь: ['василь', 'василя', 'василю', 'василеві', 'василем'],
+  Шевченко: ['шевченко', 'шевченка', 'шевченку', 'шевченкові', 'шевченком'],
+  'Іванов (he)': ['іванов', 'іванова', 'іванову', 'івановим', 'іванові'],
+  'Іванова (she)': ['іванова', 'іванової', 'івановій', 'іванову', 'івановою'],
+  Петрів: ['петрів', 'петріва', 'петріву'],
+  Цап: ['цап', 'цапа', 'цапу', 'цапові', 'цапом'],
+};
+
+/**
+ * Words that only share the start of a stem, up to 2 letters apart — what
+ * related words add, and inflected forms alone keep apart.
+ */
+const RELATED_WORDS: Array<[query: string, related: string, why: string]> = [
+  ['бондар', 'бондарук', 'another surname'],
+  ['бондаря', 'бондарука', 'another surname'],
+  ['цап', 'цапик', 'another surname'],
+  ['кота', 'котика', 'another surname'],
+  ['антонову', 'антоновича', 'a patronymic'],
+  ['кота', 'котел', 'another word'],
+  ['суду', 'судин', 'another word'],
+  ['дій', 'дітей', 'another word'],
+  ['василь', 'васильки', 'another word'],
+  ['parked', 'parker', 'another word'],
+  ['столяр', 'столярного', 'a derived word'],
+  ['дмитріва', 'дмитро', 'another name, under the stem of "Дмитрів"'],
+  // The stemmer leaves "призначил" too long rather than cutting "признач"
+  // short — the same as "Бондар" + "-ук" to a rule without endings.
+  ['призначив', 'призначила', 'a verb form only related words find'],
+];
+
+describe('TermMatcher — inflected forms and related words', () => {
+  let data: SearchData;
+
+  before(async () => {
+    data = await buildSearchData({
+      ...Object.fromEntries(
+        Object.entries(FORMS_OF_ONE_WORD).map(([word, forms]) => [
+          `${word}.txt`,
+          forms.join(' '),
+        ]),
+      ),
+      'related.txt': RELATED_WORDS.map(
+        ([query, related]) => `${query} ${related}`,
+      ).join(' '),
+      'cat.txt': 'кіт котом',
+      'dmytro.txt': 'Дмитрів Дмитро Дмитра',
+    });
+  });
+
+  const FORMS_ONLY: TermMatchOptions = {
+    isFuzzy: true,
+    isRelatedWordsAllowed: false,
+    maxTypoDistance: 0,
+  };
+  const RELATED: TermMatchOptions = {
+    ...FORMS_ONLY,
+    isRelatedWordsAllowed: true,
+  };
+
+  const wordsOf = (word: string, options: TermMatchOptions) =>
+    matcher.match(word, options, data).words;
+
+  describe('inflected forms (related words off)', () => {
+    for (const [word, forms] of Object.entries(FORMS_OF_ONE_WORD)) {
+      it(`every form of ${word} finds every other, without typo tolerance`, () => {
+        for (const form of forms) {
+          const found = wordsOf(form, FORMS_ONLY);
+          assert.deepEqual(
+            forms.filter((other) => !found.has(other)),
+            [],
+            `"${form}" (stem "${stemQuery(form)[0]}")`,
+          );
+        }
+      });
+    }
+
+    it('even where the stemmer filed them under two stems', () => {
+      assert.notEqual(stemQuery('паперова')[0], stemQuery('паперовий')[0]);
+      assert.notEqual(stemQuery('архів')[0], stemQuery('архіву')[0]);
+      assert.notEqual(stemQuery('мирослав')[0], stemQuery('мирослава')[0]);
+    });
+
+    it('counts those forms as the word itself, at full confidence', () => {
+      assert.equal(
+        wordsOf('паперовий', FORMS_ONLY).get('паперова')?.confidence,
+        1,
+      );
+      assert.equal(
+        wordsOf('паперова', FORMS_ONLY).get('паперовий')?.confidence,
+        1,
+      );
+      assert.equal(wordsOf('архіву', FORMS_ONLY).get('архів')?.confidence, 1);
+    });
+
+    for (const [query, related, why] of RELATED_WORDS) {
+      it(`does not find "${related}" for "${query}" — ${why}`, () => {
+        assert.ok(!wordsOf(query, FORMS_ONLY).has(related));
+      });
+    }
+
+    it('takes from a shorter stem only the forms of the word, not every word under it', () => {
+      // "Дмитрів" → "дмитр", the stem of "Дмитро" as well.
+      assert.equal(stemQuery('дмитрів')[0], stemQuery('дмитро')[0]);
+      assert.deepEqual([...wordsOf('дмитріва', FORMS_ONLY).keys()].sort(), [
+        'дмитрів',
+        'дмитріва',
+      ]);
+    });
+
+    it('leaves a vowel change inside the stem to typo tolerance (Кіт → Кота)', () => {
+      // "кіт" → "кіт", "котом" → "кот": no shared start for a stem rule.
+      assert.ok(!wordsOf('кіт', FORMS_ONLY).has('котом'));
+      assert.ok(!wordsOf('кіт', RELATED).has('котом'));
+
+      const typo = wordsOf('кіт', { ...FORMS_ONLY, maxTypoDistance: 1 });
+      assert.ok(typo.get('котом')!.confidence < 1);
+    });
+  });
+
+  describe('related words (on by default)', () => {
+    for (const [query, related, why] of RELATED_WORDS) {
+      it(`find "${related}" for "${query}" — ${why} — at lower confidence`, () => {
+        const found = wordsOf(query, RELATED).get(related);
+
+        assert.ok(found, `"${related}" found`);
+        assert.ok(found.confidence < 1);
+      });
+    }
+
+    it('still count the forms of the word itself at full confidence', () => {
+      // "папер" (of "паперова") is also 2 letters from "паперов": related,
+      // and the stem of the word's own forms.
+      assert.equal(
+        wordsOf('паперовий', RELATED).get('паперова')?.confidence,
+        1,
+      );
+    });
+
+    it('have no effect with fuzzy match off', () => {
+      const strict = { ...RELATED, isFuzzy: false };
+
+      assert.deepEqual([...wordsOf('бондар', strict).keys()], ['бондар']);
     });
   });
 });
