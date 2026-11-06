@@ -122,6 +122,34 @@ describe('IndexStorage', () => {
     assert.deepEqual(loaded.documentCache.get(second)!.joints, {});
   });
 
+  it('reads no words of another version of the document, indexed since', async () => {
+    // A search reads the document as the postings it reads have it: the
+    // words of a newer version are at other positions
+    await saveIndex();
+    const loaded = (await newStorage().loadGlobalIndex())!;
+    const doc = loaded.documentCache.get(corpus.pathOf('a.txt'))!;
+    const file = corpus.pathOf('.cache/index/a.txt.index.json');
+    const saved = JSON.parse(
+      await corpus.read('.cache/index/a.txt.index.json'),
+    );
+    await fs.promises.writeFile(
+      file,
+      JSON.stringify({
+        ...saved,
+        metadata: {
+          ...saved.metadata,
+          indexedAt: saved.metadata.indexedAt + 1,
+        },
+        vocab: ['кошторис'],
+        positions: [0, 0, 8],
+      }),
+    );
+
+    assert.deepEqual(doc.vocab, []);
+    assert.equal(doc.positions.length, 0);
+    assert.deepEqual(doc.joints, {});
+  });
+
   it('treats a legacy index format as missing, so the index gets rebuilt', async () => {
     await saveIndex();
     await writeMarker(JSON.stringify({ format: 'v8-chunked' }));
