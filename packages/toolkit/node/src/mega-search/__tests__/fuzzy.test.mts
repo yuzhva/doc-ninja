@@ -66,4 +66,38 @@ describe('fuzzyMatch()', () => {
     assert.equal(fuzzyMatch('наказ', 'наказу', 0), false);
     assert.equal(fuzzyMatch('наказ', 'накза', 0), false);
   });
+
+  it('answers as editDistance() does, for every pair', () => {
+    // It stops early instead of working the whole distance out. Short words
+    // of few letters hold every kind of near miss: swaps next to edits,
+    // repeated letters, one word inside the other.
+    let seed = 1;
+    const random = (below: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed % below;
+    };
+    const word = () =>
+      Array.from({ length: random(9) }, () => 'абвг'[random(4)]).join('');
+
+    for (let pair = 0; pair < 20000; pair++) {
+      const a = word();
+      const b = random(2) ? word() : a.slice(0, random(a.length + 1)) + word();
+      const distance = editDistance(a, b);
+      for (let threshold = 0; threshold <= 3; threshold++) {
+        assert.equal(
+          fuzzyMatch(a, b, threshold),
+          distance <= threshold,
+          `${a} ${b} ${threshold}`,
+        );
+      }
+    }
+  });
+
+  it('answers the same after a longer word than any before', () => {
+    // the rows it keeps between calls grow to fit
+    const long = 'науково-дослідний'.repeat(3);
+    assert.equal(fuzzyMatch(long, long.slice(1)), true);
+    assert.equal(fuzzyMatch(long, 'х' + long.slice(2)), false);
+    assert.equal(fuzzyMatch('наказ', 'накза'), true);
+  });
 });
