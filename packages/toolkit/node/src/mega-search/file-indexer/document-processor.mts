@@ -63,6 +63,15 @@ class DocumentProcessor {
     return path.join(this.cachePaths.indexCacheRoot, `${rel}.index.json`);
   }
 
+  /**
+   * Forgets what it keeps in memory about the caches on disk — call it when
+   * they're deleted, or the folders it created would count as still there.
+   */
+  clearMemoryCache(): void {
+    this.textLRU.clear();
+    this.createdDirectories.clear();
+  }
+
   private async ensureDirectory(dirPath: string): Promise<void> {
     if (this.createdDirectories.has(dirPath)) return;
     await fs.promises.mkdir(dirPath, { recursive: true });

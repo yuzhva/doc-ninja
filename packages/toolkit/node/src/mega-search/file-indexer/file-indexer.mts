@@ -613,6 +613,7 @@ class FileIndexer {
     this.stemDictionary = new Map();
     this.generation++;
     this.documentLRU.clear();
+    this.processor.clearMemoryCache();
     this.searchCache = undefined;
   }
 }

@@ -1172,6 +1172,29 @@ describe('MegaSearch re-indexing and cache maintenance', () => {
       await fixture.megaSearch.reindex();
       assert.deepEqual(await find('наказ'), ['a.txt']);
     });
+
+    it('writes the caches again on the next reindex', async () => {
+      // Regression guard: the instance remembered the cache folders as
+      // created, so it never wrote the text and per-document caches again —
+      // snippets lost the original text, and every start re-read every file.
+      await fixture.megaSearch.clearCache();
+      await fixture.megaSearch.reindex();
+
+      for (const file of [
+        '.cache/txt/a.txt.txt',
+        '.cache/index/a.txt.index.json',
+      ]) {
+        assert.equal(fixture.corpus.exists(file), true, file);
+      }
+      const [result] = (
+        await fixture.megaSearch.search('наказ', { snippetContextBefore: 2 })
+      ).results;
+      // the raw text's capital letter, not the index's lowercase words
+      assert.deepEqual(
+        result.snippets.map((s) => s.context),
+        ['Начальник підписав <b>наказ</b>...'],
+      );
+    });
   });
 
   describe('MegaSearch.clearCacheFor()', () => {
