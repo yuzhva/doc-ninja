@@ -12,7 +12,6 @@ import {
   stemQuery,
 } from '../test-utils/in-memory-index.mjs';
 import type { SearchData } from '../test-utils/in-memory-index.mjs';
-import { knownBug } from '../test-utils/known-bug.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
 
 const DOCS = {
@@ -139,6 +138,30 @@ describe('SnippetGenerator', () => {
       assert.deepEqual(await tokenSnippets('repeat.txt', 'bicycle'), []);
     });
 
+    it('finds typo matches through termAliases, reporting the query term at lower confidence', async () => {
+      const [queryStem] = stemQuery('упрвління'); // "упрвлін"
+      const [indexStem] = stemQuery('управління'); // "управлін", 1 edit away
+
+      const snippets = await generator.generateSnippets(
+        data.docCache.get('orders.txt')!,
+        [queryStem],
+        data.invertedIndex,
+        false,
+        true,
+        undefined,
+        0,
+        30,
+        new Map([[indexStem, queryStem]]),
+      );
+
+      assert.deepEqual(
+        snippets.map((s) => s.match),
+        ['управління', 'управління'],
+      );
+      assert.equal(snippets[0].highlights[0].term, queryStem);
+      assert.equal(snippets[0].confidence, 1 - 1 / indexStem.length);
+    });
+
     describe('without a readable raw text cache', () => {
       const docWithoutRawText = (text: string) =>
         buildDocumentIndex('no-raw.txt', text, {
@@ -170,18 +193,16 @@ describe('SnippetGenerator', () => {
         );
       });
 
-      it(
-        'still highlights Cyrillic words',
-        knownBug(
-          'the fallback highlighter wraps terms in \\b…\\b, and JavaScript word boundaries ' +
-            'only know ASCII letters, so Cyrillic matches are never wrapped in <b>',
-        ),
-        async () => {
-          const [snippet] = await fallbackSnippets('Бюджет міста.', 'бюджет');
+      it('still highlights Cyrillic words, as whole words only', async () => {
+        // Regression guard: the fallback wrapped terms in \b…\b, and JS word
+        // boundaries only know ASCII letters, so Cyrillic was never wrapped.
+        const [snippet] = await fallbackSnippets(
+          'Бюджет бюджетний міста.',
+          'бюджет',
+        );
 
-          assert.deepEqual(highlightedSpans(snippet.context), ['бюджет']);
-        },
-      );
+        assert.deepEqual(highlightedSpans(snippet.context), ['бюджет']);
+      });
     });
   });
 
@@ -228,8 +249,8 @@ describe('SnippetGenerator', () => {
     });
 
     it('needs match positions — without them there is nothing to render', async () => {
-      // MegaSearch only passes positions for proximity searches; see the
-      // quoted-phrase snippet known bug in mega-search.test.mts.
+      // which is why MegaSearch records positions on both phrase paths
+      // (exact and proximity)
       assert.deepEqual(
         await phraseSnippets('orders.txt', 'начальник управління', undefined),
         [],

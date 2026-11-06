@@ -57,12 +57,25 @@ describe('PhraseMatcher', () => {
     });
 
     it('expects stemmed phrase tokens — an unstemmed inflected word never matches', () => {
-      // Pins the contract of this helper; see the strict-phrase known bug in
-      // mega-search.test.mts, where the caller passes unstemmed words.
+      // Pins the contract of this helper; MegaSearch must pass stems (it once
+      // passed the unstemmed query words for "quoted" phrases).
       const doc = data.docCache.get('orders.txt')!;
       assert.equal(
         matcher.countExactPhrase(doc, ['начальник', 'управління']),
         0,
+      );
+    });
+
+    it('findExactPhraseSequences() returns the token positions of each occurrence', () => {
+      assert.deepEqual(
+        matcher.findExactPhraseSequences(
+          data.docCache.get('orders.txt')!,
+          stemQuery('начальник управління'),
+        ),
+        [
+          [0, 1],
+          [5, 6],
+        ],
       );
     });
 

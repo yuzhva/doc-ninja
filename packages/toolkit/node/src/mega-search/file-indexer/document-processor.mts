@@ -13,7 +13,12 @@ import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 class DocumentProcessor {
   private textProcessor = new UkrainianTextProcessor();
   private documentExtractor = new DocumentExtractor();
-  private textLRU = new LRUCache<string, string>(25);
+  // Remembers which source version (mtime) the text came from, so an edit to
+  // the file invalidates it instead of re-indexing the old text.
+  private textLRU = new LRUCache<
+    string,
+    { text: string; sourceMtimeMs: number }
+  >(25);
   private createdDirectories = new Set<string>();
   private cachePaths: ResolvedCachePaths;
 
@@ -47,19 +52,22 @@ class DocumentProcessor {
 
   async extractTextFromFile(filePath: string): Promise<string> {
     try {
-      const cached = this.textLRU.get(filePath);
-      if (cached) return cached;
-
       const txtPath = this.getTextCachePath(filePath);
       await this.ensureDirectory(path.dirname(txtPath));
 
       try {
         const srcStat = await promisify(fs.stat)(filePath);
+        const sourceMtimeMs = srcStat.mtimeMs;
+
+        const cached = this.textLRU.get(filePath);
+        if (cached && cached.sourceMtimeMs === sourceMtimeMs)
+          return cached.text;
+
         try {
           const txtStat = await promisify(fs.stat)(txtPath);
-          if (txtStat.mtimeMs >= srcStat.mtimeMs) {
+          if (txtStat.mtimeMs >= sourceMtimeMs) {
             const text = await promisify(fs.readFile)(txtPath, 'utf8');
-            this.textLRU.set(filePath, text);
+            this.textLRU.set(filePath, { text, sourceMtimeMs });
             return text;
           }
         } catch (statError) {
@@ -68,16 +76,16 @@ class DocumentProcessor {
 
         const text = await this.documentExtractor.extractText({ filePath });
         await promisify(fs.writeFile)(txtPath, text, 'utf8');
-        this.textLRU.set(filePath, text);
+        this.textLRU.set(filePath, { text, sourceMtimeMs });
         return text;
       } catch (diskError) {
+        // Without a source mtime the text can't be validated later, so it is
+        // not kept in the LRU.
         this.logger.warn(
           `Cache operation failed for ${path.basename(filePath)}, extracting directly:`,
           diskError instanceof Error ? diskError.message : String(diskError),
         );
-        const text = await this.documentExtractor.extractText({ filePath });
-        this.textLRU.set(filePath, text);
-        return text;
+        return await this.documentExtractor.extractText({ filePath });
       }
     } catch (error) {
       this.logger.error(

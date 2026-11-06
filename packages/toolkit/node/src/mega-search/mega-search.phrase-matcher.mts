@@ -7,12 +7,18 @@ export class PhraseMatcher {
   constructor(private textProcessor: UkrainianTextProcessor) {}
 
   /**
-   * Efficiently count exact phrase occurrences
+   * Find every occurrence of the phrase as consecutive document tokens, as
+   * token-position sequences (the shape snippet generation consumes).
+   * Document tokens are stemmed before comparing, so `phraseTokens` must be
+   * stems too.
    */
-  countExactPhrase(doc: DocumentIndex, originalPhraseTokens: string[]): number {
-    let count = 0;
-    const phraseLength = originalPhraseTokens.length;
-    if (phraseLength === 0) return 0;
+  findExactPhraseSequences(
+    doc: DocumentIndex,
+    phraseTokens: string[],
+  ): number[][] {
+    const sequences: number[][] = [];
+    const phraseLength = phraseTokens.length;
+    if (phraseLength === 0) return sequences;
 
     for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
       let match = true;
@@ -20,17 +26,24 @@ export class PhraseMatcher {
         const docToken = getDocumentToken(doc, i + j);
         if (
           !docToken ||
-          this.textProcessor.stemWord(docToken.term) !== originalPhraseTokens[j]
+          this.textProcessor.stemWord(docToken.term) !== phraseTokens[j]
         ) {
           match = false;
           break;
         }
       }
       if (match) {
-        count++;
+        sequences.push(Array.from({ length: phraseLength }, (_, j) => i + j));
       }
     }
-    return count;
+    return sequences;
+  }
+
+  /**
+   * Count exact phrase occurrences (see findExactPhraseSequences).
+   */
+  countExactPhrase(doc: DocumentIndex, phraseTokens: string[]): number {
+    return this.findExactPhraseSequences(doc, phraseTokens).length;
   }
 
   /**

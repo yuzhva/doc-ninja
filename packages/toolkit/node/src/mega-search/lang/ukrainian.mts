@@ -392,7 +392,7 @@ function normalizeUkrainian(text: string): string {
   return text
     .toLowerCase()
     .trim()
-    .replace(/[''`’]/g, '') // Remove apostrophes which are common in Ukrainian
+    .replace(/['`’ʼ]/g, '') // Remove apostrophes (', `, ’, ʼ) which are common in Ukrainian
     .replace(/\s+/g, ' ')
     .replace(/[^\w\sа-яїієґ-]/g, '')
     .trim();

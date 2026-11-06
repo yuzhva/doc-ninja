@@ -46,6 +46,10 @@ const ORDERS = [
   'наказ 10.10.25.txt',
 ];
 
+const STRICT_MODE_DECISION =
+  'Pending decision on what strict mode ("Allow fuzzy match" off) means: the same word in any ' +
+  'inflected form without typos, or the exact word form only';
+
 /** How be-krang's DocumentIntelligenceService searches every query. */
 const PRODUCTION_OPTIONS: SearchOptions = {
   maxTypoDistance: 1,
@@ -189,23 +193,29 @@ describe('MegaSearch', () => {
       );
     });
 
-    it(
-      'returns snippets for documents found through a typo',
-      knownBug(
-        'scoring matches the misspelled stem against index terms by Levenshtein distance, but the ' +
-          'snippet and highlight generators compare stems for exact equality, so the result has no snippets',
-      ),
-      async () => {
-        const [result] = (await search('упрвління')).results;
-        assert.ok(result.snippets.length > 0);
-      },
-    );
+    it('returns snippets and highlights for documents found through a typo', async () => {
+      // Regression guard: scoring matched the misspelled stem by Levenshtein
+      // distance, but snippets/highlights compared stems for exact equality,
+      // so typo matches came back without any.
+      const [result] = (await search('упрвління', { includeHighlights: true }))
+        .results;
+      const [snippet] = result.snippets;
+      const queryStem = textProcessor.stemWord('упрвління');
+
+      assert.equal(snippet.match, 'управління');
+      assert.equal(snippet.highlights[0].term, queryStem);
+      assert.ok(snippet.confidence > 0 && snippet.confidence < 1);
+      assert.equal(result.highlights[0].originalWord, 'управління');
+      assert.equal(result.highlights[0].term, queryStem);
+      assert.ok(result.highlights[0].confidence < 1);
+    });
 
     it(
       'tolerates two swapped letters with the default maxTypoDistance, as SearchOptions documents',
       knownBug(
         'SearchOptions.maxTypoDistance promises "search" ↔ "serach" (1 transposition), but plain ' +
-          'Levenshtein counts a swap as 2 edits (Damerau–Levenshtein would count 1)',
+          'Levenshtein counts a swap as 2 edits. Pending decision: count a swap as one edit ' +
+          '(OSA / Damerau–Levenshtein), or correct the docs',
       ),
       async () => {
         assert.deepEqual(await find('serach'), ['search.txt']);
@@ -222,7 +232,8 @@ describe('MegaSearch', () => {
       'with typo tolerance off, finds an inflected word spelled exactly as in the text',
       knownBug(
         'strict mode looks the unstemmed query word up in the inverted index, whose keys are stems, ' +
-          'so any word that differs from its stem ("управління" → "управлін", "cars" → "car") is never found',
+          'so any word that differs from its stem ("управління" → "управлін", "cars" → "car") is never found. ' +
+          STRICT_MODE_DECISION,
       ),
       async () => {
         assert.ok(
@@ -240,42 +251,65 @@ describe('MegaSearch', () => {
       assert.deepEqual(await find('"car rich"'), []);
     });
 
+    it('matches a phrase of inflected Ukrainian words', async () => {
+      // Regression guard: the phrase was compared with the unstemmed query
+      // words against stemmed document tokens (a parameter renamed to
+      // `originalPhraseTokens` in ff6d602d was taken literally in cf2417a8).
+      assert.deepEqual(await find('"начальник управління"'), [
+        'наказ 01.02.2024.txt',
+      ]);
+    });
+
     it(
-      'matches a phrase of inflected Ukrainian words',
+      'with typo tolerance off, matches a phrase of inflected words spelled exactly as in the text',
       knownBug(
-        'countExactPhrase compares stemmed document tokens with the unstemmed query words ' +
-          '(originalPhraseTokens), so a phrase only matches when every word equals its own stem',
+        'strict mode compares the unstemmed query words with stems, as for single words. ' +
+          STRICT_MODE_DECISION,
       ),
       async () => {
-        assert.deepEqual(await find('"начальник управління"'), [
-          'наказ 01.02.2024.txt',
-        ]);
+        assert.deepEqual(
+          await find('"начальник управління"', {
+            isTypoToleranceEnabled: false,
+          }),
+          ['наказ 01.02.2024.txt'],
+        );
       },
     );
 
-    it(
-      'returns snippets for phrase matches',
-      knownBug(
-        'the strict phrase path counts matches but never records their positions, and the snippet ' +
-          'generator renders phrase snippets from those positions only',
-      ),
-      async () => {
-        const [result] = (await search('"rich car"')).results;
-        assert.ok(result.snippets.length > 0);
-      },
-    );
+    it('returns snippets for phrase matches', async () => {
+      // Regression guard: the strict phrase path counted matches but never
+      // recorded their positions, which phrase snippets are rendered from.
+      const [fuzzy] = (await search('"rich car"')).results;
+      const [strict] = (
+        await search('"rich car"', { isTypoToleranceEnabled: false })
+      ).results;
 
-    it(
-      'ranks phrase matches by relevance',
-      knownBug(
-        'phrase scoring reads doc.termFrequency, which the indexer empties in memory after saving ' +
-          '(see DocumentProcessor), so every phrase and proximity result scores 0',
-      ),
-      async () => {
-        const [result] = (await search('"rich car"')).results;
-        assert.ok(result.score > 0);
-      },
-    );
+      assert.deepEqual(
+        fuzzy.snippets.map((s) => [s.matchType, s.match]),
+        [['fuzzy-phrase', 'Rich car']],
+      );
+      assert.equal(
+        fuzzy.snippets[0].context,
+        '<b>Rich</b> <b>car</b> owners love cars...',
+      );
+      assert.deepEqual(
+        strict.snippets.map((s) => [s.matchType, s.match]),
+        [['exact-phrase', 'Rich car']],
+      );
+    });
+
+    it('ranks phrase and proximity matches by relevance', async () => {
+      // Regression guard: phrase scoring read doc.termFrequency, which the
+      // indexer empties in memory, so every phrase result — and so every
+      // be-krang query — scored 0.
+      const [quoted] = (await search('"rich car"')).results;
+      const [proximity] = (
+        await search('начальник управління', PRODUCTION_OPTIONS)
+      ).results;
+
+      assert.ok(quoted.score > 0);
+      assert.ok(proximity.score > 0);
+    });
   });
 
   describe('search() — phrase proximity (how be-krang searches)', () => {
@@ -324,7 +358,8 @@ describe('MegaSearch', () => {
       'with the default maxWordsInPhraseDistance (0), matches adjacent words as SearchOptions documents',
       knownBug(
         'the distance is compared as a position step (adjacent = 1), so the default 0 never matches ' +
-          'a multi-word phrase; SearchOptions documents it as words *between* (0 = adjacent, 1 = one-word gap)',
+          'a multi-word phrase; SearchOptions documents it as words *between* (0 = adjacent, 1 = one-word gap). ' +
+          'Pending decision: make the code match the docs (and move be-krang from 2 to 1), or keep it and fix the docs + default',
       ),
       async () => {
         assert.deepEqual(fileNames(await proximity('rich car')), ['cars.txt']);
@@ -376,7 +411,8 @@ describe('MegaSearch', () => {
         'ranks a document matching every query word above one matching only some',
         knownBug(
           'BM25 idf ln((N - df + 0.5) / (df + 0.5)) is 0 at df = N/2 and negative above, so ' +
-            'common words cannot lift — or even lower — a document (see bm25-scorer.test.mts)',
+            'common words cannot lift — or even lower — a document (see bm25-scorer.test.mts). ' +
+            "Pending decision: switch to Lucene's ln(1 + …) idf",
         ),
         async () => {
           const { results } = await common.megaSearch.search(
@@ -522,20 +558,27 @@ describe('MegaSearch', () => {
       assert.deepEqual(await inScope(['reports']), []);
     });
 
-    it(
-      'does not leak into a sibling folder whose name starts with the scope',
-      knownBug(
-        'scopes are matched with a plain startsWith on the path, so "orders" also matches ' +
-          '"orders 2022/…" (and "Накази" would match "Накази 2022")',
-      ),
-      async () => {
+    it('does not leak into a sibling folder whose name starts with the scope', async () => {
+      // Regression guard: a plain startsWith let "orders" match "orders 2022/…"
+      // (and "Накази" would match "Накази 2022").
+      for (const scope of ['orders', 'orders/', '/orders/']) {
         assert.ok(
-          !(await find('наказ', { searchScopedPaths: ['orders'] })).includes(
+          !(await find('наказ', { searchScopedPaths: [scope] })).includes(
             'наказ 03.03.2022.txt',
           ),
+          scope,
         );
-      },
-    );
+      }
+    });
+
+    it('accepts a single file as a scope', async () => {
+      assert.deepEqual(
+        await find('наказ', {
+          searchScopedPaths: ['orders/наказ 10.10.25.txt'],
+        }),
+        ['наказ 10.10.25.txt'],
+      );
+    });
   });
 
   describe('search() — result cache', () => {
@@ -617,86 +660,66 @@ describe('MegaSearch re-indexing and cache maintenance', () => {
   describe('reindex() with earlier searches in the result cache', () => {
     useFreshFixture();
 
-    it(
-      'returns fresh results for a query searched before the reindex',
-      knownBug(
-        'reindex() rebuilds the index but never clears the search-result cache (only clearCache() ' +
-          'does), so a long-lived instance — as in be-krang — keeps serving the pre-reindex results',
-      ),
-      async () => {
-        assert.deepEqual(await find('звіт'), []);
-        await fixture.corpus.write('d.txt', 'Квартальний звіт.');
-        await fixture.megaSearch.reindex();
+    it('returns fresh results for a query searched before the reindex', async () => {
+      // Regression guard: reindex() never cleared the result cache, so a
+      // long-lived instance — as in be-krang — served pre-reindex results.
+      assert.deepEqual(await find('звіт'), []);
+      await fixture.corpus.write('d.txt', 'Квартальний звіт.');
+      await fixture.megaSearch.reindex();
 
-        assert.deepEqual(await find('звіт'), ['d.txt']);
-      },
-    );
+      assert.deepEqual(await find('звіт'), ['d.txt']);
+    });
   });
 
   describe('reindex() after editing an indexed document', () => {
     useFreshFixture();
 
-    it(
-      'serves the edited content',
-      knownBug(
-        'see file-indexer.test.mts — edited files are not rebuilt into the inverted index, and the ' +
-          'in-process text cache returns the old text',
-      ),
-      async () => {
-        await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
-        await fixture.megaSearch.reindex();
+    it('serves the edited content', async () => {
+      // Regression guard (see file-indexer.test.mts): edited files were not
+      // rebuilt into the inverted index, and the text cache kept the old text.
+      await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
+      await fixture.megaSearch.reindex();
 
-        assert.deepEqual(await find('кошторис'), ['a.txt']);
-        assert.deepEqual(await find('наказ'), []);
-      },
-    );
+      assert.deepEqual(await find('кошторис'), ['a.txt']);
+      assert.deepEqual(await find('наказ'), []);
+    });
   });
 
   describe('a document edited while the app was closed', () => {
     useFreshFixture();
 
-    it(
-      'is served with its edited content on the next start',
-      knownBug(
-        'see file-indexer.test.mts — edited files are not rebuilt into the inverted index',
-      ),
-      async () => {
-        await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
-        const restarted = await createMegaSearch(fixture.config);
+    it('is served with its edited content on the next start', async () => {
+      await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
+      const restarted = await createMegaSearch(fixture.config);
 
-        assert.deepEqual(fileNames(await restarted.search('кошторис')), [
-          'a.txt',
-        ]);
-      },
-    );
+      assert.deepEqual(fileNames(await restarted.search('кошторис')), [
+        'a.txt',
+      ]);
+      assert.deepEqual(fileNames(await restarted.search('наказ')), []);
+    });
   });
 
   describe('reindex() compared with a fresh start', () => {
     useFreshFixture();
 
-    it(
-      'scores exactly like a fresh index of the same corpus',
-      knownBug(
-        'only initialize() computes the BM25 average document length; reindex() keeps the old one, ' +
-          'so scores drift as documents are added or removed',
-      ),
-      async () => {
-        await fixture.corpus.write(
-          'long.txt',
-          'Начальник управління освіти підписав наказ про зміну графіку роботи всіх шкіл міста.',
-        );
-        await fixture.megaSearch.reindex();
-        const fresh = await createMegaSearch(fixture.config);
-        // a word only the new document has, so idf > 0 and length normalization shows
-        const scores = async (megaSearch: MegaSearch) =>
-          (await megaSearch.search('освіти')).results.map((r) => [
-            r.doc.fileName,
-            r.score,
-          ]);
+    it('scores exactly like a fresh index of the same corpus', async () => {
+      // Regression guard: only initialize() computed the BM25 average document
+      // length, so scores drifted after every reindex().
+      await fixture.corpus.write(
+        'long.txt',
+        'Начальник управління освіти підписав наказ про зміну графіку роботи всіх шкіл міста.',
+      );
+      await fixture.megaSearch.reindex();
+      const fresh = await createMegaSearch(fixture.config);
+      // a word only the new document has, so idf > 0 and length normalization shows
+      const scores = async (megaSearch: MegaSearch) =>
+        (await megaSearch.search('освіти')).results.map((r) => [
+          r.doc.fileName,
+          r.score,
+        ]);
 
-        assert.deepEqual(await scores(fixture.megaSearch), await scores(fresh));
-      },
-    );
+      assert.deepEqual(await scores(fixture.megaSearch), await scores(fresh));
+    });
   });
 
   describe('clearCache()', () => {

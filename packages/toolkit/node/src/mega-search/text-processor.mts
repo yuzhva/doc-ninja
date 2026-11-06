@@ -24,12 +24,19 @@ class UkrainianTextProcessor {
   tokenize(text: string): SearchToken[] {
     const tokens: SearchToken[] = [];
 
-    // Use regex that properly handles Ukrainian characters
-    const regex = /[\u0400-\u04FFa-zA-Z\u0100-\u017F''-]+/g;
+    // Use regex that properly handles Ukrainian characters. Apostrophes: ASCII ',
+    // the typographic U+2019 (what Word auto-inserts) and the modifier letter
+    // U+02BC (the Unicode-recommended Ukrainian apostrophe).
+    const regex = /[\u0400-\u04FFa-zA-Z\u0100-\u017F'\u2019\u02BC-]+/g;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
-      const term = match[0];
+      // Inside a word an apostrophe is part of it (as in a Ukrainian "p'yat'");
+      // at its edges it can only be a quote mark, which must stay out of the
+      // token's span.
+      const withoutLeading = match[0].replace(/^['\u2019\u02BC]+/, '');
+      const term = withoutLeading.replace(/['\u2019\u02BC]+$/, '');
+      const charStart = match.index + (match[0].length - withoutLeading.length);
       const normalizedTerm = this.normalize(term);
 
       if (
@@ -41,8 +48,8 @@ class UkrainianTextProcessor {
           term: normalizedTerm,
           position: tokens.length,
           normalized: normalizedTerm,
-          charStart: match.index,
-          charEnd: match.index + term.length,
+          charStart,
+          charEnd: charStart + term.length,
         });
       }
     }
