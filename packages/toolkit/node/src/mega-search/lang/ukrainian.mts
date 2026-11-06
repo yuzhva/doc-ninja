@@ -1,4 +1,9 @@
-import natural from 'natural';
+// natural's stemmers only. Importing "natural" loads all of it, its storage
+// backends' database clients too: about a second at start, and it leaves
+// String.prototype in V8's slow dictionary mode, which slows string method
+// calls all over the process — a loop reading a text's characters took five
+// times as long.
+import { PorterStemmerUk } from 'natural/lib/natural/stemmers/index.js';
 
 /**
  * Function words: the prepositions, conjunctions and particles that only tie
@@ -183,7 +188,7 @@ function normalizeUkrainian(text: string): string {
  * so we rely on a specialized stemmer.
  */
 function lemmatizeUkrainian(word: string): string {
-  return natural.PorterStemmerUk.stem(word);
+  return PorterStemmerUk.stem(word);
 }
 
 // NOT IN USE — kept as a note on a problem the stemmer leaves open.

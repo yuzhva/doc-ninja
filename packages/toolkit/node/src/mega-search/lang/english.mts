@@ -1,4 +1,5 @@
-import natural from 'natural';
+// natural's stemmers only, not all of natural: see ukrainian.mts
+import { PorterStemmer } from 'natural/lib/natural/stemmers/index.js';
 
 /**
  * Function words: the articles, conjunctions, prepositions and particles
@@ -81,7 +82,7 @@ function normalizeEnglish(text: string): string {
 }
 
 function stemEnglish(word: string): string {
-  return natural.PorterStemmer.stem(word);
+  return PorterStemmer.stem(word);
 }
 
 export { englishFunctionWords, normalizeEnglish, stemEnglish };
