@@ -10,7 +10,7 @@ import {
   fileNames,
 } from '../test-utils/search-fixture.mjs';
 import type { SearchFixture } from '../test-utils/search-fixture.mjs';
-import { later } from '../test-utils/temp-corpus.mjs';
+import { createTempCorpus, later } from '../test-utils/temp-corpus.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
 
 const textProcessor = new UkrainianTextProcessor();
@@ -1404,6 +1404,35 @@ describe('MegaSearch over an empty folder', () => {
 
     assert.equal(empty.megaSearch.getStats().documentsCount, 0);
     assert.deepEqual((await empty.megaSearch.search('наказ')).results, []);
+  });
+});
+
+describe('MegaSearch created with indexFolder: false', () => {
+  it('indexes the folders searched in first, the others once all are searched', async (t) => {
+    const corpus = await createTempCorpus({
+      'orders/a.txt': 'Начальник підписав наказ.',
+      'reports/b.txt': 'Наказ про бюджет.',
+    });
+    t.after(() => corpus.cleanup());
+    const megaSearch = await createMegaSearch(
+      { rootDirectory: corpus.root, extensions: ['.txt'] },
+      { indexFolder: false },
+    );
+    assert.equal(megaSearch.getStats().documentsCount, 0);
+
+    const searchScopedPaths = ['orders'];
+    await megaSearch.refresh(searchScopedPaths);
+    assert.equal(megaSearch.getStats().documentsCount, 1);
+    assert.deepEqual(
+      fileNames(await megaSearch.search('наказ', { searchScopedPaths })),
+      ['a.txt'],
+    );
+
+    await megaSearch.refresh();
+    assert.deepEqual(fileNames(await megaSearch.search('наказ')).sort(), [
+      'a.txt',
+      'b.txt',
+    ]);
   });
 });
 

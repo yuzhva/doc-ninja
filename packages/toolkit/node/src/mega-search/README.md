@@ -235,8 +235,9 @@ Main search method with full feature support.
 
 - `getStats()` - Get corpus statistics
 - `reindex()` - Force complete reindexing
-- `refresh()` - Bring the index up to date, cheaply: with `watchFiles`, it lists the files only
-  after a change (or `rescanAfterMs`)
+- `refresh(searchScopedPaths?)` - Bring the index up to date, cheaply: with `watchFiles`, it lists
+  the files only after a change (or `rescanAfterMs`). With `searchScopedPaths`, only the files in
+  those folders — what a search in them reads
 - `close()` - Stop watching the folder
 
 ## 🌟 Advanced Features
@@ -311,6 +312,15 @@ engine refreshed before every search (as be-krang does) still answers a repeated
 With `watchFiles`, `refresh()` doesn't even list the folder's files until the watcher reports a
 change, or `rescanAfterMs` (default a minute) goes by — fs.watch can miss changes, on a network
 share for one, so it's a hint, never the only check.
+
+A search in some folders (`searchScopedPaths`) reads only their documents, and needs only theirs
+indexed: `refresh(searchScopedPaths)` lists and indexes the files in those folders alone, and
+drops only their deleted ones. The other folders' documents stay in the index as they were, until
+a refresh takes them in. be-krang creates its engines with
+`createMegaSearch(config, { indexFolder: false })`, which indexes nothing up front, and refreshes
+the folders searched before each search: on a large folder, the first search in one of its
+folders waits for that folder to be indexed, not for all of them. Word statistics for scoring are of all documents indexed, so a
+document scores the same whichever folders are searched.
 
 ## 🚀 Production Deployment
 
