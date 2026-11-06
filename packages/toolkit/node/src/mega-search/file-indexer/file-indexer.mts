@@ -313,6 +313,8 @@ class FileIndexer {
       );
     }
 
+    // Indexing writes each document's cache files, then the index's: unwatched
+    this.watcher?.pause();
     const method = await this.selectIndexingMethod(toIndex);
     this.logger.debug(`📂 Using indexing method: ${method}`);
     const { indexed, errors } =
@@ -406,6 +408,8 @@ class FileIndexer {
   }
 
   private async save(): Promise<void> {
+    // Hundreds of files for a large folder: unwatched (see FolderWatcher.pause)
+    this.watcher?.pause();
     this.logger.info('💾 Saving global index...');
     await this.storage.saveGlobalIndex(
       this.documentCache,
@@ -668,6 +672,9 @@ class FileIndexer {
   private async clearCacheNow(): Promise<void> {
     const { cacheRoot, globalIndexPath } = resolveCachePaths(this.config);
 
+    // Every cache file deleted, unwatched (see FolderWatcher.pause) — and
+    // the next refresh indexes the folder anew, all its looks due
+    this.watcher?.pause();
     this.logger.info(`🗑️ Deleting index cache: ${cacheRoot}`);
     await fs.promises.rm(cacheRoot, { recursive: true, force: true });
 
@@ -692,8 +699,6 @@ class FileIndexer {
     this.generation++;
     this.documentLRU.clear();
     this.processor.clearMemoryCache();
-    // The next refresh indexes the folder anew
-    this.watcher?.markChanged();
   }
 }
 
