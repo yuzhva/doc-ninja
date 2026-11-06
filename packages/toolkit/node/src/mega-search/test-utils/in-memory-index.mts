@@ -4,7 +4,11 @@ import path from 'node:path';
 import { IndexBuilder } from '../file-indexer/index-builder.mjs';
 import { InvertedIndex } from '../file-indexer/inverted-index.mjs';
 import { createLogger } from '../shared/logger.mjs';
-import { UkrainianTextProcessor } from '../text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  findJoints,
+  isNumberTerm,
+} from '../text-processor.mjs';
 import type {
   DocumentIndex,
   DocumentMetadata,
@@ -23,8 +27,8 @@ const textProcessor = new UkrainianTextProcessor();
 
 /**
  * Encodes text the way DocumentProcessor.indexDocumentInternal does
- * (deduplicated vocab + [vocabIndex, charStart, charEnd] positions + stemmed
- * term frequencies), minus the disk I/O and extraction.
+ * (deduplicated vocab + [vocabIndex, charStart, charEnd] positions + joints +
+ * stemmed term frequencies), minus the disk I/O and extraction.
  */
 function buildDocumentIndex(
   docId: string,
@@ -35,8 +39,9 @@ function buildDocumentIndex(
   const vocabIndexByTerm = new Map<string, number>();
   const positions: Array<[number, number, number]> = [];
   const termFrequency = new Map<string, number>();
+  const tokens = textProcessor.tokenize(text);
 
-  for (const token of textProcessor.tokenize(text)) {
+  for (const token of tokens) {
     let vocabIndex = vocabIndexByTerm.get(token.term);
     if (vocabIndex === undefined) {
       vocabIndex = vocab.length;
@@ -61,8 +66,11 @@ function buildDocumentIndex(
     },
     vocab,
     positions,
+    joints: findJoints(text, tokens),
     termFrequency,
-    wordCount: positions.length,
+    wordCount: positions.filter(
+      ([vocabIndex]) => !isNumberTerm(vocab[vocabIndex]),
+    ).length,
   };
 }
 

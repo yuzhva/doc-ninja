@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { UkrainianTextProcessor } from '../text-processor.mjs';
+import { UkrainianTextProcessor, findJoints } from '../text-processor.mjs';
 
 const processor = new UkrainianTextProcessor();
 const terms = (text: string) => processor.tokenize(text).map((t) => t.term);
@@ -42,8 +42,41 @@ describe('UkrainianTextProcessor', () => {
       ]);
     });
 
-    it('drops single letters and numbers', () => {
-      assert.deepEqual(terms('x 2024 A кіт 15.06'), ['кіт']);
+    it('drops single letters, and keeps numbers — single digits and leading zeros too', () => {
+      assert.deepEqual(terms('x 2024 A кіт 15.06, № 5'), [
+        '2024',
+        'кіт',
+        '15',
+        '06',
+        '5',
+      ]);
+    });
+
+    it('splits a number from the letters and separators around it', () => {
+      const text = 'вх№36088 від 22.12.2024).';
+      const tokens = processor.tokenize(text);
+
+      assert.deepEqual(
+        tokens.map((t) => t.term),
+        ['вх', '36088', '22', '12', '2024'],
+      );
+      assert.deepEqual(
+        tokens.map((t) => text.slice(t.charStart, t.charEnd)),
+        ['вх', '36088', '22', '12', '2024'],
+      );
+    });
+
+    it('finds the words it found before numbers were indexed', () => {
+      // A digit used to end a word as any separator does, and still does
+      const text =
+        'ВОС-790037Д, 1-й корпус, кв.15а, 3х4, рахунок№12/2024р., 2-го поверху';
+      const words = (tokens: ReturnType<typeof processor.tokenize>) =>
+        tokens.map((t) => [t.term, t.charStart, t.charEnd]);
+
+      assert.deepEqual(
+        words(processor.tokenize(text).filter((t) => !/^[0-9]+$/.test(t.term))),
+        words(processor.tokenize(text.replace(/[0-9]/g, '#'))),
+      );
     });
 
     it('numbers positions consecutively over the kept tokens only', () => {
@@ -93,6 +126,7 @@ describe('UkrainianTextProcessor', () => {
           'франківськ',
           'залізничний',
           'дсту',
+          '3008',
           'офіс',
         ],
       );
@@ -105,6 +139,7 @@ describe('UkrainianTextProcessor', () => {
           'Франківськ',
           'Залізничний',
           'ДСТУ',
+          '3008',
           'офіс',
         ],
       );
@@ -118,6 +153,27 @@ describe('UkrainianTextProcessor', () => {
         tokens.map((t) => text.slice(t.charStart, t.charEnd)),
         ['Слово', 'наказ', 'бюджет'],
       );
+    });
+  });
+
+  describe('findJoints()', () => {
+    const joints = (text: string) => findJoints(text, processor.tokenize(text));
+
+    it('keeps what glues a number to the token next to it, by token index', () => {
+      // лист0 вх1 36088(2) 22(3) 12(4) 2024(5) пункти6 15(7) 2(8) 2024(9) го10
+      assert.deepEqual(
+        joints('Лист вх№36088 від 22.12.2024, пункти 15, 2 та 2024-го.'),
+        { 2: '№', 4: '.', 5: '.', 10: '-' },
+      );
+    });
+
+    it('keeps nothing where whitespace parts the tokens, or no number is one of them', () => {
+      assert.deepEqual(joints('Лист вх. № 36088 від 22 12 2024'), {});
+      assert.deepEqual(joints('Петренку,Івану; науково-дослідний'), {});
+    });
+
+    it('keeps an empty joint for tokens glued with nothing between them', () => {
+      assert.deepEqual(joints('вх36088'), { 1: '' });
     });
   });
 

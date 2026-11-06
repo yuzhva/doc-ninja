@@ -44,7 +44,14 @@ interface DocumentIndex {
   metadata: DocumentMetadata;
   vocab: string[]; // Array of unique words in the document
   positions: Array<[number, number, number]>; // Tuples of [vocabIndex, charStart, charEnd]
+  /**
+   * What glues a token to the one before it, by the token's position, where
+   * one of the two is a number: "22.12.2024" → "." at 12 and at 2024. See
+   * findJoints.
+   */
+  joints: Record<number, string>;
   termFrequency: Map<string, number>;
+  /** Words only: the numbers among `positions` don't count. */
   wordCount: number;
   paragraphs?: ParagraphInfo[]; // Add paragraph structure
 }

@@ -62,7 +62,7 @@ describe('IndexStorage', () => {
 
   beforeEach(async () => {
     corpus = await createTempCorpus({
-      'a.txt': 'Начальник підписав наказ.',
+      'a.txt': 'Начальник підписав наказ № 15/2.',
       'nested/b.txt': 'Бюджет міста затверджено. Наказ виконано.',
     });
     config = {
@@ -98,7 +98,7 @@ describe('IndexStorage', () => {
     assert.deepEqual(loaded.stemDictionary, saved.stemDictionary);
   });
 
-  it('keeps vocab/positions out of the global index and reads them per document on demand', async () => {
+  it('keeps vocab/positions/joints out of the global index and reads them per document on demand', async () => {
     const saved = await saveIndex();
     const loaded = (await newStorage().loadGlobalIndex())!;
     const [first, second] = [...saved.documentCache.keys()];
@@ -111,12 +111,15 @@ describe('IndexStorage', () => {
       loaded.documentCache.get(first)!.positions,
       saved.documentCache.get(first)!.positions,
     );
+    assert.equal(first, corpus.pathOf('a.txt'));
+    assert.deepEqual(loaded.documentCache.get(first)!.joints, { 4: '/' });
 
     // a missing per-document file degrades to an empty document, not a crash
     await fs.promises.rm(corpus.pathOf('.cache/index/nested/b.txt.index.json'));
     assert.equal(second, corpus.pathOf('nested/b.txt'));
     assert.deepEqual(loaded.documentCache.get(second)!.vocab, []);
     assert.deepEqual(loaded.documentCache.get(second)!.positions, []);
+    assert.deepEqual(loaded.documentCache.get(second)!.joints, {});
   });
 
   it('treats a legacy index format as missing, so the index gets rebuilt', async () => {

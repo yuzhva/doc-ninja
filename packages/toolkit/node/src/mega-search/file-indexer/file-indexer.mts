@@ -449,14 +449,18 @@ class FileIndexer {
         entries.forEach((entry) => invertedIndexDocs.add(entry.documentId)),
       );
 
-      // Filter out empty documents from the count check
-      const nonEmptyDocsCount = Array.from(this.documentCache.values()).filter(
+      // Every document with words has postings. One of numbers only has
+      // postings too, and no words, so it is not counted either way.
+      const docsWithWords = Array.from(this.documentCache.values()).filter(
         (doc) => doc.wordCount > 0,
+      );
+      const missingDocsCount = docsWithWords.filter(
+        (doc) => !invertedIndexDocs.has(doc.metadata.originalFilePath),
       ).length;
 
-      if (nonEmptyDocsCount !== invertedIndexDocs.size)
+      if (missingDocsCount > 0)
         issues.push(
-          `Non-empty document count (${nonEmptyDocsCount}) doesn't match inverted index documents (${invertedIndexDocs.size})`,
+          `${missingDocsCount} of ${docsWithWords.length} documents with words are missing from the inverted index`,
         );
 
       // Check for empty terms in inverted index

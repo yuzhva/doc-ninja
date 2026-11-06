@@ -1,5 +1,5 @@
 import { Logger } from '../shared/logger.mjs';
-import { UkrainianTextProcessor } from '../text-processor.mjs';
+import { UkrainianTextProcessor, isNumberTerm } from '../text-processor.mjs';
 import { DocumentIndex, SearchConfig } from '../types.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
 
@@ -195,6 +195,9 @@ export class IndexBuilder {
 
       vocabStemMap[v] = stemmedTerm;
 
+      // A number has no other forms to look up: it is matched from its
+      // postings alone (TermMatcher), so the dictionary holds words only
+      if (isNumberTerm(stemmedTerm)) continue;
       if (!stemDictionary.has(stemmedTerm)) {
         stemDictionary.set(stemmedTerm, new Set());
       }

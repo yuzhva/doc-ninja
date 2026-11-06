@@ -34,6 +34,9 @@ const DOCS = {
     'Начальник управління підписав наказ. Наказ начальника управління.',
   'repeated.txt': 'Оплатити рахунок. Оплатити рахунок. Оплатити рахунок.',
   // оплатити0 рахунок1 оплатити2 рахунок3 оплатити4 рахунок5
+  'numbered.txt':
+    'Рішення від 21.11.2022. Затвердити кошторис на 2023 рік та план робіт.',
+  // рішення0 21(1) 11(2) 2022(3) затвердити4 кошторис5 2023(6) план7 робіт8
 };
 
 /** Where each occurrence of `word` starts in `text`. */
@@ -160,6 +163,18 @@ describe('SnippetGenerator', () => {
       });
 
       assert.equal(snippet.context, 'Бюджет міста <b>затверджено</b> радою...');
+    });
+
+    it('counts the context in words: numbers neither use it up nor end a sentence', async () => {
+      const [snippet] = await tokenSnippets('numbered.txt', 'кошторис', {
+        contextBefore: 2,
+        contextAfter: 3,
+      });
+
+      assert.equal(
+        snippet.context,
+        'Рішення від 21.11.2022. Затвердити <b>кошторис</b> на 2023 рік та план робіт...',
+      );
     });
 
     it('highlights exactly its own match, by offset', async () => {
@@ -331,6 +346,16 @@ describe('SnippetGenerator', () => {
         snippets.map((s) => s.matchCharStart),
         offsetsOf(DOCS['repeated.txt'], 'Оплатити'),
       );
+    });
+
+    it('returns a number glued from parts as the text writes it', async () => {
+      const [snippet] = await phraseSnippets('numbered.txt', '21.11.2022', [
+        [1, 2, 3],
+      ]);
+
+      assert.equal(snippet.match, '21.11.2022');
+      assert.equal(snippet.confidence, 1);
+      assert.deepEqual(highlightedSpans(snippet.context), ['21', '11', '2022']);
     });
 
     it('lowers fuzzy-phrase confidence by the total edit distance', async () => {

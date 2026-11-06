@@ -491,13 +491,15 @@ class IndexStorage {
     const indexPath = this.getIndexCachePath(doc.metadata.originalFilePath);
     let _vocab: string[] | null = doc.vocab || null;
     let _positions: [number, number, number][] | null = doc.positions || null;
+    let _joints: Record<number, string> | null = doc.joints || null;
 
     const loadFromDisk = () => {
-      if (_vocab && _positions) return;
+      if (_vocab && _positions && _joints) return;
       const cached = this.documentLRU.get(doc.metadata.originalFilePath);
-      if (cached && cached.vocab && cached.positions) {
+      if (cached && cached.vocab && cached.positions && cached.joints) {
         _vocab = cached.vocab;
         _positions = cached.positions;
+        _joints = cached.joints;
         return;
       }
       try {
@@ -505,10 +507,12 @@ class IndexStorage {
         const fullDoc = JSON.parse(content);
         _vocab = fullDoc.vocab || [];
         _positions = fullDoc.positions || [];
+        _joints = fullDoc.joints || {};
         this.documentLRU.set(doc.metadata.originalFilePath, fullDoc);
       } catch (e) {
         _vocab = [];
         _positions = [];
+        _joints = {};
       }
     };
 
@@ -524,6 +528,14 @@ class IndexStorage {
       get: () => {
         loadFromDisk();
         return _positions;
+      },
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(doc, 'joints', {
+      get: () => {
+        loadFromDisk();
+        return _joints;
       },
       configurable: true,
       enumerable: true,

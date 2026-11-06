@@ -1,6 +1,6 @@
 import { fuzzyMatch } from './fuzzy.mjs';
 import { calculateMatchConfidence } from './mega-search.utils.mjs';
-import { UkrainianTextProcessor } from './text-processor.mjs';
+import { UkrainianTextProcessor, isNumberTerm } from './text-processor.mjs';
 import type { DocumentIndex, InvertedIndexEntry } from './types.mjs';
 
 type TermMatchOptions = {
@@ -20,6 +20,7 @@ type TermMatchOptions = {
 
 type SearchIndex = {
   invertedIndex: Map<string, InvertedIndexEntry[]>;
+  /** Stem → its words. Words only: a number is its own term, with no forms. */
   stemDictionary: Map<string, string[]>;
 };
 
@@ -133,6 +134,9 @@ class WordMatch {
  * "Бондарук". Related words (on by default) find those, together with the
  * derived words. A vowel change inside the stem ("Кіт" → "Кота") is for typo
  * tolerance; no stem rule spans it.
+ *
+ * A number matches itself only, in every mode: "2024" is never "2023",
+ * "202" or "20245", whatever the typo distance or fuzzy match.
  */
 class TermMatcher {
   constructor(private textProcessor: UkrainianTextProcessor) {}
@@ -143,9 +147,19 @@ class TermMatcher {
     options: TermMatchOptions,
     index: SearchIndex,
   ): WordMatch {
+    if (isNumberTerm(queryWord)) return this.matchNumber(queryWord, index);
     return options.isFuzzy
       ? this.matchInflectedForms(queryWord, options, index)
       : this.matchWordForms(queryWord, options.maxTypoDistance, index);
+  }
+
+  private matchNumber(number: string, index: SearchIndex): WordMatch {
+    return this.toWordMatch(
+      number,
+      new Map([[number, null]]),
+      new Map([[number, { queryToken: number, confidence: 1 }]]),
+      index,
+    );
   }
 
   private matchInflectedForms(

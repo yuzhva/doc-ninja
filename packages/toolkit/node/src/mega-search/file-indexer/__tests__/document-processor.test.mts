@@ -129,6 +129,25 @@ describe('DocumentProcessor', () => {
       assert.equal(doc.termFrequency.size, 0);
     });
 
+    it('keeps what glues the parts of a number together, in memory, on disk and when read back', async () => {
+      await corpus.write('dated.txt', 'Наказ № 15/2 від 22.12.2024.');
+      // наказ0 15(1) 2(2) 22(3) 12(4) 2024(5)
+      const joints = { 2: '/', 4: '.', 5: '.' };
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+      assert.deepEqual(doc.joints, joints);
+      assert.deepEqual(
+        JSON.parse(await corpus.read(indexCacheFile('dated.txt'))).joints,
+        joints,
+      );
+      const readBack = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+      assert.deepEqual(readBack.joints, joints);
+    });
+
     it('stores an empty, indexed entry for a file without text, so it is not retried forever', async () => {
       await corpus.write('blank.txt', '   \n  ');
       const doc = await newProcessor().indexDocument(

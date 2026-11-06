@@ -10,6 +10,35 @@ import {
 } from './lang/ukrainian.mjs';
 import { SearchToken } from './types.mjs';
 
+/**
+ * A token is a number: a run of digits, part of a document number, a date or
+ * a code. Words never hold a digit, so a token is all digits or none.
+ */
+const isNumberTerm = (term: string): boolean => /^[0-9]+$/.test(term);
+
+/**
+ * What glues each token to the one before it, by the token's index: the
+ * characters between the two, where one of them is a number and no
+ * whitespace parts them. "вх№36088 від 22.12.2024" → { 1: "№", 3: ".",
+ * 4: "." }. A document and a query both have them, and a number the query
+ * writes glued ("22.12.2024", "15/2") is found only where the text glues its
+ * parts with the same characters: not in "22/12/2024" or "пункти 15, 2".
+ */
+const findJoints = (
+  text: string,
+  tokens: readonly SearchToken[],
+): Record<number, string> => {
+  const joints: Record<number, string> = {};
+  for (let i = 1; i < tokens.length; i++) {
+    const previous = tokens[i - 1];
+    const token = tokens[i];
+    if (!isNumberTerm(previous.term) && !isNumberTerm(token.term)) continue;
+    const between = text.slice(previous.charEnd, token.charStart);
+    if (!/\s/.test(between)) joints[i] = between;
+  }
+  return joints;
+};
+
 class UkrainianTextProcessor {
   private readonly ukrainianAlphabet = /[а-яїієґ]/i;
   private readonly englishAlphabet = /[a-z]/i;
@@ -21,16 +50,41 @@ class UkrainianTextProcessor {
     return normalizeUkrainian(text);
   }
 
+  /**
+   * Words and numbers, in text order.
+   *
+   * A number is a run of digits, apart from the letters and separators
+   * around it: "вх№36088 від 22.12.2024" → вх, 36088, 22, 12, 2024. That is
+   * what lets "36088" or "2024" find the text; a query that glues parts
+   * together ("22.12.2024", "вх№36088") finds them side by side (see
+   * MegaSearch). Single digits are kept ("№ 5"), leading zeros too: "05" is
+   * not "5".
+   *
+   * Words are what they were before numbers were indexed — a digit ends a
+   * word as any separator does — and numbers don't count where distance is
+   * counted in words, so searches for words find what they found before.
+   */
   tokenize(text: string): SearchToken[] {
     const tokens: SearchToken[] = [];
 
     // Use regex that properly handles Ukrainian characters. Apostrophes: ASCII ',
     // the typographic U+2019 (what Word auto-inserts) and the modifier letter
     // U+02BC (the Unicode-recommended Ukrainian apostrophe).
-    const regex = /[\u0400-\u04FFa-zA-Z\u0100-\u017F'\u2019\u02BC-]+/g;
+    const regex = /[\u0400-\u04FFa-zA-Z\u0100-\u017F'\u2019\u02BC-]+|[0-9]+/g;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
+      if (isNumberTerm(match[0])) {
+        tokens.push({
+          term: match[0],
+          position: tokens.length,
+          normalized: match[0],
+          charStart: match.index,
+          charEnd: match.index + match[0].length,
+        });
+        continue;
+      }
+
       // Inside a word an apostrophe or a hyphen is part of it ("п'ять",
       // "науково-дослідний"). At its edges an apostrophe can only be a quote
       // mark, and a hyphen is left over from a compound broken by a space
@@ -189,4 +243,4 @@ class UkrainianTextProcessor {
   }
 }
 
-export { UkrainianTextProcessor };
+export { findJoints, isNumberTerm, UkrainianTextProcessor };
