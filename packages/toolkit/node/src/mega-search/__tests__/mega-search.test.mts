@@ -126,10 +126,6 @@ describe('MegaSearch', () => {
       ]);
     });
 
-    it('ignores letter case', async () => {
-      assert.deepEqual(await find('КОШТОРИС'), await find('кошторис'));
-    });
-
     it('returns an empty first page for a query made only of stop words', async () => {
       assert.deepEqual(await search('і та the'), {
         results: [],
@@ -192,6 +188,65 @@ describe('MegaSearch', () => {
           textProcessor.stemWord('кошторис'),
         );
       }
+    });
+  });
+
+  describe('search() — letter case', () => {
+    // The same name written three ways, and a query in each of them: "євген"
+    // must find "Євген", in every mode the UI and the API search with
+    const NAMES = {
+      'capital.txt': 'Заяву подав Євген Петренко.',
+      'upper.txt': 'ЗАЯВУ ПОДАВ ЄВГЕН ПЕТРЕНКО.',
+      'lower.txt': 'заяву подав євген петренко.',
+    };
+    const MODES: Record<string, SearchOptions> = {
+      'library defaults': {},
+      'fuzzy match off': { isInflectedWordFormsAllowed: false },
+      'no typos': { maxTypoDistance: 0 },
+      'be-krang': PRODUCTION_OPTIONS,
+      'be-krang, fuzzy match off, no typos': {
+        ...PRODUCTION_OPTIONS,
+        isInflectedWordFormsAllowed: false,
+        maxTypoDistance: 0,
+      },
+    };
+    let cases: SearchFixture;
+
+    before(async () => {
+      cases = await createSearchFixture(NAMES);
+    });
+
+    after(() => cases.cleanup());
+
+    for (const [mode, options] of Object.entries(MODES)) {
+      it(`finds a word whatever its case in the query and the text (${mode})`, async () => {
+        for (const query of [
+          'євген',
+          'Євген',
+          'ЄВГЕН',
+          'євген ПЕТРЕНКО',
+          '"Євген петренко"',
+        ]) {
+          const { results } = await cases.megaSearch.search(query, options);
+          assert.deepEqual(
+            results.map((r) => r.doc.fileName).sort(),
+            Object.keys(NAMES).sort(),
+            query,
+          );
+        }
+      });
+    }
+
+    it('returns each match as the text writes it', async () => {
+      const { results } = await cases.megaSearch.search(
+        'євген',
+        PRODUCTION_OPTIONS,
+      );
+
+      assert.deepEqual(
+        results.flatMap((r) => r.snippets.map((s) => s.match)).sort(),
+        ['Євген', 'ЄВГЕН', 'євген'].sort(),
+      );
     });
   });
 
