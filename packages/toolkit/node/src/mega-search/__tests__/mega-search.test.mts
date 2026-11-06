@@ -3,6 +3,7 @@ import { after, before, describe, it } from 'node:test';
 
 import { InvertedIndex } from '../file-indexer/inverted-index.mjs';
 import { MegaSearch, createMegaSearch } from '../mega-search.mjs';
+import { SnippetGenerator } from '../mega-search.snippet-generator.mjs';
 import type { SearchOptions } from '../mega-search.types.mjs';
 import {
   createSearchFixture,
@@ -169,6 +170,33 @@ describe('MegaSearch', () => {
       assert.equal(await snippetCount(), 3);
       assert.equal(await snippetCount(1), 1);
       assert.equal(await snippetCount('ALL'), 4);
+    });
+
+    it('generates only the snippets snippetsLimit lets through: the first, in text order', async (t) => {
+      const snippetsOf = async (
+        snippetsLimit: number | 'ALL',
+        options: SearchOptions = {},
+      ) =>
+        (
+          await search('кошторис', {
+            snippetsLimit,
+            searchScopedPaths: ['reports/budget.txt'],
+            ...options,
+          })
+        ).results[0].snippets;
+      const rendered = t.mock.method(
+        SnippetGenerator.prototype as any,
+        'getSnippetText',
+      );
+
+      const [first, second] = await snippetsOf('ALL');
+      rendered.mock.resetCalls();
+      assert.deepEqual(await snippetsOf(2), [first, second]);
+      assert.equal(rendered.mock.callCount(), 2);
+
+      const proximity = { isPhraseProximityEnabled: true };
+      const [phrase] = await snippetsOf('ALL', proximity);
+      assert.deepEqual(await snippetsOf(1, proximity), [phrase]);
     });
 
     it('lists every occurrence with raw char offsets when includeHighlights is set', async () => {
