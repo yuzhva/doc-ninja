@@ -122,6 +122,22 @@ describe('IndexStorage', () => {
     assert.deepEqual(loaded.documentCache.get(second)!.joints, {});
   });
 
+  it('reads a document’s words once, and keeps them', async () => {
+    const saved = (await saveIndex()).documentCache.get(
+      corpus.pathOf('a.txt'),
+    )!;
+    // a cache of no documents: the document has to keep its words itself
+    const storage = new IndexStorage(config, logger, new LRUCache(0));
+    const doc = (await storage.loadGlobalIndex())!.documentCache.get(
+      corpus.pathOf('a.txt'),
+    )!;
+
+    assert.deepEqual(doc.positions, saved.positions);
+    await fs.promises.rm(corpus.pathOf('.cache/index/a.txt.index.json'));
+    assert.deepEqual(doc.vocab, saved.vocab);
+    assert.deepEqual(doc.joints, { 4: '/' });
+  });
+
   it('reads no words of another version of the document, indexed since', async () => {
     // A search reads the document as the postings it reads have it: the
     // words of a newer version are at other positions
