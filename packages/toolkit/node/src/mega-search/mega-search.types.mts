@@ -18,9 +18,10 @@ type SearchOptions = {
    * Max character edits allowed per word (default: 1; 0 = no typos), with
    * fuzzy match on and off alike: "єгена" finds "Євгена" either way — and,
    * with fuzzy match on, the other forms of "Євген" too.
-   * 1 = one character difference (insertion, deletion, substitution)
+   * 1 = one character difference (insertion, deletion, substitution, or a
+   * swap of two adjacent letters)
    * Example: "apple" matches "apply" (1 substitution: e→y)
-   * Example: "search" matches "serach" (1 transposition)
+   * Example: "search" matches "serach" (1 swap: ar→ra)
    * Increase to 2 for longer words or more typos.
    */
   maxTypoDistance?: number;

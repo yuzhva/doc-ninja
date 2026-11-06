@@ -3,7 +3,6 @@ import { after, before, describe, it } from 'node:test';
 
 import { MegaSearch, createMegaSearch } from '../mega-search.mjs';
 import type { SearchOptions } from '../mega-search.types.mjs';
-import { knownBug } from '../test-utils/known-bug.mjs';
 import {
   createSearchFixture,
   fileNames,
@@ -15,8 +14,7 @@ import { UkrainianTextProcessor } from '../text-processor.mjs';
 const textProcessor = new UkrainianTextProcessor();
 
 /**
- * Shared, read-only corpus. Common words (наказ: 5 of 13 documents) stay below
- * half the corpus so BM25 idf is positive; see the ranking known bug below.
+ * Shared, read-only corpus: 13 documents, the commonest word (наказ) in 5.
  */
 const CORPUS = {
   // file names carry dates for sortBy: 'date' (default pattern DD.MM.YYYY / DD.MM.YY)
@@ -228,17 +226,15 @@ describe('MegaSearch', () => {
       assert.ok(result.highlights[0].confidence < 1);
     });
 
-    it(
-      'tolerates two swapped letters with the default maxTypoDistance, as SearchOptions documents',
-      knownBug(
-        'SearchOptions.maxTypoDistance promises "search" ↔ "serach" (1 transposition), but plain ' +
-          'Levenshtein counts a swap as 2 edits. Pending decision: count a swap as one edit ' +
-          '(OSA / Damerau–Levenshtein), or correct the docs',
-      ),
-      async () => {
-        assert.deepEqual(await find('serach'), ['search.txt']);
-      },
-    );
+    it('tolerates two swapped letters with the default maxTypoDistance, as SearchOptions documents', async () => {
+      // Regression guard: plain Levenshtein counted a swap as 2 edits.
+      assert.deepEqual(await find('serach'), ['search.txt']);
+      assert.deepEqual(
+        await find('serach', { isTypoToleranceEnabled: false }),
+        ['search.txt'],
+      );
+      assert.deepEqual(await find('serach', { maxTypoDistance: 0 }), []);
+    });
 
     it('with fuzzy match off, finds a word whose stem is the word itself', async () => {
       assert.deepEqual(await find('car', { isTypoToleranceEnabled: false }), [
@@ -550,23 +546,39 @@ describe('MegaSearch', () => {
 
       after(() => common.cleanup());
 
-      it(
-        'ranks a document matching every query word above one matching only some',
-        knownBug(
-          'BM25 idf ln((N - df + 0.5) / (df + 0.5)) is 0 at df = N/2 and negative above, so ' +
-            'common words cannot lift — or even lower — a document (see bm25-scorer.test.mts). ' +
-            "Pending decision: switch to Lucene's ln(1 + …) idf",
-        ),
-        async () => {
-          const { results } = await common.megaSearch.search(
-            'начальник управління',
-          );
-          const scoreOf = (fileName: string) =>
-            results.find((r) => r.doc.fileName === fileName)!.score;
+      it('ranks a document matching every query word above one matching only some', async () => {
+        // Regression guard: the classic BM25 idf is 0 at df = N/2 and
+        // negative above, so common words could not lift — or even lowered —
+        // a document (see bm25-scorer.test.mts).
+        const { results } = await common.megaSearch.search(
+          'начальник управління',
+        );
+        const scoreOf = (fileName: string) =>
+          results.find((r) => r.doc.fileName === fileName)!.score;
 
-          assert.ok(scoreOf('both.txt') > scoreOf('first-only.txt'));
-        },
-      );
+        assert.ok(scoreOf('both.txt') > scoreOf('first-only.txt'));
+      });
+    });
+
+    it('ranks more mentions of a word most documents hold higher, not lower', async () => {
+      // наказ is in 3 of 4 documents (classic idf < 0 inverted this order)
+      const fixture = await createSearchFixture({
+        'three.txt': 'Наказ про наказ і ще один наказ.',
+        'one.txt': 'Наказ про відпустку.',
+        'two.txt': 'Наказ про премію та наказ.',
+        'none.txt': 'Бюджет міста.',
+      });
+      try {
+        const { results } = await fixture.megaSearch.search('наказ');
+
+        assert.deepEqual(
+          results.map((r) => r.doc.fileName),
+          ['three.txt', 'two.txt', 'one.txt'],
+        );
+        assert.ok(results.every((r) => r.score > 0));
+      } finally {
+        await fixture.cleanup();
+      }
     });
   });
 

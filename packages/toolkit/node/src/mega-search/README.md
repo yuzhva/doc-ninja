@@ -7,7 +7,7 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 🎯 **Core Search Features**
 
 - **BM25 Scoring**: Industry-standard relevance ranking (used by Elasticsearch)
-- **Fuzzy Search**: Levenshtein distance-based similarity matching
+- **Fuzzy Search**: every inflected form of a word, plus typo tolerance (edit distance, a swap of two letters counting as one typo)
 - **Phrase Search**: Exact phrase matching with quotes (`"начальник управління"`)
 - **Multi-language Support**: Ukrainian and English with proper stemming
 - **Multiple Snippets**: Shows multiple context snippets per document
@@ -79,8 +79,8 @@ results.results.forEach((result) => {
 // Advanced search with all options
 const results = await megaSearch.search('документ', {
   topN: 50, // Search through top 50 results
-  isTypoToleranceEnabled: true, // Enable fuzzy matching
-  maxTypoDistance: 1, // Allow 1 character difference
+  isTypoToleranceEnabled: true, // "Allow fuzzy match": any inflected form of a word
+  maxTypoDistance: 1, // Allow 1 typo per word (fuzzy match on or off)
   snippetsLimit: 5, // Show up to 5 snippets per result
   page: 1, // First page
   pageSize: 10, // 10 results per page

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 
-import { levenshtein } from './fuzzy.mjs';
+import { editDistance } from './fuzzy.mjs';
 import { LRUCache } from './lru-cache.mjs';
 import type { MatchedWord } from './mega-search.term-matcher.mjs';
 import type { HighlightInfo, SnippetInfo } from './mega-search.types.mjs';
@@ -457,7 +457,7 @@ export class SnippetGenerator {
   ): number {
     const totalDistance = sequence.reduce((sum, match, index) => {
       const queryToken = queryTokens[index];
-      return sum + levenshtein(match.term.toLowerCase(), queryToken);
+      return sum + editDistance(match.term.toLowerCase(), queryToken);
     }, 0);
 
     return Math.max(0.3, 1.0 - totalDistance / (queryTokens.length * 3));
