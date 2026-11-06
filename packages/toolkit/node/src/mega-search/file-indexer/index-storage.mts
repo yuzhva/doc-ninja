@@ -10,6 +10,7 @@ import type { ResolvedCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { DocumentIndex, SearchConfig } from '../types.mjs';
+import { INDEX_VERSION } from './index-version.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
 
 class IndexStorage {
@@ -122,7 +123,18 @@ class IndexStorage {
       let result: any = null;
       try {
         const marker = JSON.parse(content);
-        if (marker.format === 'v8-chunked-compact') {
+        if (
+          marker.format === 'v8-chunked-compact' &&
+          (marker.indexVersion ?? 1) !== INDEX_VERSION
+        ) {
+          // Its postings and stems come from another tokenizer/stemmer, and
+          // so do the per-document indexes it points to (DocumentProcessor
+          // rebuilds those by the same check).
+          this.logger.warn(
+            `⚠️ Index was built by index version ${marker.indexVersion ?? 1} (current: ${INDEX_VERSION}). Rebuilding...`,
+          );
+          return null;
+        } else if (marker.format === 'v8-chunked-compact') {
           // New format version
           this.logger.debug('📦 Loading optimized V8 chunked compact index...');
           result = await this.loadGlobalInvertedIndexChunked(
@@ -263,7 +275,8 @@ class IndexStorage {
 
       const markerContent = JSON.stringify({
         format: 'v8-chunked-compact',
-        version: '3.0',
+        version: '3.0', // storage format; what it holds is indexVersion
+        indexVersion: INDEX_VERSION,
         compression: useCompression ? 'gzip' : 'none',
         chunkedDir: path.relative(path.dirname(globalIndexPath), chunkedDir),
         createdAt: new Date().toISOString(),

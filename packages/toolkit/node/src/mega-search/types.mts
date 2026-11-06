@@ -91,13 +91,16 @@ interface SearchConfig {
 
   // Index rebuild threshold configuration
   /**
-   * The percentage of files that need to be re-indexed to trigger a full inverted index rebuild.
-   * A lower value means more frequent rebuilds. Default: 0.001 (0.1%).
+   * The share of indexed documents that need re-indexing to rebuild the
+   * inverted index from every document. Fewer changes update it for the
+   * changed documents only, which reads no other document from disk. Either
+   * way every change is applied. A lower value means more frequent full
+   * rebuilds. Default: 0.001 (0.1%).
    */
   indexRebuildThreshold?: number;
   /**
-   * The minimum number of files that need re-indexing to trigger a rebuild, regardless of the threshold.
-   * Prevents skipping rebuilds for very small numbers of changes. Default: 5.
+   * The minimum number of re-indexed files for a full rebuild, whatever the
+   * threshold. Default: 1.
    */
   minFilesForRebuild?: number;
 }

@@ -9,6 +9,7 @@ import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
+import { INDEX_VERSION } from './index-version.mjs';
 
 class DocumentProcessor {
   private textProcessor = new UkrainianTextProcessor();
@@ -116,8 +117,8 @@ class DocumentProcessor {
 
       if (indexStat.mtimeMs >= sourceStat.mtimeMs) {
         try {
-          const content = await promisify(fs.readFile)(indexPath, 'utf8');
-          const cached = JSON.parse(content);
+          const cached = await this.readCachedIndex(indexPath, metadata);
+          if (!cached) return true;
           cached.termFrequency = new Map();
           cached.metadata.lastModified = sourceStat.mtimeMs;
           cached.metadata.size = sourceStat.size;
@@ -195,10 +196,11 @@ class DocumentProcessor {
 
       try {
         const idxStat = await promisify(fs.stat)(indexPath);
-        if (idxStat.mtimeMs >= srcStat.mtimeMs) {
-          const cached = JSON.parse(
-            await promisify(fs.readFile)(indexPath, 'utf8'),
-          );
+        const cached =
+          idxStat.mtimeMs >= srcStat.mtimeMs
+            ? await this.readCachedIndex(indexPath, metadata)
+            : null;
+        if (cached) {
           cached.termFrequency = new Map(Object.entries(cached.termFrequency));
           cached.metadata.lastModified = srcStat.mtimeMs;
           cached.metadata.size = srcStat.size;
@@ -332,6 +334,27 @@ class DocumentProcessor {
     }
   }
 
+  /**
+   * A per-document index from disk, or null when another INDEX_VERSION built
+   * it: its vocab and positions may not be what tokenizing the text gives
+   * now. Throws on a corrupted file.
+   */
+  private async readCachedIndex(
+    indexPath: string,
+    metadata: DocumentMetadata,
+  ): Promise<any | null> {
+    const { indexVersion = 1, ...cached } = JSON.parse(
+      await promisify(fs.readFile)(indexPath, 'utf8'),
+    );
+    if (indexVersion !== INDEX_VERSION) {
+      this.logger.debug(
+        `📋 Cached index for ${metadata.fileName} is from index version ${indexVersion}, will rebuild`,
+      );
+      return null;
+    }
+    return cached;
+  }
+
   private createEmptyIndex(metadata: DocumentMetadata): DocumentIndex {
     return {
       metadata: {
@@ -356,6 +379,7 @@ class DocumentProcessor {
       await this.ensureDirectory(path.dirname(indexPath));
 
       const toSave = {
+        indexVersion: INDEX_VERSION,
         ...documentIndex,
         termFrequency: Object.fromEntries(documentIndex.termFrequency),
       };
