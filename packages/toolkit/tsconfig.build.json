@@ -1,0 +1,12 @@
+{
+  // Compiles the publishable source only: tsconfig.json stays the IDE/type-check
+  // project (it includes tests), this one keeps tests and their fixtures out of dist.
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/__tests__/**",
+    "**/*.test.mts",
+    "**/test-utils/**"
+  ]
+}
