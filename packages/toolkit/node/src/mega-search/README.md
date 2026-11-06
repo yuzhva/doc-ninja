@@ -79,7 +79,7 @@ results.results.forEach((result) => {
 // Advanced search with all options
 const results = await megaSearch.search('документ', {
   topN: 50, // Search through top 50 results
-  isTypoToleranceEnabled: true, // "Allow fuzzy match": any inflected form of a word
+  isInflectedWordFormsAllowed: true, // "Allow fuzzy match": any inflected form of a word
   maxTypoDistance: 1, // Allow 1 typo per word (fuzzy match on or off)
   snippetsLimit: 5, // Show up to 5 snippets per result
   page: 1, // First page
@@ -194,7 +194,7 @@ Main search method with full feature support.
 ```typescript
 {
   topN?: number;                    // Max results to process (default: 50)
-  isTypoToleranceEnabled?: boolean; // "Allow fuzzy match": any inflected form; off = the form typed (default: true)
+  isInflectedWordFormsAllowed?: boolean; // "Allow fuzzy match": any inflected form; off = the form typed (default: true)
   maxTypoDistance?: number;          // Typo edits per word, fuzzy match on or off; 0 = none (default: 1)
   isPhraseProximityEnabled?: boolean; // Every query is a phrase, quoted or not (default: false)
   maxWordsInPhraseDistance?: number; // Words allowed between phrase words, 0 = adjacent (default: 0)

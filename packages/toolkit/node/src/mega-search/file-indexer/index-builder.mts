@@ -190,7 +190,7 @@ export class IndexBuilder {
         continue;
       }
 
-      // REVIEW: the {isTypoToleranceEnabled} been used before
+      // REVIEW: the {isInflectedWordFormsAllowed} been used before
       const stemmedTerm = this.textProcessor.stemWord(normalized);
 
       vocabStemMap[v] = stemmedTerm;

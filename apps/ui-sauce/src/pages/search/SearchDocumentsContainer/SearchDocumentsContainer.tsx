@@ -363,7 +363,7 @@ const SearchDocumentsContainer = ({
           directoryData?.structure?.path ||
           '',
         searchScopedPaths: Array.from(effectiveSelectedPaths),
-        isTypoToleranceEnabled: allowFuzzyMatch,
+        isInflectedWordFormsAllowed: allowFuzzyMatch,
         maxTypoDistance: Number(maxTypoDistance),
         // Sent to the backend so it knows which pipelines/compounds to
         // parse the matched documents with. API wiring TBD server-side.
