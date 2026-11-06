@@ -1430,6 +1430,41 @@ describe('MegaSearch re-indexing and cache maintenance', () => {
     });
   });
 
+  describe('a search while reindex() updates a document no search had read', () => {
+    useFreshFixture();
+
+    it('reads its words from before the update, though its file holds the new ones', async () => {
+      // Regression guard: after a restart a document's words load from its
+      // per-document file on first use — and indexing the edit had already
+      // rewritten that file, so a search read the new words at the old
+      // positions
+      const restarted = await createMegaSearch(fixture.config);
+      const during: Array<[string, string[]]>[] = [];
+      const processor = restarted.indexer['processor'];
+      const indexDocument = processor.indexDocument.bind(processor);
+      processor.indexDocument = async (metadata) => {
+        const indexed = await indexDocument(metadata);
+        const { results } = await restarted.search(
+          'підписав наказ',
+          PRODUCTION_OPTIONS,
+        );
+        during.push(
+          results.map((r) => [
+            r.doc.fileName,
+            r.snippets.map((s) => s.match.toLowerCase()),
+          ]),
+        );
+        return indexed;
+      };
+
+      await fixture.corpus.write('a.txt', 'Кошторис затверджено.', later());
+      await restarted.reindex();
+
+      assert.deepEqual(during, [[['a.txt', ['підписав наказ']]]]);
+      assert.deepEqual(fileNames(await restarted.search('підписав наказ')), []);
+    });
+  });
+
   describe('reindex() called several times at once', () => {
     useFreshFixture();
 

@@ -488,10 +488,16 @@ class IndexStorage {
     let _positions: TokenPositions | null = doc.positions || null;
     let _joints: Record<number, string> | null = doc.joints || null;
 
+    // Words saved for another version of the document (indexed since) don't
+    // fit the postings searches read with this one: it reads none instead.
+    // FileIndexer loads a version's words before it indexes the file anew.
+    const isThisVersion = (saved: DocumentIndex | undefined) =>
+      saved?.metadata?.indexedAt === doc.metadata.indexedAt;
+
     const loadFromDisk = () => {
       if (_vocab && _positions && _joints) return;
       const cached = this.documentLRU.get(doc.metadata.originalFilePath);
-      if (cached && cached.vocab && cached.positions && cached.joints) {
+      if (cached && isThisVersion(cached)) {
         _vocab = cached.vocab;
         _positions = cached.positions;
         _joints = cached.joints;
@@ -501,15 +507,24 @@ class IndexStorage {
         const content = fs.readFileSync(indexPath, 'utf8');
         const fullDoc = JSON.parse(content);
         fullDoc.positions = TokenPositions.fromFlat(fullDoc.positions);
-        _vocab = fullDoc.vocab || [];
-        _positions = fullDoc.positions;
-        _joints = fullDoc.joints || {};
+        fullDoc.vocab ??= [];
+        fullDoc.joints ??= {};
         this.documentLRU.set(doc.metadata.originalFilePath, fullDoc);
+        if (isThisVersion(fullDoc)) {
+          _vocab = fullDoc.vocab;
+          _positions = fullDoc.positions;
+          _joints = fullDoc.joints;
+          return;
+        }
+        this.logger.debug(
+          `📋 ${doc.metadata.fileName} was indexed anew: reading the version searches had as empty`,
+        );
       } catch (e) {
-        _vocab = [];
-        _positions = TokenPositions.EMPTY;
-        _joints = {};
+        // A missing or unreadable file reads as an empty document
       }
+      _vocab = [];
+      _positions = TokenPositions.EMPTY;
+      _joints = {};
     };
 
     Object.defineProperty(doc, 'vocab', {
