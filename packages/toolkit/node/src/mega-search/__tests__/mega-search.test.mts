@@ -250,6 +250,254 @@ describe('MegaSearch', () => {
     });
   });
 
+  describe('search() — numbers', () => {
+    const NUMBERS = {
+      'incoming.txt': 'Лист Петренку Івану, вх№36088 від 22.12.2024).',
+      'apart.txt': 'Сплачено 12.01.2024, на 22 особи.',
+      'near.txt': 'Кошторис на 2023 рік, рахунок № 36087.',
+      'leading-zero.txt': 'Наказ від 05.12.2024 № 5.',
+      'order.txt': 'Наказ № 15/2 від 01.02.2024 про відпустку Коваленко Марії.',
+    };
+    // The same parts, glued by other characters or written apart
+    const WRITTEN = {
+      'dots.txt': 'Лист від 22.12.2024 надіслано.',
+      'slashes.txt': 'Лист від 22/12/2024 надіслано.',
+      'spaces.txt': 'Лист від 22 12 2024 надіслано.',
+      'list.txt': 'Виконано пункти 22, 12, 2024 та 15, 2.',
+      'code.txt': 'Виконано пункт 15/2.',
+      'glued-number.txt': 'Лист вх№36088 отримано.',
+      'spaced-number.txt': 'Лист вх. № 36088 отримано.',
+    };
+    const MODES: Record<string, SearchOptions> = {
+      'library defaults': {},
+      'fuzzy match off': { isInflectedWordFormsAllowed: false },
+      'no typos': { maxTypoDistance: 0 },
+      'two typos': { maxTypoDistance: 2 },
+      'be-krang': PRODUCTION_OPTIONS,
+      'be-krang, adjacent words only': {
+        ...PRODUCTION_OPTIONS,
+        maxWordsInPhraseDistance: 0,
+      },
+    };
+    let numbers: SearchFixture;
+    let written: SearchFixture;
+
+    before(async () => {
+      numbers = await createSearchFixture(NUMBERS);
+      written = await createSearchFixture(WRITTEN);
+    });
+
+    after(async () => {
+      await numbers.cleanup();
+      await written.cleanup();
+    });
+
+    const foundIn = async (
+      megaSearch: MegaSearch,
+      query: string,
+      options: SearchOptions,
+    ) => fileNames(await megaSearch.search(query, options)).sort();
+    const found = (query: string, options: SearchOptions) =>
+      foundIn(numbers.megaSearch, query, options);
+
+    for (const [mode, options] of Object.entries(MODES)) {
+      it(`finds a number however the query writes it, and only that number (${mode})`, async () => {
+        for (const query of ['36088', '№36088', 'вх№36088', '"36088"']) {
+          assert.deepEqual(
+            await found(query, options),
+            ['incoming.txt'],
+            query,
+          );
+        }
+        // 2023 and 36087 are one typo away, and still other numbers
+        assert.deepEqual(await found('2024', options), [
+          'apart.txt',
+          'incoming.txt',
+          'leading-zero.txt',
+          'order.txt',
+        ]);
+      });
+
+      it(`finds a date by its parts glued together, not scattered (${mode})`, async () => {
+        // apart.txt holds 22, 12 and 2024, not as 22.12.2024
+        assert.deepEqual(await found('22.12.2024', options), ['incoming.txt']);
+        assert.deepEqual(await found('12.2024', options), [
+          'incoming.txt',
+          'leading-zero.txt',
+        ]);
+        assert.deepEqual(await found('15/2', options), ['order.txt']);
+      });
+
+      it(`finds a glued number only glued by the same characters (${mode})`, async () => {
+        const writtenAs = (query: string) =>
+          foundIn(written.megaSearch, query, options);
+
+        assert.deepEqual(await writtenAs('22.12.2024'), ['dots.txt']);
+        assert.deepEqual(await writtenAs('22/12/2024'), ['slashes.txt']);
+        assert.deepEqual(await writtenAs('15/2'), ['code.txt']);
+        assert.deepEqual(await writtenAs('вх№36088'), ['glued-number.txt']);
+        assert.deepEqual(await writtenAs('36088'), [
+          'glued-number.txt',
+          'spaced-number.txt',
+        ]);
+      });
+
+      it(`searches the date as written: 5.12.2024 is not 05.12.2024 (${mode})`, async () => {
+        assert.deepEqual(await found('5.12.2024', options), []);
+        assert.deepEqual(await found('05.12.2024', options), [
+          'leading-zero.txt',
+        ]);
+      });
+    }
+
+    it('finds a glued number as written after a restart, from the saved index', async () => {
+      const restarted = await createMegaSearch(written.config);
+
+      assert.deepEqual(
+        await foundIn(restarted, '22.12.2024', PRODUCTION_OPTIONS),
+        ['dots.txt'],
+      );
+      assert.deepEqual(await foundIn(restarted, 'вх№36088', {}), [
+        'glued-number.txt',
+      ]);
+    });
+
+    it('finds words and numbers in one phrase, the numbers between words not counted', async () => {
+      for (const query of [
+        'наказ 01.02.2024',
+        'наказ № 15/2',
+        'наказ відпустку',
+        'відпустку Коваленко',
+      ]) {
+        assert.deepEqual(
+          await found(query, {
+            ...PRODUCTION_OPTIONS,
+            maxWordsInPhraseDistance: 0,
+          }),
+          ['order.txt'],
+          query,
+        );
+      }
+    });
+
+    it('returns the number as the text writes it', async () => {
+      const matches = async (query: string, options: SearchOptions) =>
+        (await numbers.megaSearch.search(query, options)).results.flatMap((r) =>
+          r.snippets.map((s) => s.match),
+        );
+
+      assert.deepEqual(await matches('22.12.2024', PRODUCTION_OPTIONS), [
+        '22.12.2024',
+      ]);
+      assert.deepEqual(await matches('вх№36088', {}), ['вх№36088']);
+      assert.deepEqual(await matches('наказ 15/2', PRODUCTION_OPTIONS), [
+        'Наказ № 15/2',
+      ]);
+    });
+  });
+
+  describe('search() — words, with numbers indexed', () => {
+    // The same texts, and the same texts with each digit replaced by "#",
+    // which the tokenizer skips as it used to skip digits: a search for words
+    // must find, rank and cut snippets from both alike
+    const TEXTS = {
+      'order.txt':
+        'Наказ № 15 від 01.02.2024. Призначити Петренка Івана з 05.02.2024 менеджером 3 відділу продажу.',
+      'report.txt':
+        'Звіт 2023: кошторис 12 500 грн затверджено 14.03.2023 радою. Кошторис 2024 року на 1 200 000 грн.',
+      'letter.txt':
+        'Лист № 7/12-15 Шевченку Олександру щодо графіка 8:00–17:00 роботи бухгалтерії. Кошторис додано.',
+      'plain.txt': 'Кошторис затверджено радою без змін.',
+    };
+    const QUERIES = [
+      'наказ',
+      'кошторис',
+      'кошторис затверджено',
+      '"кошторис затверджено"',
+      'Івана менеджером',
+      'графіка роботи',
+      'Шевченку Олександру',
+    ];
+    const MODES: Record<string, SearchOptions> = {
+      'library defaults': {},
+      'be-krang': PRODUCTION_OPTIONS,
+      'be-krang, adjacent words only': {
+        ...PRODUCTION_OPTIONS,
+        maxWordsInPhraseDistance: 0,
+      },
+      'fuzzy match off': { isInflectedWordFormsAllowed: false },
+      'context before, highlights': {
+        snippetContextBefore: 3,
+        snippetContextAfter: 4,
+        includeHighlights: true,
+      },
+    };
+    let withNumbers: SearchFixture;
+    let withoutNumbers: SearchFixture;
+
+    before(async () => {
+      withNumbers = await createSearchFixture(TEXTS);
+      withoutNumbers = await createSearchFixture(
+        Object.fromEntries(
+          Object.entries(TEXTS).map(([file, text]) => [
+            file,
+            text.replace(/[0-9]/g, '#'),
+          ]),
+        ),
+      );
+    });
+
+    after(async () => {
+      await withNumbers.cleanup();
+      await withoutNumbers.cleanup();
+    });
+
+    /** What a search shows, digits read as "#" (token indices aside). */
+    const shown = async (
+      fixture: SearchFixture,
+      query: string,
+      options: SearchOptions,
+    ) => {
+      const { results, pagination } = await fixture.megaSearch.search(
+        query,
+        options,
+      );
+      return {
+        totalMatches: pagination.totalMatches,
+        results: results.map((r) => ({
+          file: r.doc.fileName,
+          score: r.score,
+          snippets: r.snippets.map((s) => [
+            s.context.replace(/[0-9]/g, '#'),
+            s.match.replace(/[0-9]/g, '#'),
+            s.matchCharStart,
+            s.confidence,
+          ]),
+          highlights: r.highlights.map((h) => [
+            h.charStart,
+            h.charEnd,
+            h.confidence,
+          ]),
+        })),
+      };
+    };
+
+    for (const [mode, options] of Object.entries(MODES)) {
+      it(`finds, ranks and shows what it did before (${mode})`, async () => {
+        for (const query of QUERIES) {
+          const before = await shown(withoutNumbers, query, options);
+
+          assert.ok(before.results.length > 0, query);
+          assert.deepEqual(
+            await shown(withNumbers, query, options),
+            before,
+            query,
+          );
+        }
+      });
+    }
+  });
+
   describe('search() — one snippet per occurrence', () => {
     // Documents repeat a sentence for every person, and be-krang extracts a
     // row from each snippet: every repetition must come back.

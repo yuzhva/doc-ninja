@@ -21,14 +21,24 @@ import type {
   SnippetInfo,
 } from './mega-search.types.mjs';
 import { createLogger } from './shared/logger.mjs';
-import { UkrainianTextProcessor } from './text-processor.mjs';
+import { UkrainianTextProcessor, findJoints } from './text-processor.mjs';
 import { DocumentIndex, InvertedIndexEntry, SearchConfig } from './types.mjs';
 
 const logger = createLogger('MegaSearch');
 
 type QueryCacheEntry = {
-  /** The query's normalized words, in order. */
+  /** The query's normalized words and numbers, in order. */
   words: string[];
+  /**
+   * What glues a word to the one before it, by the word's index, where the
+   * query writes a number glued together ("22.12.2024", "вх№36088",
+   * "248/9240"). The tokenizer splits such numbers into parts, and this puts
+   * them back together: a part with a joint is found only right after the
+   * word before it, glued by the same characters. Otherwise "22.12.2024"
+   * would match any text holding 22, 12 and 2024 — "12.01.2024, 22 особи",
+   * "22/12/2024". See findJoints.
+   */
+  joints: Record<number, string>;
   isPhrase: boolean;
   timestamp: number;
 };
@@ -54,6 +64,8 @@ type ScoringParams = {
 type PhraseScoringParams = ScoringParams & {
   /** Words allowed between consecutive phrase words (0 = adjacent). */
   maxWordsBetween: number;
+  /** See QueryCacheEntry.joints. */
+  joints: Record<number, string>;
   isFuzzy: boolean;
 };
 
@@ -366,13 +378,18 @@ class MegaSearch {
 
     // Phrase search: query is wrapped in quotes, or proximity search is on
     const phraseMatch = query.match(/^"(.*)"$/);
-    const isPhrase = !!phraseMatch || isPhraseProximityEnabled;
+    const text = phraseMatch ? phraseMatch[1] : query;
+    const tokens = this.textProcessor.tokenize(text);
+    const joints = findJoints(text, tokens);
+    // A query that is one glued number is searched as one, even word by word
+    const isOneNumber =
+      tokens.length > 1 &&
+      tokens.every((_, i) => i === 0 || joints[i] !== undefined);
 
     const queryData: QueryCacheEntry = {
-      words: this.textProcessor
-        .tokenize(phraseMatch ? phraseMatch[1] : query)
-        .map((token) => token.term),
-      isPhrase,
+      words: tokens.map((token) => token.term),
+      joints,
+      isPhrase: !!phraseMatch || isPhraseProximityEnabled || isOneNumber,
       timestamp: Date.now(),
     };
 
@@ -391,6 +408,7 @@ class MegaSearch {
     const {
       words,
       maxWordsBetween,
+      joints,
       docCache,
       resolvedScopedPaths,
       isFuzzy,
@@ -407,6 +425,7 @@ class MegaSearch {
       words,
       maxWordsBetween,
       docCache,
+      joints,
     );
     let filteredDocIds = Array.from(phraseMatches.keys());
     phraseMatches.forEach((sequences, docId) =>
@@ -733,6 +752,7 @@ class MegaSearch {
               maxWordsBetween: isPhraseProximityEnabled
                 ? maxWordsInPhraseDistance
                 : 0,
+              joints: queryData.joints,
               isFuzzy: isInflectedWordFormsAllowed,
             })
           : this.scoreTokenSearch(scoringParams);

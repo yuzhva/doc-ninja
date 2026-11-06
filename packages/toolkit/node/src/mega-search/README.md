@@ -244,6 +244,25 @@ The system includes sophisticated Ukrainian language processing:
 - **Case Handling**: Proper Unicode case normalization
 - **Mixed Language**: Handles documents with both Ukrainian and English
 
+### Numbers, Dates & Codes
+
+A run of digits is indexed as a token of its own, apart from the letters and separators around it:
+`вх№36088 від 22.12.2024` → `вх`, `36088`, `22`, `12`, `2024`.
+
+- `36088`, `№36088`, `вх№36088` and `2024` all find that text.
+- A number the query writes glued together (`22.12.2024`, `12.2024`, `248/9240`, `вх№36088`) is
+  found as written: its parts side by side, glued by the same characters. `22.12.2024` doesn't
+  find `12.01.2024, 22`, `22/12/2024` or `22 12 2024`; `15/2` doesn't find `пункти 15, 2`;
+  `вх№36088` doesn't find `вх. № 36088`, while `36088` does. With proximity off it's still searched
+  as one. Each document's index keeps these joints: the characters between a number and the token
+  glued to it, where no whitespace parts them.
+- Numbers match exactly, in every mode: `2024` never finds `2023` or `20245`, whatever the typo
+  distance or fuzzy match.
+- The query is searched as written: `5.12.2024` doesn't find `05.12.2024`.
+- Wherever distance is counted in words (phrase gaps, snippet context and sentence ends, BM25
+  document length), numbers don't count. Searches for words find, rank and show what they did
+  before numbers were indexed; only token indices (`matchStartTokenIndex`, `tokenIndex`) shift.
+
 ### BM25 vs TF-IDF
 
 The system uses BM25 by default (like modern search engines):

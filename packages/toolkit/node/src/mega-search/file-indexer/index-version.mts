@@ -11,7 +11,11 @@
  * 1. (unversioned) everything before versioning
  * 2. apostrophes: U+2019 and U+02BC inside words, none at their edges
  * 3. no hyphens at word edges ("інженера- конструктора" → "інженера", "конструктора")
+ * 4. numbers: runs of digits are tokens ("22.12.2024" → 22, 12, 2024);
+ *    wordCount counts words only
+ * 5. joints: what glues a number to the token before or after it
+ *    ("22.12.2024" → "." twice), so a glued query finds it as written
  */
-const INDEX_VERSION = 3;
+const INDEX_VERSION = 5;
 
 export { INDEX_VERSION };
