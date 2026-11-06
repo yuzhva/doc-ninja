@@ -313,6 +313,91 @@ describe('FileIndexer', () => {
     });
   });
 
+  describe('refreshIfChanged() with watchFiles', () => {
+    /** Lets the folder watcher's reports of what just happened come in. */
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+    /** Counts how often the indexer lists the folder's files from now on. */
+    const countListings = (indexer: FileIndexer) => {
+      const scanner = (indexer as any).scanner;
+      const discoverFiles = scanner.discoverFiles.bind(scanner);
+      let listings = 0;
+      scanner.discoverFiles = () => {
+        listings++;
+        return discoverFiles();
+      };
+      return () => listings;
+    };
+
+    const watching = async (overrides: Partial<SearchConfig> = {}) => {
+      const indexer = await indexed({ watchFiles: true, ...overrides });
+      watchers.push(indexer);
+      // Reading a file to index it reports it changed on Windows: one more
+      // look follows, which finds nothing to do
+      await settle();
+      await indexer.refreshIfChanged();
+      await settle();
+      return indexer;
+    };
+    const watchers: FileIndexer[] = [];
+    afterEach(() => watchers.splice(0).forEach((indexer) => indexer.close()));
+
+    it('lists no file while none changed, its own index cache writes aside', async () => {
+      const indexer = await watching();
+      const listings = countListings(indexer);
+
+      for (let i = 0; i < 3; i++) await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 0);
+    });
+
+    it('picks up a file changed since, once the watcher reports it', async () => {
+      const indexer = await watching();
+      await corpus.write('a.txt', 'Кошторис затверджено.', later());
+
+      for (let i = 0; i < 50; i++) {
+        await indexer.refreshIfChanged();
+        if (docsWithWord(indexer, 'кошторис').length > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    });
+
+    it('lists the files anyway once rescanAfterMs went by', async () => {
+      // in case the watcher missed a change: a network share
+      const indexer = await watching({ rescanAfterMs: 0 });
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged();
+      await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 2);
+    });
+
+    it('lists the files every time once closed', async () => {
+      const indexer = await watching();
+      const listings = countListings(indexer);
+      indexer.close();
+
+      await indexer.refreshIfChanged();
+      await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 2);
+    });
+
+    it('lists the files every time without watchFiles', async () => {
+      const indexer = await indexed();
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged();
+      await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 2);
+    });
+  });
+
   describe('while a search reads the index', () => {
     // A search reads the index in place, across awaits (snippets read files),
     // so an update must leave the version it reads as it was

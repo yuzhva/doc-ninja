@@ -187,6 +187,27 @@ class MegaSearch {
   }
 
   /**
+   * Brings the index up to date with the files, as reindex() does — but with
+   * `watchFiles` on, it lists them only when the folder watcher saw a change
+   * since, or `rescanAfterMs` went by in case it missed one. Otherwise it
+   * waits for an update running, if any. Cheap enough to run before every
+   * search: a change is in the searches after the watcher reports it, a
+   * moment after the file is saved.
+   */
+  async refresh(): Promise<void> {
+    await this.fileIndexer.refreshIfChanged();
+    this.dropStaleResults();
+  }
+
+  /**
+   * Stops watching the folder (see `watchFiles`): for an instance no longer
+   * in use. Searches still work, and refresh() lists the files every time.
+   */
+  close(): void {
+    this.fileIndexer.close();
+  }
+
+  /**
    * Drops cached results after an update went in. They're keyed by the
    * index generation, so no search can reach them any more: this only gives
    * their memory back. A refresh that found nothing to change keeps them, so
