@@ -186,4 +186,81 @@ function lemmatizeUkrainian(word: string): string {
   return natural.PorterStemmerUk.stem(word);
 }
 
+// NOT IN USE — kept as a note on a problem the stemmer leaves open.
+//
+// The problem: sound alternations (чергування) change letters inside a word
+// from one form to the next, so the stemmer, which only cuts endings off,
+// gives the forms of one word different stems:
+// - і in a closed last syllable is о or е where it opens: рік → рік, року →
+//   рок; осіб → осіб, особа → особ; стіл → стіл, стола → стол; піч / печі
+// - г, к, х before the ending -і are з, ц, с: книга → книг, книзі → книз;
+//   рука / руці; вухо / вусі; відпустка / відпустці
+// - о or е between the last two consonants comes and goes: відпустка →
+//   відпустк, відпусток → відпусток; день → ден, дня → дня
+//
+// Today such forms are found through typo tolerance only: one letter apart,
+// at a confidence below 1, and not at all with typos off (maxTypoDistance 0).
+//
+// What the code below does: the stems the other forms of a word may have,
+// with each alternation undone in the stem's last syllable. TermMatcher would
+// match a query word's variants as it matches its stem (matchStem in
+// matchInflectedForms, cut-short and related-word rules included, as "дн"
+// has to find "дня").
+//
+// Why it's not in use: the rules are letters written down by hand, with no
+// knowledge of which word is which, so they also join words that only look
+// alike — "лис" (fox) and "лих" (trouble), "лік" and "лок". There's no way to
+// tell those from рука / руці without knowing the words.
+//
+// The proper fix knows the words: a dictionary of Ukrainian word forms
+// mapped to their lemma, as Lucene's UkrainianMorfologikAnalyzer uses —
+// built from VESUM (github.com/brown-uk/dict_uk). Check the license before
+// shipping it: the VESUM data is CC BY-NC-SA 4.0 (non-commercial), while the
+// morfologik-ukrainian-search package built from it says Apache 2.0.
+//
+// const CONSONANTS = 'бвгґджзйклмнпрстфхцчшщь';
+// const CONSONANT_ALTERNATIONS: Record<string, string> = {
+//   г: 'з',
+//   з: 'г',
+//   к: 'ц',
+//   ц: 'к',
+//   х: 'с',
+//   с: 'х',
+// };
+//
+// /** The stems other forms of the word may have: рік → рок, рек; книг → книз. */
+// function alternationVariants(stem: string): Set<string> {
+//   const variants = new Set<string>();
+//   const last = stem.length - 1;
+//   const isConsonant = (letter: string) => CONSONANTS.includes(letter);
+//
+//   // і in the last, closed syllable → о, е: рік → рок, осіб → особ
+//   const i = stem.lastIndexOf('і');
+//   if (i > 0 && i < last && [...stem.slice(i + 1)].every(isConsonant)) {
+//     for (const vowel of ['о', 'е']) {
+//       variants.add(stem.slice(0, i) + vowel + stem.slice(i + 1));
+//     }
+//   }
+//
+//   // г, к, х ↔ з, ц, с at the end: книг → книз, руц → рук
+//   const alternation = CONSONANT_ALTERNATIONS[stem[last]];
+//   if (alternation && stem.length > 2) {
+//     variants.add(stem.slice(0, last) + alternation);
+//   }
+//
+//   if (stem.length > 2 && isConsonant(stem[last])) {
+//     // о, е between the last two consonants goes: ден → дн
+//     if ('ео'.includes(stem[last - 1]) && isConsonant(stem[last - 2])) {
+//       variants.add(stem.slice(0, last - 1) + stem[last]);
+//     }
+//     // ... or comes: відпустк → відпусток
+//     if (isConsonant(stem[last - 1])) {
+//       for (const vowel of ['о', 'е']) {
+//         variants.add(stem.slice(0, last) + vowel + stem[last]);
+//       }
+//     }
+//   }
+//   return variants;
+// }
+
 export { lemmatizeUkrainian, normalizeUkrainian, ukrainianFunctionWords };
