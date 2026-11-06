@@ -142,6 +142,8 @@ const megaSearch = await createMegaSearch({
 
   // Performance
   concurrency: 4, // Parallel processing threads
+  watchFiles: false, // refresh() lists the files only after the folder watcher saw a change
+  rescanAfterMs: 60000, // ...or once this long went by, in case it missed one
 
   // Caching
   cacheRoot: '.cache',
@@ -231,6 +233,9 @@ Main search method with full feature support.
 
 - `getStats()` - Get corpus statistics
 - `reindex()` - Force complete reindexing
+- `refresh()` - Bring the index up to date, cheaply: with `watchFiles`, it lists the files only
+  after a change (or `rescanAfterMs`)
+- `close()` - Stop watching the folder
 - `testDocumentParsing()` - Test document parsing capabilities
 
 ## 🌟 Advanced Features
@@ -302,6 +307,9 @@ run after it.
 
 Results are cached per index version: a `reindex()` that finds nothing changed keeps them, so an
 engine refreshed before every search (as be-krang does) still answers a repeated search at once.
+With `watchFiles`, `refresh()` doesn't even list the folder's files until the watcher reports a
+change, or `rescanAfterMs` (default a minute) goes by — fs.watch can miss changes, on a network
+share for one, so it's a hint, never the only check.
 
 ## 🚀 Production Deployment
 

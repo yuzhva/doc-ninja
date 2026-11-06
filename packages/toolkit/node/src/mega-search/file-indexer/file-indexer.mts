@@ -15,6 +15,7 @@ import {
 } from '../types.mjs';
 import { DocumentProcessor, isIndexedAsIs } from './document-processor.mjs';
 import { FileScannerIndexer } from './file-scanner.indexer.mjs';
+import { FolderWatcher } from './folder-watcher.mjs';
 import { IndexBuilder } from './index-builder.mjs';
 import { IndexStorage } from './index-storage.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
@@ -59,6 +60,8 @@ class FileIndexer {
   private processor: DocumentProcessor;
   private storage: IndexStorage;
   private builder: IndexBuilder;
+  /** With `watchFiles`: whether the files may have changed since the last look. */
+  private watcher: FolderWatcher | null;
 
   constructor(private config: SearchConfig) {
     this.config.rootDirectory = path.resolve(this.config.rootDirectory);
@@ -66,6 +69,13 @@ class FileIndexer {
     this.processor = new DocumentProcessor(this.config, this.logger);
     this.storage = new IndexStorage(this.config, this.logger, this.documentLRU);
     this.builder = new IndexBuilder(this.config, this.logger);
+    this.watcher = this.config.watchFiles
+      ? new FolderWatcher(
+          this.config.rootDirectory,
+          resolveCachePaths(this.config).excludeAbsoluteDirs,
+          this.config.rescanAfterMs ?? 60_000,
+        )
+      : null;
   }
 
   /**
@@ -99,6 +109,24 @@ class FileIndexer {
       return this.refresh();
     });
     return this.queuedRefresh;
+  }
+
+  /**
+   * buildFullIndex(), when the files may have changed. With `watchFiles`
+   * off, they always may. With it on, only when the folder watcher saw a
+   * change since the last look, or `rescanAfterMs` went by — otherwise this
+   * just waits for an update running or queued, and lists no file.
+   */
+  refreshIfChanged(): Promise<void> {
+    if (this.watcher && !this.watcher.isLookDue) {
+      return this.queuedRefresh ?? this.updates;
+    }
+    return this.buildFullIndex();
+  }
+
+  /** Stops watching the folder (see `watchFiles`). The index stays usable. */
+  close(): void {
+    this.watcher?.close();
   }
 
   /**
@@ -150,6 +178,17 @@ class FileIndexer {
   }
 
   private async refresh(): Promise<void> {
+    // A change from here on is for the next refresh to pick up
+    this.watcher?.lookBegins();
+    try {
+      await this.refreshNow();
+    } catch (error) {
+      this.watcher?.markChanged();
+      throw error;
+    }
+  }
+
+  private async refreshNow(): Promise<void> {
     const [discovered] = await Promise.all([
       this.scanner.discoverFiles(),
       this.loadSavedIndex(),
@@ -625,6 +664,8 @@ class FileIndexer {
     this.generation++;
     this.documentLRU.clear();
     this.processor.clearMemoryCache();
+    // The next refresh indexes the folder anew
+    this.watcher?.markChanged();
   }
 }
 

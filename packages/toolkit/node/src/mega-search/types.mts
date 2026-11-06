@@ -133,6 +133,20 @@ interface SearchConfig {
    * threshold. Default: 1.
    */
   minFilesForRebuild?: number;
+
+  /**
+   * Watch the folder for changes, so MegaSearch.refresh() lists its files
+   * only after one: a refresh before every search then costs nothing while
+   * no file changes. Call MegaSearch.close() to stop. Default: false — every
+   * refresh lists the files.
+   */
+  watchFiles?: boolean;
+  /**
+   * With `watchFiles`: the longest a refresh goes without listing the files,
+   * in ms, in case the watcher missed a change (a network share). Default:
+   * 60000.
+   */
+  rescanAfterMs?: number;
 }
 
 interface SearchResult {
