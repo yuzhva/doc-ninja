@@ -236,7 +236,6 @@ Main search method with full feature support.
 - `refresh()` - Bring the index up to date, cheaply: with `watchFiles`, it lists the files only
   after a change (or `rescanAfterMs`)
 - `close()` - Stop watching the folder
-- `testDocumentParsing()` - Test document parsing capabilities
 
 ## 🌟 Advanced Features
 

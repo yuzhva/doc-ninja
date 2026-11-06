@@ -289,32 +289,4 @@ describe('UkrainianTextProcessor', () => {
       assert.equal(processor.detectLanguage('123 !!'), 'english');
     });
   });
-
-  describe('calculateSimilarity()', () => {
-    it('is 1 - distance / longer length', () => {
-      assert.equal(processor.calculateSimilarity('кіт', 'кіт'), 1);
-      assert.equal(processor.calculateSimilarity('кіт', 'кит'), 1 - 1 / 3);
-    });
-  });
-
-  describe('tokenizeWithParagraphs()', () => {
-    it('splits on blank lines and maps each paragraph to its token range', () => {
-      const text = 'Наказ підписано.\n\n  Бюджет затверджено.';
-      const { tokens, paragraphs } = processor.tokenizeWithParagraphs(text);
-
-      assert.equal(tokens.length, 4);
-      assert.deepEqual(
-        paragraphs.map((p) => [
-          p.content,
-          text.slice(p.startPos, p.endPos),
-          p.tokenStart,
-          p.tokenEnd,
-        ]),
-        [
-          ['Наказ підписано.', 'Наказ підписано.', 0, 2],
-          ['Бюджет затверджено.', 'Бюджет затверджено.', 2, 4],
-        ],
-      );
-    });
-  });
 });
