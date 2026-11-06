@@ -14,7 +14,7 @@ import {
 } from '../types.mjs';
 import { DocumentProcessor, isIndexedAsIs } from './document-processor.mjs';
 import { FileScannerIndexer } from './file-scanner.indexer.mjs';
-import { FolderWatcher } from './folder-watcher.mjs';
+import { FolderWatcher, isWithin } from './folder-watcher.mjs';
 import { IndexBuilder } from './index-builder.mjs';
 import { IndexStorage } from './index-storage.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
@@ -52,8 +52,11 @@ class FileIndexer {
   private generation = 0;
   /** The update running or last run; the next one starts after it. */
   private updates: Promise<void> = Promise.resolve();
-  /** A refresh waiting for the running update; callers until it starts share it. */
-  private queuedRefresh: Promise<void> | null = null;
+  /**
+   * Refreshes waiting for the running update, by what they list (see
+   * refreshKey): callers until one starts share it.
+   */
+  private queuedRefreshes = new Map<string, Promise<void>>();
 
   private scanner: FileScannerIndexer;
   private processor: DocumentProcessor;
@@ -98,29 +101,75 @@ class FileIndexer {
    * Brings the index up to date with the files on disk: indexes added and
    * edited documents, drops deleted ones. The first call starts from the
    * index saved on disk; later ones from the one in memory.
-   *
-   * Calls made while an update runs share one refresh, queued after it: files
-   * may have changed since the running one looked at them.
    */
   buildFullIndex(): Promise<void> {
-    this.queuedRefresh ??= this.exclusive(() => {
-      this.queuedRefresh = null;
-      return this.refresh();
-    });
-    return this.queuedRefresh;
+    return this.queueRefresh(null);
   }
 
   /**
-   * buildFullIndex(), when the files may have changed. With `watchFiles`
-   * off, they always may. With it on, only when the folder watcher saw a
-   * change since the last look, or `rescanAfterMs` went by — otherwise this
-   * just waits for an update running or queued, and lists no file.
+   * buildFullIndex(), when the files may have changed — or, with `scopes`
+   * (absolute paths of folders and files in the folder), that for the
+   * documents in them only: a search in some folders needs only theirs
+   * indexed and up to date, so neither the other folders' files are listed,
+   * nor are their new ones indexed. Those stay in the index as they were.
+   *
+   * With `watchFiles` off, the files always may have changed. With it on,
+   * only when the folder watcher saw a change in them since the last look,
+   * or `rescanAfterMs` went by — otherwise this just waits for an update
+   * running or queued, and lists no file.
    */
-  refreshIfChanged(): Promise<void> {
-    if (this.watcher && !this.watcher.isLookDue) {
-      return this.queuedRefresh ?? this.updates;
+  refreshIfChanged(scopes?: readonly string[]): Promise<void> {
+    const paths = this.pathsToList(scopes);
+    if (paths?.length === 0) return this.updates; // none in the folder
+    const watcher = this.watcher;
+    if (
+      watcher &&
+      !(paths ?? [this.config.rootDirectory]).some((p) => watcher.isLookDue(p))
+    ) {
+      return this.queuedRefreshes.get(this.refreshKey(paths)) ?? this.updates;
     }
-    return this.buildFullIndex();
+    return this.queueRefresh(paths);
+  }
+
+  /**
+   * A refresh of `paths` (all files when null), after the update running.
+   * Calls made while an update runs share one refresh of the same paths,
+   * queued after it: files may have changed since the running one looked at
+   * them.
+   */
+  private queueRefresh(paths: string[] | null): Promise<void> {
+    const key = this.refreshKey(paths);
+    let queued = this.queuedRefreshes.get(key);
+    if (!queued) {
+      queued = this.exclusive(() => {
+        this.queuedRefreshes.delete(key);
+        return this.refresh(paths);
+      });
+      this.queuedRefreshes.set(key, queued);
+    }
+    return queued;
+  }
+
+  private refreshKey(paths: string[] | null): string {
+    return paths ? paths.join('\n') : '';
+  }
+
+  /**
+   * What a refresh of `scopes` lists: those in the folder, but none inside
+   * another — or null, for the whole folder.
+   */
+  private pathsToList(scopes?: readonly string[]): string[] | null {
+    if (!scopes || scopes.length === 0) return null;
+
+    const root = this.config.rootDirectory;
+    const inFolder = [...new Set(scopes.map((scope) => path.resolve(scope)))]
+      .filter((scope) => isWithin(scope, root))
+      .sort();
+    if (inFolder.includes(root)) return null;
+    return inFolder.filter(
+      (scope) =>
+        !inFolder.some((other) => other !== scope && isWithin(scope, other)),
+    );
   }
 
   /** Stops watching the folder (see `watchFiles`). The index stays usable. */
@@ -176,20 +225,25 @@ class FileIndexer {
     this.isLoaded = true;
   }
 
-  private async refresh(): Promise<void> {
+  /** Brings the documents in `paths` (all when null) up to date. */
+  private async refresh(paths: string[] | null): Promise<void> {
     // A change from here on is for the next refresh to pick up
-    this.watcher?.lookBegins();
+    for (const looked of paths ?? [this.config.rootDirectory]) {
+      this.watcher?.lookBegins(looked);
+    }
     try {
-      await this.refreshNow();
+      await this.refreshNow(paths);
     } catch (error) {
       this.watcher?.markChanged();
       throw error;
     }
   }
 
-  private async refreshNow(): Promise<void> {
+  private async refreshNow(paths: string[] | null): Promise<void> {
     const [discovered] = await Promise.all([
-      this.scanner.discoverFiles(),
+      paths
+        ? this.scanner.discoverSpecificPaths(paths)
+        : this.scanner.discoverFiles(),
       this.loadSavedIndex(),
     ]);
 
@@ -205,13 +259,19 @@ class FileIndexer {
       );
       return;
     }
-    this.logger.info(`📁 Found ${discovered.length} documents to process...`);
+    this.logger.info(
+      `📁 Found ${discovered.length} documents to process${paths ? ` in ${paths.length} of its folders` : ''}...`,
+    );
 
+    // Gone: what the index holds of the paths listed, and the listing didn't
+    // find. A folder listed and missing is gone too, with all it held.
     const discoveredPaths = new Set(
       discovered.map((file) => file.originalFilePath),
     );
     const removed = [...this.documentCache.keys()].filter(
-      (filePath) => !discoveredPaths.has(filePath),
+      (filePath) =>
+        !discoveredPaths.has(filePath) &&
+        (!paths || paths.some((listed) => isWithin(filePath, listed))),
     );
     await this.applyChanges(discovered, removed);
   }
