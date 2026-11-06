@@ -22,7 +22,10 @@
  *    dictionary; wordCount counts neither numbers nor function words
  * 8. a word typed in both alphabets reads in the one most of its letters
  *    are in ("Мiнiстерство" with a Latin "i" → "міністерство")
+ * 9. positions saved as [vocabIndex, gap, length] a token: the characters
+ *    from the end of the token before, and its own, not where it starts and
+ *    ends (see TokenPositions); no term frequencies, which nothing read
  */
-const INDEX_VERSION = 8;
+const INDEX_VERSION = 9;
 
 export { INDEX_VERSION };

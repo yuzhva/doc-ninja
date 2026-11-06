@@ -362,19 +362,16 @@ class DocumentProcessor {
     indexPath: string,
     metadata: DocumentMetadata,
   ): Promise<any | null> {
-    // Files saved before hold term frequencies too, which nothing reads
-    const {
-      indexVersion = 1,
-      termFrequency,
-      ...cached
-    } = JSON.parse(await promisify(fs.readFile)(indexPath, 'utf8'));
+    const { indexVersion = 1, ...cached } = JSON.parse(
+      await promisify(fs.readFile)(indexPath, 'utf8'),
+    );
     if (indexVersion !== INDEX_VERSION) {
       this.logger.debug(
         `📋 Cached index for ${metadata.fileName} is from index version ${indexVersion}, will rebuild`,
       );
       return null;
     }
-    return { ...cached, positions: TokenPositions.fromFlat(cached.positions) };
+    return { ...cached, positions: TokenPositions.fromSaved(cached.positions) };
   }
 
   private createEmptyIndex(metadata: DocumentMetadata): DocumentIndex {
