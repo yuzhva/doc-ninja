@@ -37,6 +37,7 @@ type SearchOptions = {
    * Example: "apple" matches "apply" (1 substitution: e→y)
    * Example: "search" matches "serach" (1 swap: ar→ra)
    * Increase to 2 for longer words or more typos.
+   * Numbers take no typos, nor other forms: "2024" never finds "2023".
    */
   maxTypoDistance?: number;
 
@@ -55,6 +56,10 @@ type SearchOptions = {
    * 1 = Allow 1 word gap: "rich car" → "rich expensive car"
    * 2 = Allow 2 word gap: "rich car" → "rich very expensive car"
    * Example: "san francisco" matches "san jose to francisco" with maxWordsInPhraseDistance=2
+   * Numbers in between don't count as words: with 0, "наказ відпустку"
+   * matches "Наказ № 15 від 01.02.2024 про відпустку". A number the query
+   * writes glued together ("22.12.2024") is always found as written: its
+   * parts side by side, glued by the same characters.
    */
   maxWordsInPhraseDistance?: number;
 

@@ -444,3 +444,51 @@ describe('TermMatcher — inflected forms and related words', () => {
     });
   });
 });
+
+describe('TermMatcher — numbers', () => {
+  const NUMBERS = {
+    'year.txt': 'Звіт за 2024 рік.',
+    'near-years.txt': 'Звіти за 2023 і 20245, сторінка 202.',
+    'numbers-only.txt': '12 34 56',
+    'words.txt': 'Пункт аб, розділ вг.',
+  };
+  let data: SearchData;
+
+  before(async () => {
+    data = await buildSearchData(NUMBERS);
+  });
+
+  const MODES: TermMatchOptions[] = [true, false].flatMap((isFuzzy) =>
+    [0, 1, 2].map((maxTypoDistance) => ({
+      isFuzzy,
+      isRelatedWordsAllowed: true,
+      maxTypoDistance,
+    })),
+  );
+
+  it('matches a number itself only, whatever the typo distance and fuzzy match', () => {
+    for (const options of MODES) {
+      const wordMatch = matcher.match('2024', options, data);
+
+      assert.deepEqual(
+        [...wordMatch.documentIds()],
+        ['year.txt'],
+        `${JSON.stringify(options)}`,
+      );
+      assert.deepEqual([...wordMatch.words.keys()], ['2024']);
+      assert.equal(wordMatch.words.get('2024')!.confidence, 1);
+    }
+  });
+
+  it('matches no word to a number', () => {
+    // "аб" is 2 edits from "12" as much as from "вг"
+    const wordMatch = matcher.match(
+      'аб',
+      { isFuzzy: false, isRelatedWordsAllowed: true, maxTypoDistance: 2 },
+      data,
+    );
+
+    assert.ok(wordMatch.words.has('вг'));
+    assert.ok(![...wordMatch.documentIds()].includes('numbers-only.txt'));
+  });
+});

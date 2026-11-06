@@ -4,7 +4,7 @@ import { editDistance } from './fuzzy.mjs';
 import { LRUCache } from './lru-cache.mjs';
 import type { MatchedWord } from './mega-search.term-matcher.mjs';
 import type { HighlightInfo, SnippetInfo } from './mega-search.types.mjs';
-import { getDocumentToken } from './mega-search.utils.mjs';
+import { getDocumentToken, isWordAt } from './mega-search.utils.mjs';
 import { createLogger } from './shared/logger.mjs';
 import { UkrainianTextProcessor } from './text-processor.mjs';
 import type { DocumentIndex, ProcessedSearchToken } from './types.mjs';
@@ -517,11 +517,10 @@ export class SnippetGenerator {
     contextBefore: number,
     contextAfter: number,
   ): Promise<{ start: number; end: number }> {
-    // Punctuation is never tokenized as its own vocab entry (the tokenizer's
-    // character class only captures letters/apostrophes/hyphens — see
-    // UkrainianTextProcessor.tokenize), so a sentence terminator always lands
-    // in the raw text immediately after the preceding word token's charEnd,
-    // never as a vocab token of its own. Checking raw text here is what makes
+    // Punctuation is never tokenized as its own vocab entry (tokens are words
+    // and runs of digits only — see UkrainianTextProcessor.tokenize), so a
+    // sentence terminator always lands in the raw text immediately after the
+    // preceding token's charEnd, never as a vocab token of its own. Checking raw text here is what makes
     // boundary detection actually work, vs. the previous vocab-token check
     // (which could never match and always fell through to the fixed window).
     const rawText = await this.getRawText(doc);
@@ -538,33 +537,47 @@ export class SnippetGenerator {
       return /[.!?;]$/.test(token) || ['?', '!', ';', '.'].includes(token);
     };
 
-    let sentenceStart = Math.max(0, matchStartPos - contextBefore);
-    for (let i = matchStartPos - 1; i >= sentenceStart; i--) {
-      if (isBoundaryToken(i)) {
-        sentenceStart = i + 1;
-        break;
-      }
+    // The context is counted in words, and ends at a word: numbers within it
+    // are shown, but neither use it up nor end a sentence ("від 21.11.2022.
+    // Затвердити"), so a snippet holds the words it held before numbers were
+    // indexed.
+    let sentenceStart = matchStartPos;
+    for (
+      let i = matchStartPos - 1, words = 0;
+      i >= 0 && words < contextBefore;
+      i--
+    ) {
+      if (!isWordAt(doc, i)) continue;
+      if (isBoundaryToken(i)) break;
+      words++;
+      sentenceStart = i;
     }
 
-    let sentenceEnd = Math.min(
-      doc.positions.length,
-      matchEndPos + contextAfter,
-    );
-    for (let i = matchEndPos + 1; i < sentenceEnd; i++) {
-      if (isBoundaryToken(i)) {
-        sentenceEnd = i + 1;
-        break;
-      }
+    // contextAfter counts the match's last token as its first word
+    let sentenceEnd = matchEndPos;
+    for (
+      let i = matchEndPos, words = 0;
+      i < doc.positions.length && words < contextAfter;
+      i++
+    ) {
+      const isMatchEnd = i === matchEndPos;
+      if (!isMatchEnd && !isWordAt(doc, i)) continue;
+      words++;
+      sentenceEnd = i + 1;
+      if (!isMatchEnd && isBoundaryToken(i)) break;
     }
 
-    let bufferStart = Math.max(0, sentenceStart);
-    let bufferEnd = Math.min(doc.positions.length, sentenceEnd);
+    let bufferStart = sentenceStart;
+    let bufferEnd = sentenceEnd;
 
     const MAX_SNIPPET_TOKENS = Math.max(
       100,
       contextBefore + contextAfter + (matchEndPos - matchStartPos),
     );
-    const snippetTokenCount = bufferEnd - bufferStart;
+    let snippetTokenCount = 0;
+    for (let i = bufferStart; i < bufferEnd; i++) {
+      if (isWordAt(doc, i)) snippetTokenCount++;
+    }
 
     if (snippetTokenCount > MAX_SNIPPET_TOKENS) {
       const matchCenter = (matchStartPos + matchEndPos) / 2;

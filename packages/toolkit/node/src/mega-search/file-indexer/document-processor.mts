@@ -7,7 +7,11 @@ import { resolveCachePaths } from '../cache-paths.mjs';
 import type { ResolvedCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
-import { UkrainianTextProcessor } from '../text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  findJoints,
+  isNumberTerm,
+} from '../text-processor.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
 
@@ -318,8 +322,11 @@ class DocumentProcessor {
         },
         vocab,
         positions,
+        joints: findJoints(text, rawTokens),
         termFrequency,
-        wordCount: positions.length,
+        // Words only: numbers leave BM25 document lengths as they were
+        wordCount: rawTokens.filter((token) => !isNumberTerm(token.term))
+          .length,
       };
 
       const tSaveStart = Date.now();
@@ -389,6 +396,7 @@ class DocumentProcessor {
       },
       vocab: [],
       positions: [],
+      joints: {},
       termFrequency: new Map(),
       wordCount: 0,
     };
