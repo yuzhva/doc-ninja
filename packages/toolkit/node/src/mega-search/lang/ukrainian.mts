@@ -103,8 +103,72 @@ const ukrainianFunctionWords: ReadonlySet<string> = new Set([
   'все-таки',
 ]);
 
+/** Latin letters that look like Cyrillic ones, and those Cyrillic ones. */
+const LATIN_TO_CYRILLIC: Readonly<Record<string, string>> = {
+  a: 'а',
+  c: 'с',
+  e: 'е',
+  i: 'і',
+  o: 'о',
+  p: 'р',
+  x: 'х',
+  y: 'у',
+  ï: 'ї',
+  A: 'А',
+  B: 'В',
+  C: 'С',
+  E: 'Е',
+  H: 'Н',
+  I: 'І',
+  K: 'К',
+  M: 'М',
+  O: 'О',
+  P: 'Р',
+  T: 'Т',
+  X: 'Х',
+  Y: 'У',
+  Ï: 'Ї',
+};
+const CYRILLIC_TO_LATIN: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(LATIN_TO_CYRILLIC).map(([latin, cyrillic]) => [
+    cyrillic,
+    latin,
+  ]),
+);
+const LATIN_LOOKALIKE = new RegExp(
+  `[${Object.keys(LATIN_TO_CYRILLIC).join('')}]`,
+  'g',
+);
+const CYRILLIC_LOOKALIKE = new RegExp(
+  `[${Object.keys(CYRILLIC_TO_LATIN).join('')}]`,
+  'g',
+);
+const HAS_LATIN = /[A-Za-zÏï]/;
+const HAS_CYRILLIC = /[Ѐ-ӿ]/;
+
+/**
+ * A word typed in both alphabets, its look-alike letters written in the one
+ * most of its letters are in: "Мiнiстерство" with a Latin "i" is
+ * "Міністерство", "Microsоft" with a Cyrillic "о" is "Microsoft". The eye
+ * can't tell the letters apart, so the text means the word — left mixed, no
+ * query typed in one alphabet found it. Words in one alphabet stay as they
+ * are, and so do the parts of a compound: "IT-відділ".
+ */
+function unmixLookalikes(text: string): string {
+  if (!HAS_LATIN.test(text) || !HAS_CYRILLIC.test(text)) return text;
+
+  return text.replace(/\p{L}+/gu, (word) => {
+    if (!HAS_LATIN.test(word) || !HAS_CYRILLIC.test(word)) return word;
+    const cyrillic = word.match(/[Ѐ-ӿ]/g)!.length;
+    const latin = word.match(/[A-Za-zÏï]/g)!.length;
+    return cyrillic >= latin
+      ? word.replace(LATIN_LOOKALIKE, (letter) => LATIN_TO_CYRILLIC[letter])
+      : word.replace(CYRILLIC_LOOKALIKE, (letter) => CYRILLIC_TO_LATIN[letter]);
+  });
+}
+
 function normalizeUkrainian(text: string): string {
-  return text
+  return unmixLookalikes(text)
     .toLowerCase()
     .trim()
     .replace(/['`’ʼ]/g, '') // Remove apostrophes (', `, ’, ʼ) which are common in Ukrainian

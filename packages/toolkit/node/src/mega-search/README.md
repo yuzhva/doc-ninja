@@ -245,6 +245,8 @@ The system includes sophisticated Ukrainian language processing:
   distance, and a word-by-word search skips them unless the query holds nothing else — a phrase
   holds them as written ("наказ про відпустку" is not "наказ на відпустку")
 - **Case Handling**: Proper Unicode case normalization
+- **Mixed Alphabets**: a word typed with look-alike letters of both alphabets ("Мiнiстерство" with a
+  Latin "i") reads in the alphabet most of its letters are in, so a query typed in one finds it
 - **Mixed Language**: Handles documents with both Ukrainian and English
 
 ### Numbers, Dates & Codes
