@@ -947,16 +947,12 @@ class MegaSearch {
           );
         }
 
-        // ENHANCED: Extract rich snippets with position data
+        // The first snippetsLimit, generated only: the rest would be dropped
         snippets = await this.snippetGenerator.generateSnippets(
           doc,
           snippetRequest,
+          typeof snippetsLimit === 'number' ? snippetsLimit : Infinity,
         );
-
-        // Limit snippets if not 'ALL'
-        if (snippetsLimit !== 'ALL' && typeof snippetsLimit === 'number') {
-          snippets = snippets.slice(0, snippetsLimit);
-        }
       } catch (error) {
         logger.error(
           `Error processing snippets for document ${doc.metadata.fileName}:`,
