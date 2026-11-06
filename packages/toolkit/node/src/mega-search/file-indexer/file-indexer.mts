@@ -243,7 +243,7 @@ class FileIndexer {
     this.logger.info(
       `📝 Found ${toIndex.length} files to index and ${removed.length} removed, out of ${files.length}.`,
     );
-    toIndex.slice(0, 5).forEach((f) => this.logger.info(`   - ${f.fileName}`));
+    toIndex.slice(0, 5).forEach((f) => this.logger.debug(`   - ${f.fileName}`));
 
     // The next document cache. Searches keep reading the current one.
     const documentCache = new Map(this.documentCache);
