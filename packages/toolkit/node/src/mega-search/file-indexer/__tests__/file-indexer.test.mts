@@ -270,6 +270,55 @@ describe('FileIndexer', () => {
     });
   });
 
+  describe('while a search reads the index', () => {
+    // A search reads the index in place, across awaits (snippets read files),
+    // so an update must leave the version it reads as it was
+    for (const [update, config] of [
+      ['an update of the changed documents', { indexRebuildThreshold: 1 }],
+      ['a full rebuild', {}],
+    ] as const) {
+      it(`leaves the version it reads as it was, through ${update}`, async () => {
+        const indexer = await indexed(config);
+        const snapshot = indexer.getSearchSnapshot();
+        const postings = indexer.getInvertedIndex();
+        const stems = indexer.getStemDictionary();
+        // a.txt drops its own words, shares b.txt's, adds a form of one of
+        // them (місту, as міста) and a new word
+        await corpus.write('a.txt', 'Кошторис місту затверджено.', later());
+
+        await indexer.buildFullIndex();
+
+        assert.deepEqual(
+          new Map(
+            [...postings.keys()].map((term) => [
+              term,
+              snapshot.invertedIndex.get(term),
+            ]),
+          ),
+          postings,
+        );
+        assert.deepEqual(
+          new Map(
+            [...snapshot.stemDictionary].map(([stem, words]) => [
+              stem,
+              [...words],
+            ]),
+          ),
+          stems,
+        );
+        assert.equal(
+          snapshot.invertedIndex.get(textProcessor.stemWord('кошторис')),
+          undefined,
+        );
+        assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+        assert.notEqual(
+          indexer.getSearchSnapshot().generation,
+          snapshot.generation,
+        );
+      });
+    }
+  });
+
   it('indexes a document its per-document cache holds and the saved index does not', async () => {
     // e.g. the app stopped between saving the two. Regression guard: read
     // back from its per-document cache, the document counted as unchanged,

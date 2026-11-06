@@ -16,7 +16,9 @@ class BM25Scorer {
   /**
    * Calculate average document length for the corpus
    */
-  calculateAverageDocLength(documents: Map<string, DocumentIndex>): void {
+  calculateAverageDocLength(
+    documents: ReadonlyMap<string, DocumentIndex>,
+  ): void {
     const totalLength = Array.from(documents.values()).reduce(
       (sum, doc) => sum + doc.wordCount,
       0,

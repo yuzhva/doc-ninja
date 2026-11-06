@@ -1,13 +1,22 @@
-import { InvertedIndexEntry } from '../types.mjs';
+import type { InvertedIndexEntry, PostingsReader } from '../types.mjs';
 
 /**
  * A memory-efficient implementation of Inverted Index.
  * Uses integer Document IDs and flat arrays to reduce memory footprint.
  * Replaces Map<string, InvertedIndexEntry[]> which has high object overhead.
+ *
+ * Searches read it in place, so an index searches can read is never changed:
+ * an update changes a fork() of it, and the fork goes in whole.
  */
-export class InvertedIndex {
+export class InvertedIndex implements PostingsReader {
   // Stores flat list of integers: [docId, freq, pos1, pos2, ..., docId, freq, ...]
   private index = new Map<string, number[]>();
+  /**
+   * The lists this index made. The others it shares with the index it was
+   * forked from, which searches may still read: they're copied before a
+   * change.
+   */
+  private ownLists = new WeakSet<number[]>();
 
   // Document Registry for integer ID mapping
   private docIdMap = new Map<string, number>();
@@ -16,9 +25,22 @@ export class InvertedIndex {
   constructor() {}
 
   clear() {
-    this.index.clear();
-    this.docIdMap.clear();
+    this.index = new Map();
+    this.docIdMap = new Map();
     this.idDocMap = [];
+  }
+
+  /**
+   * A copy to change while searches read this one. It shares every term's
+   * list with this index and copies a list only to change it, so it costs
+   * one entry per term, not the postings.
+   */
+  fork(): InvertedIndex {
+    const fork = new InvertedIndex();
+    fork.index = new Map(this.index);
+    fork.docIdMap = new Map(this.docIdMap);
+    fork.idDocMap = [...this.idDocMap];
+    return fork;
   }
 
   get size() {
@@ -40,8 +62,9 @@ export class InvertedIndex {
     const freq = positions.length;
 
     let list = this.index.get(term);
-    if (!list) {
-      list = [];
+    if (!list || !this.ownLists.has(list)) {
+      list = list ? [...list] : [];
+      this.ownLists.add(list);
       this.index.set(term, list);
     }
 
@@ -86,6 +109,7 @@ export class InvertedIndex {
         this.index.delete(term);
         removedTerms.push(term);
       } else {
+        this.ownLists.add(kept);
         this.index.set(term, kept);
       }
     }

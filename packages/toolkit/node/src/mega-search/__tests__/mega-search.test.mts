@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
+import { InvertedIndex } from '../file-indexer/inverted-index.mjs';
 import { MegaSearch, createMegaSearch } from '../mega-search.mjs';
 import type { SearchOptions } from '../mega-search.types.mjs';
 import {
@@ -1194,11 +1195,47 @@ describe('MegaSearch', () => {
         await search('бюджет', { pageSize: 6 }),
       );
     });
+
+    it('keeps serving it after a reindex that found nothing to change', async () => {
+      // be-krang refreshes its engine before every search
+      const first = await search('бюджет', { pageSize: 7 });
+      await fixture.megaSearch.reindex();
+
+      assert.equal(await search('бюджет', { pageSize: 7 }), first);
+    });
+  });
+
+  it('reads the index in place: no search copies it or decodes all of it', async (t) => {
+    // Regression guard: every search copied the whole index into objects
+    // first, which took longer than the search itself on a real corpus
+    const { indexer } = fixture.megaSearch;
+    const copies = [
+      t.mock.method(indexer, 'getInvertedIndex'),
+      t.mock.method(indexer, 'getStemDictionary'),
+      t.mock.method(indexer, 'getDocumentCache'),
+      t.mock.method(InvertedIndex.prototype, 'forEach'),
+    ];
+
+    for (const options of [
+      {},
+      PRODUCTION_OPTIONS,
+      { isInflectedWordFormsAllowed: false, maxTypoDistance: 2 },
+      { pageSize: 'ALL', snippetsLimit: 'ALL', includeHighlights: true },
+    ] satisfies SearchOptions[]) {
+      for (const query of ['наказ', 'бюджет міста', '"новий кошторис"']) {
+        await search(query, { ...options, page: 1 });
+      }
+    }
+
+    assert.deepEqual(
+      copies.map((copy) => copy.mock.callCount()),
+      [0, 0, 0, 0],
+    );
   });
 
   it('rejects with a wrapped error when the index is unavailable', async (t) => {
     t.mock.method(console, 'error', () => {});
-    t.mock.method(fixture.megaSearch.indexer, 'getSearchDataOptimized', () => {
+    t.mock.method(fixture.megaSearch.indexer, 'getSearchSnapshot', () => {
       throw new Error('index file vanished');
     });
 

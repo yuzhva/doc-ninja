@@ -22,7 +22,7 @@ import type {
 } from './mega-search.types.mjs';
 import { createLogger } from './shared/logger.mjs';
 import { UkrainianTextProcessor, findJoints } from './text-processor.mjs';
-import { DocumentIndex, InvertedIndexEntry, SearchConfig } from './types.mjs';
+import type { DocumentIndex, SearchConfig, SearchSnapshot } from './types.mjs';
 
 const logger = createLogger('MegaSearch');
 
@@ -55,7 +55,7 @@ type ScoringResult = {
 type ScoringParams = {
   /** One match per query word, in query order. */
   words: WordMatch[];
-  docCache: Map<string, DocumentIndex>;
+  docCache: ReadonlyMap<string, DocumentIndex>;
   resolvedScopedPaths: string[];
   useBM25: boolean;
   docCount: number;
@@ -78,7 +78,7 @@ type PaginationBounds = {
 
 type BuildPaginatedResultsParams = {
   rawResults: [string, number][];
-  docCache: Map<string, DocumentIndex>;
+  docCache: ReadonlyMap<string, DocumentIndex>;
   snippetsLimit: number | 'ALL';
   phraseMatches: Map<string, number[][]>;
   includeHighlights: boolean;
@@ -102,6 +102,8 @@ class MegaSearch {
   // Search result cache, keyed by query+options and the index generation
   // searched, to speed up repeat requests.
   private searchCache = new LRUCache<string, PaginatedSearchResult>(100);
+  // The index generation the cached results were last tidied for.
+  private searchCacheGeneration = -1;
   // The index generation BM25's average document length was computed for.
   private scorerIndexGeneration = -1;
 
@@ -149,7 +151,7 @@ class MegaSearch {
     const startTime = Date.now();
 
     await this.fileIndexer.buildFullIndex();
-    await this.refreshDerivedState();
+    this.dropStaleResults();
 
     const stats = this.fileIndexer.getStats();
     const indexTime = Date.now() - startTime;
@@ -176,24 +178,23 @@ class MegaSearch {
     const startTime = Date.now();
     logger.info('Starting re-indexing...');
     await this.fileIndexer.buildFullIndex();
-    await this.refreshDerivedState();
+    this.dropStaleResults();
     logger.info(`Re-indexing completed in ${Date.now() - startTime}ms`);
   }
 
   /**
-   * Tidies up after a (re)build: drops cached results of earlier index
-   * generations (no search can reach them any more) and pre-warms the
-   * indexer's search caches. Searches don't wait for it — they key what they
-   * derive from the index by its generation (see syncScorerWithIndex).
+   * Drops cached results after an update went in. They're keyed by the
+   * index generation, so no search can reach them any more: this only gives
+   * their memory back. A refresh that found nothing to change keeps them, so
+   * a repeated search stays an instant one. Searches don't wait for it —
+   * they key what they derive from the index by its generation (see
+   * syncScorerWithIndex).
    */
-  private async refreshDerivedState(): Promise<void> {
+  private dropStaleResults(): void {
+    const generation = this.fileIndexer.indexGeneration;
+    if (generation === this.searchCacheGeneration) return;
     this.searchCache.clear();
-
-    try {
-      await this.fileIndexer.preWarmSearchCaches();
-    } catch (error) {
-      logger.warn('⚠️ Failed to pre-warm search caches:', error);
-    }
+    this.searchCacheGeneration = generation;
   }
 
   /**
@@ -201,7 +202,7 @@ class MegaSearch {
    * another generation than the last one computed for.
    */
   private syncScorerWithIndex(
-    docCache: Map<string, DocumentIndex>,
+    docCache: ReadonlyMap<string, DocumentIndex>,
     indexGeneration: number,
   ): void {
     if (this.scorerIndexGeneration === indexGeneration) return;
@@ -219,7 +220,7 @@ class MegaSearch {
   async clearCache(): Promise<void> {
     await this.fileIndexer.clearCache();
     this.queryCache.clear();
-    this.searchCache.clear();
+    this.dropStaleResults();
   }
 
   /**
@@ -285,22 +286,19 @@ class MegaSearch {
   }
 
   /**
-   * Safe wrapper for getting search data with proper error handling
+   * The index as it is now, read in place (no copy) — the same version for
+   * as long as the search runs, whatever update goes in meanwhile.
    */
-  private getSearchData(): {
-    docCache: Map<string, DocumentIndex>;
-    invertedIndex: Map<string, InvertedIndexEntry[]>;
-    stemDictionary: Map<string, string[]>;
-  } {
+  private getSearchData(): SearchSnapshot {
     try {
-      const { docCache, invertedIndex, stemDictionary } =
-        this.fileIndexer.getSearchDataOptimized();
+      const snapshot = this.fileIndexer.getSearchSnapshot();
+      const { docCache, invertedIndex, stemDictionary } = snapshot;
 
       if (!docCache || !invertedIndex || !stemDictionary) {
         throw new Error('Search indexes not properly initialized');
       }
 
-      return { docCache, invertedIndex, stemDictionary };
+      return snapshot;
     } catch (error) {
       logger.error(
         'Failed to get search data:',
@@ -562,7 +560,7 @@ class MegaSearch {
   private sortFilteredDocIds(
     filteredDocIds: string[],
     docScores: Map<string, number>,
-    docCache: Map<string, DocumentIndex>,
+    docCache: ReadonlyMap<string, DocumentIndex>,
     sortBy: 'relevance' | 'date',
     sortOrder: 'asc' | 'desc',
     filenameDatePattern: string | undefined,
@@ -699,9 +697,8 @@ class MegaSearch {
         isPhraseProximityEnabled,
       );
 
-      const dataFetchStart = Date.now();
+      // The same version as indexGeneration: nothing came in between
       const { docCache, invertedIndex, stemDictionary } = this.getSearchData();
-      logger.debug(`📊 Index data fetched in ${Date.now() - dataFetchStart}ms`);
 
       const docCount = docCache.size;
       if (docCount === 0) {
@@ -891,7 +888,7 @@ class MegaSearch {
   private async processSearchResult(
     docId: string,
     score: number,
-    docCache: Map<string, DocumentIndex>,
+    docCache: ReadonlyMap<string, DocumentIndex>,
     snippetRequest: SnippetRequest,
     snippetsLimit: number | 'ALL',
     includeHighlights: boolean,
