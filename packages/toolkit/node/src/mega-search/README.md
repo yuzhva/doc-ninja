@@ -265,8 +265,13 @@ Levels 2 and 3 are stamped with `INDEX_VERSION` (`file-indexer/index-version.mts
 change that indexes the same text differently (tokenizer, normalization, stop words, stemmer): the
 next start rebuilds both from the cached text (level 1), so no document is parsed again.
 
-A few changed files update the inverted index for those documents only. A full rebuild, which reads
-every document, happens once `indexRebuildThreshold` (default 0.1%) of the documents changed.
+A few changed or deleted files update the inverted index for those documents only. A full rebuild,
+which reads every document, happens once `indexRebuildThreshold` (default 0.1%) of the documents
+changed.
+
+Searches never see an update half-done: until it's complete they read the index from before it,
+snippets included. Updates (`reindex()`, `indexSpecificPaths()`, `clearCache()`) run one at a time;
+`reindex()` calls made during an update share one more update, run after it.
 
 ## 🚀 Production Deployment
 

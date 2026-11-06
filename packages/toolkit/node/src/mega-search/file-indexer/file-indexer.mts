@@ -12,12 +12,21 @@ import {
   InvertedIndexEntry,
   SearchConfig,
 } from '../types.mjs';
-import { DocumentProcessor } from './document-processor.mjs';
+import { DocumentProcessor, isIndexedAsIs } from './document-processor.mjs';
 import { FileScannerIndexer } from './file-scanner.indexer.mjs';
 import { IndexBuilder } from './index-builder.mjs';
 import { IndexStorage } from './index-storage.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
 
+/**
+ * Keeps the index of a folder in step with its files.
+ *
+ * A search reads the index as it was when the search started (see
+ * getSearchDataOptimized), so an update never shows it half-done: documents
+ * are indexed into a copy of the document cache, and the copy goes in
+ * together with its postings, in one synchronous step (see commit). Updates
+ * run one at a time, in call order.
+ */
 class FileIndexer {
   private logger = createLogger('FileIndexer');
   private documentCache = new Map<string, DocumentIndex>();
@@ -32,6 +41,15 @@ class FileIndexer {
     lastWarmed: number;
   };
 
+  /** Whether the index saved on disk was loaded (or found missing). */
+  private isLoaded = false;
+  /** Changes with every update searches can see — see indexGeneration. */
+  private generation = 0;
+  /** The update running or last run; the next one starts after it. */
+  private updates: Promise<void> = Promise.resolve();
+  /** A refresh waiting for the running update; callers until it starts share it. */
+  private queuedRefresh: Promise<void> | null = null;
+
   private scanner: FileScannerIndexer;
   private processor: DocumentProcessor;
   private storage: IndexStorage;
@@ -45,6 +63,15 @@ class FileIndexer {
     this.builder = new IndexBuilder(this.config, this.logger);
   }
 
+  /**
+   * Version of the index searches read now: it changes whenever an update
+   * goes in. Anything derived from the index (cached results, BM25's average
+   * document length) is current only for the generation it was made from.
+   */
+  get indexGeneration(): number {
+    return this.generation;
+  }
+
   async discoverFiles(): Promise<DocumentMetadata[]> {
     return this.scanner.discoverFiles();
   }
@@ -54,71 +81,152 @@ class FileIndexer {
   }
 
   /**
-   * Indexes only the specified paths (files or directories).
-   * Merges the results into the existing global index.
+   * Brings the index up to date with the files on disk: indexes added and
+   * edited documents, drops deleted ones. The first call starts from the
+   * index saved on disk; later ones from the one in memory.
+   *
+   * Calls made while an update runs share one refresh, queued after it: files
+   * may have changed since the running one looked at them.
+   */
+  buildFullIndex(): Promise<void> {
+    this.queuedRefresh ??= this.exclusive(() => {
+      this.queuedRefresh = null;
+      return this.refresh();
+    });
+    return this.queuedRefresh;
+  }
+
+  /**
+   * Indexes only the specified paths (files or directories): adds their new
+   * documents and updates edited ones. Nothing is removed.
    */
   async indexSpecificPaths(paths: string[]): Promise<void> {
-    // Default behavior: if no paths provided, build full index
     if (!paths || paths.length === 0) {
       this.logger.info('No specific paths provided. Running full index build.');
       return this.buildFullIndex();
     }
 
-    this.logger.info(`🎯 Indexing ${paths.length} specific paths...`);
+    return this.exclusive(async () => {
+      this.logger.info(`🎯 Indexing ${paths.length} specific paths...`);
+      await this.loadSavedIndex();
 
-    // Ensure global index is loaded so we can merge updates
-    let isInvertedIndexMissing = false;
-    if (this.documentCache.size === 0) {
-      const loadedData = await this.storage.loadGlobalIndex();
-      if (loadedData) {
-        this.documentCache = loadedData.documentCache;
-        this.invertedIndex = loadedData.invertedIndex;
-        this.stemDictionary = loadedData.stemDictionary;
-        this.logger.debug(
-          '📋 Loaded existing global index for partial update.',
-        );
-      } else {
-        isInvertedIndexMissing = true;
+      const files = await this.scanner.discoverSpecificPaths(paths);
+      if (files.length === 0) {
+        this.logger.info('No valid files found in the specified paths.');
+        return;
       }
+
+      this.logger.info(`Found ${files.length} files to process.`);
+      await this.applyChanges(files, []);
+    });
+  }
+
+  /** Runs `task` after every update called before it. */
+  private exclusive(task: () => Promise<void>): Promise<void> {
+    const run = this.updates.then(task);
+    // A failed update leaves the index as it was, and doesn't stop the next
+    this.updates = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Loads the index saved on disk, once: after that, memory holds it. */
+  private async loadSavedIndex(): Promise<void> {
+    if (this.isLoaded) return;
+
+    const saved = await this.storage.loadGlobalIndex();
+    if (saved) {
+      this.documentCache = saved.documentCache;
+      this.invertedIndex = saved.invertedIndex;
+      this.stemDictionary = saved.stemDictionary;
+      this.generation++;
+      this.logger.debug('📋 Loaded existing global index from cache.');
     }
+    this.isLoaded = true;
+  }
 
-    // 1. Discover files within the requested paths
-    const filesToIndex = await this.scanner.discoverSpecificPaths(paths);
+  private async refresh(): Promise<void> {
+    const [discovered] = await Promise.all([
+      this.scanner.discoverFiles(),
+      this.loadSavedIndex(),
+    ]);
 
-    if (filesToIndex.length === 0) {
-      this.logger.info('No valid files found in the specified paths.');
+    if (discovered.length === 0) {
+      this.logger.info('No files found to index.');
+      return;
+    }
+    this.logger.info(`📁 Found ${discovered.length} documents to process...`);
+
+    const discoveredPaths = new Set(
+      discovered.map((file) => file.originalFilePath),
+    );
+    const removed = [...this.documentCache.keys()].filter(
+      (filePath) => !discoveredPaths.has(filePath),
+    );
+    await this.applyChanges(discovered, removed);
+  }
+
+  /**
+   * Indexes those of `files` the index doesn't hold as they are now, drops
+   * `removed`, puts both in at once (see commit) and saves the index.
+   *
+   * A file counts as changed whether it's indexed afresh or read back from
+   * its per-document cache: either way the postings don't hold it as it is.
+   */
+  private async applyChanges(
+    files: DocumentMetadata[],
+    removed: string[],
+  ): Promise<void> {
+    const startTime = Date.now();
+    const toIndex = files.filter(
+      (file) =>
+        !isIndexedAsIs(this.documentCache.get(file.originalFilePath), file),
+    );
+
+    if (toIndex.length === 0 && removed.length === 0) {
+      this.logger.info('✅ All files are up to date. No reindexing needed.');
+      if (this.storage.needsOptimization) await this.save();
       return;
     }
 
-    this.logger.info(`Found ${filesToIndex.length} files to process.`);
+    this.logger.info(
+      `📝 Found ${toIndex.length} files to index and ${removed.length} removed, out of ${files.length}.`,
+    );
+    toIndex.slice(0, 5).forEach((f) => this.logger.info(`   - ${f.fileName}`));
 
-    // 2. Select method (Sequential vs Parallel)
-    const indexingMethod = await this.selectIndexingMethod(filesToIndex);
-
-    // 3. Process files
-    // Note: this is an additive update, not a full sweep that should prune
-    // missing files — so a rebuild is only forced when there were no postings
-    // to merge into at all.
-    const rebuildThresholds = this.getRebuildThresholds();
-    if (indexingMethod === 'parallel') {
-      await this.buildFullIndexParallel(
-        filesToIndex,
-        rebuildThresholds,
-        isInvertedIndexMissing,
-      );
-    } else {
-      await this.buildFullIndexSequential(
-        filesToIndex,
-        rebuildThresholds,
-        isInvertedIndexMissing,
+    // The next document cache. Searches keep reading the current one.
+    const documentCache = new Map(this.documentCache);
+    for (const filePath of removed) documentCache.delete(filePath);
+    if (removed.length > 0) {
+      this.logger.info(
+        `🗑️ Pruned ${removed.length} deleted documents from cache.`,
       );
     }
+
+    const method = await this.selectIndexingMethod(toIndex);
+    this.logger.debug(`📂 Using indexing method: ${method}`);
+    const { indexed, errors } =
+      method === 'parallel'
+        ? await this.indexParallel(toIndex, documentCache)
+        : await this.indexSequential(toIndex, documentCache);
+    this.logger.info(
+      `✅ Indexing complete: ${indexed.length} indexed, ${errors} errors`,
+    );
+
+    const changed = [...indexed, ...removed];
+    if (changed.length === 0) return;
+
+    await this.commit(documentCache, changed);
+    await this.save();
+    if (method === 'parallel') await this.validateIndexHealth();
+
+    this.logger.info(
+      `${method} index update completed in ${Date.now() - startTime}ms`,
+    );
   }
 
   /**
    * How many re-indexed files it takes to rebuild the inverted index from
-   * every document rather than update it for the changed ones only — shared
-   * by full and path-scoped indexing so both apply the same configured rules.
+   * every document rather than update it for the changed ones only.
    */
   private getRebuildThresholds(): {
     rebuildThreshold: number;
@@ -133,44 +241,147 @@ class FileIndexer {
   }
 
   /**
-   * Brings the inverted index up to date with re-indexed documents. A forced
-   * rebuild, or enough changes (see getRebuildThresholds), rebuilds it from
-   * every document; fewer changes update only the changed documents.
+   * Puts in `documentCache` with postings to match, for searches to read.
    *
-   * Skipping the update instead would lose the change: its per-document index
-   * is already saved as current, so no later run would re-index it. A full
-   * rebuild reads every document from disk; an update reads none.
+   * Enough changes (see getRebuildThresholds) rebuild the postings from every
+   * document, into new ones that go in whole once complete. Fewer update the
+   * changed documents' postings, which reads no other document — in the same
+   * synchronous step that puts in the documents, so no search starts between
+   * the two. Either way every change is applied.
    */
-  private async updateInvertedIndex(
+  private async commit(
+    documentCache: Map<string, DocumentIndex>,
     changedPaths: string[],
-    {
-      rebuildThreshold,
-      minFiles,
-    }: { rebuildThreshold: number; minFiles: number },
-    forceRebuild: boolean,
   ): Promise<void> {
+    const { rebuildThreshold, minFiles } = this.getRebuildThresholds();
     const isFullRebuild =
-      forceRebuild ||
       changedPaths.length >=
-        Math.max(minFiles, this.documentCache.size * rebuildThreshold);
+      Math.max(minFiles, documentCache.size * rebuildThreshold);
 
     if (isFullRebuild) {
       this.logger.info(
-        `🔗 Rebuilding inverted index (changed ${changedPaths.length}, forced ${forceRebuild})...`,
+        `🔗 Rebuilding inverted index (${changedPaths.length} changed)...`,
       );
+      const invertedIndex = new InvertedIndex();
+      const stemDictionary = new Map<string, Set<string>>();
       await this.builder.updateInvertedIndexBatch(
-        this.documentCache,
-        this.invertedIndex,
-        this.stemDictionary,
+        documentCache,
+        invertedIndex,
+        stemDictionary,
       );
-    } else if (changedPaths.length > 0) {
+      this.invertedIndex = invertedIndex;
+      this.stemDictionary = stemDictionary;
+    } else {
       this.builder.updateDocuments(
-        this.documentCache,
+        documentCache,
         this.invertedIndex,
         this.stemDictionary,
         changedPaths,
       );
     }
+    this.documentCache = documentCache;
+    this.generation++;
+  }
+
+  private async save(): Promise<void> {
+    this.logger.info('💾 Saving global index...');
+    await this.storage.saveGlobalIndex(
+      this.documentCache,
+      this.invertedIndex,
+      this.stemDictionary,
+    );
+    this.storage.needsOptimization = false;
+  }
+
+  /**
+   * Puts the file as it is on disk into `documentCache`: read back from its
+   * per-document cache when that's current, indexed afresh otherwise.
+   * @returns false if that failed — `documentCache` keeps what it had
+   */
+  private async indexInto(
+    file: DocumentMetadata,
+    documentCache: Map<string, DocumentIndex>,
+  ): Promise<boolean> {
+    try {
+      if (await this.processor.needsReindexing(file, documentCache)) {
+        documentCache.set(
+          file.originalFilePath,
+          await this.processor.indexDocument(file),
+        );
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to index ${file.fileName}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    }
+  }
+
+  private async indexSequential(
+    files: DocumentMetadata[],
+    documentCache: Map<string, DocumentIndex>,
+  ): Promise<{ indexed: string[]; errors: number }> {
+    this.logger.info(`🔄 Indexing ${files.length} documents sequentially...`);
+    const indexed: string[] = [];
+    let errors = 0;
+
+    const BATCH_SIZE = 25;
+    const batchCount = Math.ceil(files.length / BATCH_SIZE);
+    for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
+      this.logger.info(
+        `📦 Processing batch ${batchIndex + 1}/${batchCount}...`,
+      );
+      const batch = files.slice(
+        batchIndex * BATCH_SIZE,
+        (batchIndex + 1) * BATCH_SIZE,
+      );
+      const results = await Promise.all(
+        batch.map((file) => this.indexInto(file, documentCache)),
+      );
+      batch.forEach((file, i) => {
+        if (results[i]) indexed.push(file.originalFilePath);
+        else errors++;
+      });
+
+      // Replaced manual GC with memory pressure management
+      await this.manageMemoryPressure();
+    }
+    return { indexed, errors };
+  }
+
+  private async indexParallel(
+    files: DocumentMetadata[],
+    documentCache: Map<string, DocumentIndex>,
+  ): Promise<{ indexed: string[]; errors: number }> {
+    this.logger.info(
+      `🚀 Processing ${files.length} documents with parallel workers...`,
+    );
+    const workers = Math.min(this.config.concurrency || 4, files.length);
+    const chunkSize = Math.ceil(files.length / workers);
+    const indexed: string[] = [];
+    let errors = 0;
+
+    const runWorker = async (chunk: DocumentMetadata[]) => {
+      let workerIndexed = 0;
+      for (const file of chunk) {
+        if (!(await this.indexInto(file, documentCache))) {
+          errors++;
+          continue;
+        }
+        indexed.push(file.originalFilePath);
+        // Check memory pressure periodically within worker
+        if (++workerIndexed % 5 === 0) await this.manageMemoryPressure();
+      }
+    };
+
+    const chunks = [];
+    for (let i = 0; i < files.length; i += chunkSize) {
+      chunks.push(files.slice(i, i + chunkSize));
+    }
+    await Promise.all(chunks.map(runWorker));
+    return { indexed, errors };
   }
 
   /**
@@ -195,131 +406,6 @@ class FileIndexer {
     } else {
       // Minimal pause to yield to event loop
       await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  }
-
-  async buildFullIndex(): Promise<void> {
-    // Optimization: Run file discovery and index loading in parallel
-    // This saves ~500ms by overlapping IO operations
-    const [allDiscoveredFiles, loadedData] = await Promise.all([
-      this.scanner.discoverFiles(),
-      this.storage.loadGlobalIndex(),
-    ]);
-
-    if (allDiscoveredFiles.length === 0) {
-      this.logger.info('No files found to index.');
-      return;
-    }
-
-    const indexingMethod = await this.selectIndexingMethod(allDiscoveredFiles);
-    this.logger.debug(`📂 Using indexing method: ${indexingMethod}`);
-
-    const buildFullIndexConfig = this.getRebuildThresholds();
-
-    this.logger.info(
-      `📁 Found ${allDiscoveredFiles.length} documents to process...`,
-    );
-
-    let filesToIndex = allDiscoveredFiles;
-    let filesRemoved = false;
-
-    if (loadedData) {
-      this.documentCache = loadedData.documentCache;
-      this.invertedIndex = loadedData.invertedIndex;
-      this.stemDictionary = loadedData.stemDictionary;
-
-      // Prune deleted files from cache
-      const discoveredPaths = new Set(
-        allDiscoveredFiles.map((f) => f.originalFilePath),
-      );
-      let deletedCount = 0;
-      for (const path of this.documentCache.keys()) {
-        if (!discoveredPaths.has(path)) {
-          this.documentCache.delete(path);
-          deletedCount++;
-        }
-      }
-      if (deletedCount > 0) {
-        this.logger.info(
-          `🗑️ Pruned ${deletedCount} deleted documents from cache.`,
-        );
-        filesRemoved = true;
-      }
-
-      this.logger.debug('📋 Loaded existing global index from cache.');
-      this.logger.debug('🔍 Checking which files actually need reindexing...');
-
-      const checks = await Promise.all(
-        allDiscoveredFiles.map(async (file) => {
-          const needsReindexing = await this.processor.needsReindexing(
-            file,
-            this.documentCache,
-          );
-          if (needsReindexing) {
-            this.logger.debug(
-              `🔄 File needs reindexing: ${file.fileName} (Path: ${file.originalFilePath})`,
-            );
-          }
-          return {
-            file,
-            needsReindexing,
-          };
-        }),
-      );
-
-      const filesToReindex = checks
-        .filter((c) => c.needsReindexing)
-        .map((c) => c.file);
-
-      if (filesToReindex.length === 0) {
-        this.logger.info('✅ All files are up to date. No reindexing needed.');
-
-        // If files were removed, rebuild so their postings go too, then save
-        // the index to reflect deletions
-        if (filesRemoved) {
-          await this.builder.updateInvertedIndexBatch(
-            this.documentCache,
-            this.invertedIndex,
-            this.stemDictionary,
-          );
-          this.logger.info('💾 Saving global index (files removed)...');
-          await this.storage.saveGlobalIndex(
-            this.documentCache,
-            this.invertedIndex,
-            this.stemDictionary,
-          );
-        }
-        return;
-      }
-
-      this.logger.info(
-        `📝 Found ${filesToReindex.length} files to reindex out of ${allDiscoveredFiles.length} total.`,
-      );
-      // Log the first few files to help debugging
-      filesToReindex.slice(0, 5).forEach((f) => {
-        this.logger.info(`   - ${f.fileName}`);
-      });
-
-      filesToIndex = filesToReindex;
-    }
-
-    // Without a loaded global index the postings are empty, even when every
-    // file is still covered by its per-document cache (and so counts as
-    // unchanged) — e.g. after a legacy-format index was rejected for a rebuild.
-    const forceRebuild = filesRemoved || !loadedData;
-
-    if (indexingMethod === 'parallel') {
-      await this.buildFullIndexParallel(
-        filesToIndex,
-        buildFullIndexConfig,
-        forceRebuild,
-      );
-    } else {
-      await this.buildFullIndexSequential(
-        filesToIndex,
-        buildFullIndexConfig,
-        forceRebuild,
-      );
     }
   }
 
@@ -349,219 +435,6 @@ class FileIndexer {
       this.config.concurrency >= 3;
 
     return useParallel ? 'parallel' : 'sequential';
-  }
-
-  /**
-   * @param forceRebuild Rebuild and save the inverted index even if no file
-   *   needed re-indexing — files were removed, or there were no postings to
-   *   start from (no global index was loaded).
-   */
-  async buildFullIndexSequential(
-    files: DocumentMetadata[],
-    rebuildThresholds: {
-      rebuildThreshold: number;
-      minFiles: number;
-    } = this.getRebuildThresholds(),
-    forceRebuild: boolean = false,
-  ): Promise<void> {
-    const startTime = Date.now();
-    try {
-      if (files.length === 0 && !forceRebuild) return;
-
-      this.logger.info(`🔄 Indexing ${files.length} documents sequentially...`);
-      let indexed = 0;
-      let skipped = 0;
-      let errors = 0;
-      let actuallyProcessed = 0;
-
-      const BATCH_SIZE = 25;
-      const batches = [];
-      for (let i = 0; i < files.length; i += BATCH_SIZE) {
-        batches.push(files.slice(i, i + BATCH_SIZE));
-      }
-
-      const changedPaths: string[] = [];
-
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        this.logger.info(
-          `📦 Processing batch ${batchIndex + 1}/${batches.length}...`,
-        );
-
-        const batchPromises = batch.map(async (file) => {
-          try {
-            if (
-              await this.processor.needsReindexing(file, this.documentCache)
-            ) {
-              const result = await this.processor.indexDocument(file);
-              this.documentCache.set(file.originalFilePath, result);
-              // New or edited alike, this document now differs from what the
-              // inverted index holds (updateInvertedIndex replaces its
-              // postings), so it counts towards the rebuild.
-              return {
-                success: true,
-                type: 'indexed',
-                filePath: file.originalFilePath,
-              };
-            } else {
-              return {
-                success: true,
-                type: 'skipped',
-                filePath: file.originalFilePath,
-              };
-            }
-          } catch (error) {
-            this.logger.error(
-              `❌ Failed to index ${file.fileName}:`,
-              error instanceof Error ? error.message : String(error),
-            );
-            return {
-              success: false,
-              type: 'error',
-              filePath: file.originalFilePath,
-            };
-          }
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-
-        batchResults.forEach((result) => {
-          if (result.success) {
-            if (result.type === 'indexed') {
-              indexed++;
-              actuallyProcessed++;
-              changedPaths.push(result.filePath);
-            } else if (result.type === 'skipped') {
-              skipped++;
-            }
-          } else {
-            errors++;
-          }
-        });
-
-        // Replaced manual GC with memory pressure management
-        await this.manageMemoryPressure();
-      }
-
-      await this.updateInvertedIndex(
-        changedPaths,
-        rebuildThresholds,
-        forceRebuild,
-      );
-
-      this.logger.info(
-        `✅ Indexing complete: ${indexed} total, ${skipped} skipped, ${errors} errors`,
-      );
-
-      if (
-        actuallyProcessed > 0 ||
-        forceRebuild ||
-        this.storage.needsOptimization
-      ) {
-        this.logger.info('💾 Saving global index...');
-        await this.storage.saveGlobalIndex(
-          this.documentCache,
-          this.invertedIndex,
-          this.stemDictionary,
-        );
-        this.storage.needsOptimization = false;
-      }
-    } catch (error) {
-      this.logger.error('Index building failed:', error);
-      throw error;
-    }
-    this.logger.info(
-      `Sequential index build completed in ${Date.now() - startTime}ms`,
-    );
-  }
-
-  /** @param forceRebuild See buildFullIndexSequential. */
-  async buildFullIndexParallel(
-    files: DocumentMetadata[],
-    rebuildThresholds: {
-      rebuildThreshold: number;
-      minFiles: number;
-    } = this.getRebuildThresholds(),
-    forceRebuild: boolean = false,
-  ): Promise<void> {
-    const startTime = Date.now();
-    try {
-      if (files.length === 0 && !forceRebuild) return;
-
-      this.logger.info(
-        `🚀 Processing ${files.length} documents with parallel workers...`,
-      );
-      const PARALLEL_WORKERS = Math.min(
-        this.config.concurrency || 4,
-        files.length,
-      );
-      const chunks = [];
-      for (
-        let i = 0;
-        i < files.length;
-        i += Math.ceil(files.length / PARALLEL_WORKERS)
-      ) {
-        chunks.push(
-          files.slice(i, i + Math.ceil(files.length / PARALLEL_WORKERS)),
-        );
-      }
-
-      let totalIndexed = 0;
-      let totalErrors = 0;
-      const changedPaths: string[] = [];
-
-      const workerPromises = chunks.map(async (chunk, workerIndex) => {
-        let workerIndexed = 0;
-        let workerErrors = 0;
-        for (const file of chunk) {
-          try {
-            const result = await this.processor.indexDocument(file);
-            this.documentCache.set(file.originalFilePath, result);
-            changedPaths.push(file.originalFilePath);
-            workerIndexed++;
-            totalIndexed++;
-
-            // Check memory pressure periodically within worker
-            if (workerIndexed % 5 === 0) {
-              await this.manageMemoryPressure();
-            }
-          } catch (error) {
-            workerErrors++;
-            totalErrors++;
-            this.logger.error(
-              `❌ Worker ${workerIndex + 1} failed on ${file.fileName}:`,
-              error,
-            );
-          }
-        }
-        return { workerIndex, workerIndexed, workerErrors };
-      });
-
-      await Promise.all(workerPromises);
-
-      await this.updateInvertedIndex(
-        changedPaths,
-        rebuildThresholds,
-        forceRebuild,
-      );
-
-      if (totalIndexed > 0 || forceRebuild || this.storage.needsOptimization) {
-        await this.storage.saveGlobalIndex(
-          this.documentCache,
-          this.invertedIndex,
-          this.stemDictionary,
-        );
-        this.storage.needsOptimization = false;
-      }
-
-      await this.validateIndexHealth();
-    } catch (error) {
-      this.logger.error('Parallel index building failed:', error);
-      throw error;
-    }
-    this.logger.info(
-      `Parallel index build completed in ${Date.now() - startTime}ms`,
-    );
   }
 
   async validateIndexHealth(): Promise<{
@@ -707,8 +580,14 @@ class FileIndexer {
    * FileScannerIndexer use to locate cache files, so this stays correct even
    * when cacheRoot/txtCacheSubdir/indexCacheSubdir/globalIndexPath have been
    * customized away from the defaults.
+   *
+   * Waits for an update in progress, which would write the cache back.
    */
-  async clearCache(): Promise<void> {
+  clearCache(): Promise<void> {
+    return this.exclusive(() => this.clearCacheNow());
+  }
+
+  private async clearCacheNow(): Promise<void> {
     const { cacheRoot, globalIndexPath } = resolveCachePaths(this.config);
 
     this.logger.info(`🗑️ Deleting index cache: ${cacheRoot}`);
@@ -729,9 +608,10 @@ class FileIndexer {
       });
     }
 
-    this.documentCache.clear();
+    this.documentCache = new Map();
     this.invertedIndex = new InvertedIndex();
-    this.stemDictionary.clear();
+    this.stemDictionary = new Map();
+    this.generation++;
     this.documentLRU.clear();
     this.searchCache = undefined;
   }

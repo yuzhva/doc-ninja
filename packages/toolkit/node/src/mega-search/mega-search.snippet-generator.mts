@@ -6,9 +6,40 @@ import type { MatchedWord } from './mega-search.term-matcher.mjs';
 import type { HighlightInfo, SnippetInfo } from './mega-search.types.mjs';
 import { getDocumentToken } from './mega-search.utils.mjs';
 import { createLogger } from './shared/logger.mjs';
+import { UkrainianTextProcessor } from './text-processor.mjs';
 import type { DocumentIndex, ProcessedSearchToken } from './types.mjs';
 
 const logger = createLogger('SnippetGenerator');
+const textProcessor = new UkrainianTextProcessor();
+
+/** How many of a document's words isTextOf compares, at most. */
+const WORDS_COMPARED = 32;
+
+/**
+ * Whether `text` is the text `doc` was indexed from: its words, spread over
+ * the whole text, are where the index has them.
+ *
+ * The text cache on disk holds a file's latest text only. While an update
+ * replaces `doc` with a newer version, a search still reads `doc` (see
+ * FileIndexer), and its offsets would cut the newer text into other words
+ * ("Наказ про відпустку" read as "Кошт"). An edit that moves no word and
+ * keeps every compared one may go unnoticed.
+ */
+function isTextOf(text: string, doc: DocumentIndex): boolean {
+  const { positions, vocab } = doc;
+  if (positions.length === 0) return true;
+  if (text.length < positions[positions.length - 1][2]) return false;
+
+  const steps = Math.min(WORDS_COMPARED, positions.length) - 1;
+  for (let step = 0; step <= steps; step++) {
+    const i =
+      steps === 0 ? 0 : Math.round((step * (positions.length - 1)) / steps);
+    const [vocabIndex, charStart, charEnd] = positions[i];
+    const word = textProcessor.normalize(text.slice(charStart, charEnd));
+    if (word !== vocab[vocabIndex]) return false;
+  }
+  return true;
+}
 
 type SnippetRequest = {
   /**
@@ -29,18 +60,20 @@ type SnippetRequest = {
 export type { SnippetRequest };
 
 export class SnippetGenerator {
-  // Raw (pre-normalization) text per version of a document. A reindexed
-  // document has new positions, so the text of its previous version must
-  // never be cut by them. Full text is heavy per entry, hence the small cap.
-  private rawTextCache = new LRUCache<string, string>(50);
+  // Raw (pre-normalization) text per version of a document — null for a
+  // version whose text is gone. A reindexed document has new positions, so
+  // the text of its previous version must never be cut by them. Full text is
+  // heavy per entry, hence the small cap.
+  private rawTextCache = new LRUCache<string, string | null>(50);
 
   /**
    * Read the original raw document text (as written to disk pre-normalization),
    * for use cases where the normalized `doc.vocab` tokens (lowercased, stripped
    * of apostrophes/punctuation, stop words removed) are not suitable — e.g.
    * rendering snippet context or highlighting exact substrings.
-   * Returns null if no text cache path is available or the read fails, so
-   * callers can fall back to vocab-reconstructed text.
+   * Returns null if no text cache path is available, the read fails, or the
+   * text is no longer this version's (see isTextOf), so callers can fall back
+   * to vocab-reconstructed text.
    */
   private async getRawText(doc: DocumentIndex): Promise<string | null> {
     const { originalFilePath, lastModified } = doc.metadata;
@@ -52,7 +85,13 @@ export class SnippetGenerator {
     if (!textFilePath) return null;
 
     try {
-      const text = await fs.promises.readFile(textFilePath, 'utf8');
+      const read = await fs.promises.readFile(textFilePath, 'utf8');
+      const text = isTextOf(read, doc) ? read : null;
+      if (text === null) {
+        logger.debug(
+          `Raw text of ${doc.metadata.fileName} is of a newer version, using its index words`,
+        );
+      }
       this.rawTextCache.set(cacheKey, text);
       return text;
     } catch (error) {
