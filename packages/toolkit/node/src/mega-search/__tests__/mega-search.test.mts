@@ -127,8 +127,8 @@ describe('MegaSearch', () => {
       ]);
     });
 
-    it('returns an empty first page for a query made only of stop words', async () => {
-      assert.deepEqual(await search('і та the'), {
+    it('returns an empty first page for a query of single letters only', async () => {
+      assert.deepEqual(await search('і в з'), {
         results: [],
         pagination: {
           currentPage: 1,
@@ -189,6 +189,69 @@ describe('MegaSearch', () => {
           textProcessor.stemWord('кошторис'),
         );
       }
+    });
+  });
+
+  describe('search() — function words', () => {
+    let words: SearchFixture;
+    const findIn = async (query: string, options?: SearchOptions) =>
+      fileNames(await words.megaSearch.search(query, options)).sort();
+
+    before(async () => {
+      words = await createSearchFixture({
+        'leave.txt': 'Наказ про відпустку працівника.',
+        'leave-other.txt': 'Наказ на відпустку працівника.',
+        'kind.txt': 'Вид діяльності змінено.',
+        'from.txt': 'Лист від директора.',
+        'case.txt': 'Особова справа працівника за 2024 рік.',
+      });
+    });
+
+    after(() => words.cleanup());
+
+    it('finds the words a stop list used to leave out', async () => {
+      // Regression guard: stop words were left out of the index, and the
+      // list held words that name things
+      assert.deepEqual(await findIn('справа'), ['case.txt']);
+      assert.deepEqual(await findIn('рік'), ['case.txt']);
+    });
+
+    it('holds a function word in a phrase as written', async () => {
+      assert.deepEqual(await findIn('"наказ про відпустку"'), ['leave.txt']);
+      assert.deepEqual(await findIn('"наказ на відпустку"'), [
+        'leave-other.txt',
+      ]);
+      assert.deepEqual(
+        await findIn('наказ про відпустку', PRODUCTION_OPTIONS),
+        ['leave.txt'],
+      );
+    });
+
+    it('does not count function words between phrase words, as numbers', async () => {
+      assert.deepEqual(await findIn('"наказ відпустку"'), [
+        'leave-other.txt',
+        'leave.txt',
+      ]);
+    });
+
+    it('skips function words in a word-by-word search', async () => {
+      // "про" alone would find leave.txt too
+      assert.deepEqual(await findIn('справа про'), ['case.txt']);
+    });
+
+    it('searches a query of function words only as typed', async () => {
+      assert.deepEqual(await findIn('про'), ['leave.txt']);
+      assert.deepEqual(await findIn('на'), ['leave-other.txt']);
+    });
+
+    it('never matches a function word by a typo, nor a word by a function word', async () => {
+      // "вид" and "від" are one letter apart; typo tolerance is on
+      assert.deepEqual(await findIn('вид'), ['kind.txt']);
+      assert.deepEqual(await findIn('від'), ['from.txt']);
+      assert.deepEqual(
+        await findIn('вид', { isInflectedWordFormsAllowed: false }),
+        ['kind.txt'],
+      );
     });
   });
 

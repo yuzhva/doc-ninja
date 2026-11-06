@@ -9,8 +9,8 @@ import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import {
   UkrainianTextProcessor,
+  countsAsWord,
   findJoints,
-  isNumberTerm,
 } from '../text-processor.mjs';
 import { TokenPositions } from '../token-positions.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
@@ -328,9 +328,9 @@ class DocumentProcessor {
         positions: TokenPositions.fromFlat(positions),
         joints: findJoints(text, rawTokens),
         termFrequency,
-        // Words only: numbers leave BM25 document lengths as they were
-        wordCount: rawTokens.filter((token) => !isNumberTerm(token.term))
-          .length,
+        // Words only: numbers and function words leave BM25 document
+        // lengths as they were
+        wordCount: rawTokens.filter((token) => countsAsWord(token.term)).length,
       };
 
       const tSaveStart = Date.now();

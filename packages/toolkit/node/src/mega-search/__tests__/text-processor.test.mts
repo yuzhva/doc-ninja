@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { UkrainianTextProcessor, findJoints } from '../text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  countsAsWord,
+  findJoints,
+  isFunctionWord,
+  matchesItselfOnly,
+} from '../text-processor.mjs';
 
 const processor = new UkrainianTextProcessor();
 const terms = (text: string) => processor.tokenize(text).map((t) => t.term);
@@ -23,23 +29,38 @@ describe('UkrainianTextProcessor', () => {
 
       assert.deepEqual(
         tokens.map((t) => t.term),
-        ['наказ', 'пять'],
+        ['наказ', 'про', 'пять'],
       );
       // highlighting slices these offsets out of the raw text, so they must
       // span the original spelling (casing, apostrophe), not the normalized term
       assert.deepEqual(
         tokens.map((t) => text.slice(t.charStart, t.charEnd)),
-        ['Наказ', "П'ять"],
+        ['Наказ', 'про', "П'ять"],
       );
     });
 
-    it('drops Ukrainian and English stop words, including their inflected forms', () => {
-      // the stop list is stored stemmed, so "було" is caught via the stem of "була"
-      assert.deepEqual(terms('Була книга, і було. The running dogs'), [
-        'книга',
-        'running',
-        'dogs',
-      ]);
+    it('keeps every word: function words, pronouns, verbs and numerals too', () => {
+      // Regression guard: a stop list, compared by stem, left these out of
+      // the index — "справа", "рік", "друг" (from "другий") could not be found
+      assert.deepEqual(
+        terms(
+          'Справа за рік: друг та сталь. Була книга, і було. The running dogs',
+        ),
+        [
+          'справа',
+          'за',
+          'рік',
+          'друг',
+          'та',
+          'сталь',
+          'була',
+          'книга',
+          'було',
+          'the',
+          'running',
+          'dogs',
+        ],
+      );
     });
 
     it('drops single letters, and keeps numbers — single digits and leading zeros too', () => {
@@ -58,11 +79,11 @@ describe('UkrainianTextProcessor', () => {
 
       assert.deepEqual(
         tokens.map((t) => t.term),
-        ['вх', '36088', '22', '12', '2024'],
+        ['вх', '36088', 'від', '22', '12', '2024'],
       );
       assert.deepEqual(
         tokens.map((t) => text.slice(t.charStart, t.charEnd)),
-        ['вх', '36088', '22', '12', '2024'],
+        ['вх', '36088', 'від', '22', '12', '2024'],
       );
     });
 
@@ -81,9 +102,7 @@ describe('UkrainianTextProcessor', () => {
 
     it('numbers positions consecutively over the kept tokens only', () => {
       assert.deepEqual(
-        processor
-          .tokenize('The cat and the dog')
-          .map((t) => [t.term, t.position]),
+        processor.tokenize('A cat, a dog').map((t) => [t.term, t.position]),
         [
           ['cat', 0],
           ['dog', 1],
@@ -151,7 +170,7 @@ describe('UkrainianTextProcessor', () => {
 
       assert.deepEqual(
         tokens.map((t) => text.slice(t.charStart, t.charEnd)),
-        ['Слово', 'наказ', 'бюджет'],
+        ['Слово', 'наказ', 'та', 'бюджет'],
       );
     });
   });
@@ -160,10 +179,10 @@ describe('UkrainianTextProcessor', () => {
     const joints = (text: string) => findJoints(text, processor.tokenize(text));
 
     it('keeps what glues a number to the token next to it, by token index', () => {
-      // лист0 вх1 36088(2) 22(3) 12(4) 2024(5) пункти6 15(7) 2(8) 2024(9) го10
+      // лист0 вх1 36088(2) від3 22(4) 12(5) 2024(6) пункти7 15(8) 2(9) та10 2024(11) го12
       assert.deepEqual(
         joints('Лист вх№36088 від 22.12.2024, пункти 15, 2 та 2024-го.'),
-        { 2: '№', 4: '.', 5: '.', 10: '-' },
+        { 2: '№', 5: '.', 6: '.', 12: '-' },
       );
     });
 
@@ -196,6 +215,49 @@ describe('UkrainianTextProcessor', () => {
 
     it('returns non-alphabetic input unchanged', () => {
       assert.equal(processor.stemWord('2024'), '2024');
+    });
+
+    it('keys a function word by itself, and no other word by a function word', () => {
+      assert.equal(processor.stemWord('про'), 'про');
+      assert.equal(processor.stemWord('щодо'), 'щодо');
+      // their stems would be "не" and "but": they keep their whole form, so
+      // the postings of "не" and "but" hold those words alone
+      assert.equal(processor.stemWord('нею'), 'нею');
+      assert.equal(processor.stemWord('buts'), 'buts');
+    });
+  });
+
+  describe('function words', () => {
+    it('are the prepositions, conjunctions and particles, in exact form', () => {
+      for (const word of ['про', 'та', 'лише', 'не', 'of', 'and', 'not']) {
+        assert.ok(isFunctionWord(word), word);
+      }
+      // words that name something, and other forms of a function word
+      for (const word of [
+        'справа',
+        'рік',
+        'друг',
+        'мов',
+        'його',
+        'may',
+        'no',
+      ]) {
+        assert.equal(isFunctionWord(word), false, word);
+      }
+    });
+
+    it('match as typed only and do not count as words, as numbers', () => {
+      assert.deepEqual(
+        ['про', '2024', 'наказ'].map((term) => [
+          matchesItselfOnly(term),
+          countsAsWord(term),
+        ]),
+        [
+          [true, false],
+          [true, false],
+          [false, true],
+        ],
+      );
     });
   });
 

@@ -12,12 +12,13 @@ const textProcessor = new UkrainianTextProcessor();
 const termMatcher = new TermMatcher(textProcessor);
 const matcher = new PhraseMatcher();
 
-// Token positions after stop-word removal are noted next to each text.
+// Token positions are noted next to each text. Function words ("the", "від",
+// "та") are tokens too, though they don't count as words in between.
 const DOCS = {
   'adjacent.txt': 'Rich car owners love cars.', //  rich0 car1 owners2 love3 cars4
-  'one-gap.txt': 'The rich expensive car was parked.', // rich0 expensive1 car2 parked3
-  'wide-gap.txt': 'Rich people buy a very fast red car.', // rich0 … car5
-  'reversed.txt': 'Car dealers are rich.', // car0 dealers1 rich2
+  'one-gap.txt': 'The rich expensive car was parked.', // the0 rich1 expensive2 car3 was4 parked5
+  'wide-gap.txt': 'Rich people buy a very fast red car.', // rich0 … car6
+  'reversed.txt': 'Car dealers are rich.', // car0 dealers1 are2 rich3
   'typo.txt': 'Rech car spotted.', // rech0 car1 spotted2
   'orders.txt':
     'Начальник управління підписав наказ. Наказ начальника управління.',
@@ -27,11 +28,11 @@ const DOCS = {
   'contract.txt': 'Підписати договір, договір оренди.',
   // підписати0 договір1 договір2 оренди3
   'numbered.txt': 'Наказ № 15/2 від 01.02.2024 про відпустку.',
-  // наказ0 15(1) 2(2) 01(3) 02(4) 2024(5) відпустку6
+  // наказ0 15(1) 2(2) від3 01(4) 02(5) 2024(6) про7 відпустку8
   'date-apart.txt': 'Від 22 травня до 12.06.2024.',
-  // 22(0) травня1 12(2) 06(3) 2024(4)
+  // від0 22(1) травня2 до3 12(4) 06(5) 2024(6)
   'date-written.txt': 'Отримано 22/12/2024, 22 12 2024 та 22.12.2024.',
-  // отримано0 22(1) 12(2) 2024(3) 22(4) 12(5) 2024(6) 22(7) 12(8) 2024(9)
+  // отримано0 22(1) 12(2) 2024(3) 22(4) 12(5) 2024(6) та7 22(8) 12(9) 2024(10)
 };
 
 describe('PhraseMatcher', () => {
@@ -77,7 +78,7 @@ describe('PhraseMatcher', () => {
     it('lets 1 bridge one word in between (the value be-krang searches with)', () => {
       const matches = phrase('rich car', 1);
 
-      assert.deepEqual(matches.get('one-gap.txt'), [[0, 2]]);
+      assert.deepEqual(matches.get('one-gap.txt'), [[1, 3]]);
       assert.deepEqual(matches.get('adjacent.txt'), [[0, 1]]);
       assert.equal(matches.has('wide-gap.txt'), false);
     });
@@ -85,7 +86,7 @@ describe('PhraseMatcher', () => {
     it('keeps the phrase word order', () => {
       const matches = phrase('rich car', 10);
 
-      assert.deepEqual(matches.get('wide-gap.txt'), [[0, 5]]);
+      assert.deepEqual(matches.get('wide-gap.txt'), [[0, 6]]);
       assert.equal(matches.has('reversed.txt'), false);
     });
 
@@ -132,31 +133,31 @@ describe('PhraseMatcher', () => {
       assert.equal(phrase('rich car', 0).has('typo.txt'), false);
     });
 
-    it('does not count the numbers in between as words', () => {
+    it('does not count the numbers and function words in between as words', () => {
       assert.deepEqual(phrase('наказ відпустку', 0).get('numbered.txt'), [
-        [0, 6],
+        [0, 8],
       ]);
       // and a number in the phrase still counts the words around it
       assert.deepEqual(phrase('травня 2024', 0).get('date-apart.txt'), [
-        [1, 4],
+        [2, 6],
       ]);
       assert.equal(phrase('22 2024', 0).has('date-apart.txt'), false);
     });
 
     it('finds the parts of a glued number side by side only', () => {
       assert.deepEqual(phrase('01.02.2024', 1).get('numbered.txt'), [
-        [3, 4, 5],
+        [4, 5, 6],
       ]);
       // 22, 12 and 2024, one word apart at most, but not glued together
       assert.deepEqual(phrase('22 12 2024', 1).get('date-apart.txt'), [
-        [0, 2, 4],
+        [1, 4, 6],
       ]);
       assert.equal(phrase('22.12.2024', 1).has('date-apart.txt'), false);
     });
 
     it('finds a glued number only where the same characters glue its parts', () => {
       assert.deepEqual(phrase('22.12.2024', 1).get('date-written.txt'), [
-        [7, 8, 9],
+        [8, 9, 10],
       ]);
       assert.deepEqual(phrase('22/12/2024', 1).get('date-written.txt'), [
         [1, 2, 3],
@@ -165,7 +166,7 @@ describe('PhraseMatcher', () => {
       assert.deepEqual(phrase('22 12 2024', 0).get('date-written.txt'), [
         [1, 2, 3],
         [4, 5, 6],
-        [7, 8, 9],
+        [8, 9, 10],
       ]);
     });
 

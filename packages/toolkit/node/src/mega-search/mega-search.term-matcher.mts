@@ -1,6 +1,9 @@
 import { fuzzyMatch } from './fuzzy.mjs';
 import { calculateMatchConfidence } from './mega-search.utils.mjs';
-import { UkrainianTextProcessor, isNumberTerm } from './text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  matchesItselfOnly,
+} from './text-processor.mjs';
 import type { DocumentIndex, SearchSnapshot } from './types.mjs';
 
 type TermMatchOptions = {
@@ -132,7 +135,9 @@ class WordMatch {
  * tolerance; no stem rule spans it.
  *
  * A number matches itself only, in every mode: "2024" is never "2023",
- * "202" or "20245", whatever the typo distance or fuzzy match.
+ * "202" or "20245", whatever the typo distance or fuzzy match. So does a
+ * function word ("про" is never "при"), and no word matches one: "вид" with
+ * a typo is never "від".
  */
 class TermMatcher {
   constructor(private textProcessor: UkrainianTextProcessor) {}
@@ -143,17 +148,23 @@ class TermMatcher {
     options: TermMatchOptions,
     index: SearchIndex,
   ): WordMatch {
-    if (isNumberTerm(queryWord)) return this.matchNumber(queryWord, index);
+    if (matchesItselfOnly(queryWord))
+      return this.matchAsTyped(queryWord, index);
     return options.isFuzzy
       ? this.matchInflectedForms(queryWord, options, index)
       : this.matchWordForms(queryWord, options.maxTypoDistance, index);
   }
 
-  private matchNumber(number: string, index: SearchIndex): WordMatch {
+  /**
+   * A number or a function word: indexed under itself (see
+   * UkrainianTextProcessor.stemWord), and out of the stem dictionary, which
+   * every other match reads — so no other word's forms or typos match it.
+   */
+  private matchAsTyped(term: string, index: SearchIndex): WordMatch {
     return this.toWordMatch(
-      number,
-      new Map([[number, null]]),
-      new Map([[number, { queryToken: number, confidence: 1 }]]),
+      term,
+      new Map([[term, null]]),
+      new Map([[term, { queryToken: term, confidence: 1 }]]),
       index,
     );
   }
