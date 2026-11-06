@@ -208,7 +208,6 @@ class IndexStorage {
         const lightDoc: any = {
           metadata: doc.metadata,
           wordCount: doc.wordCount,
-          termFrequency: new Map(),
         };
         return [key, lightDoc];
       });
@@ -439,7 +438,6 @@ class IndexStorage {
             if (doc.vocab || doc.positions) {
               this.needsOptimization = true;
             }
-            doc.termFrequency = new Map();
             this.makeDocumentLazy(doc);
             documentCache.set(filePath, doc);
           }

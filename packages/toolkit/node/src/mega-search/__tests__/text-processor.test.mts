@@ -190,6 +190,21 @@ describe('UkrainianTextProcessor', () => {
         ['Слово', 'наказ', 'та', 'бюджет'],
       );
     });
+
+    it('gives a word written the same way again the place it has there', () => {
+      const text = "'наказ' і наказ, 'наказ' і 'наказ'";
+      const tokens = processor.tokenize(text);
+
+      assert.deepEqual(
+        tokens.map((t) => [t.term, t.position, t.charStart, t.charEnd]),
+        [
+          ['наказ', 0, 1, 6],
+          ['наказ', 1, 10, 15],
+          ['наказ', 2, 18, 23],
+          ['наказ', 3, 28, 33],
+        ],
+      );
+    });
   });
 
   describe('findJoints()', () => {
@@ -287,6 +302,22 @@ describe('UkrainianTextProcessor', () => {
 
     it('falls back to english for text without letters', () => {
       assert.equal(processor.detectLanguage('123 !!'), 'english');
+    });
+
+    it('counts the letters /[а-яїієґ]/i and /[a-z]/i match, and no others', () => {
+      for (let code = 0; code <= 0xffff; code++) {
+        const char = String.fromCharCode(code);
+        // A Cyrillic letter alone reads as Ukrainian; a Latin one beside
+        // a Cyrillic one as mixed
+        const isUkrainian = processor.detectLanguage(char) === 'ukrainian';
+        const isEnglish = processor.detectLanguage(`я${char}`) === 'mixed';
+        assert.equal(
+          isUkrainian,
+          /[а-яїієґ]/i.test(char),
+          `U+${code.toString(16)}`,
+        );
+        assert.equal(isEnglish, /[a-z]/i.test(char), `U+${code.toString(16)}`);
+      }
     });
   });
 });

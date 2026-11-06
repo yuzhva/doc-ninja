@@ -27,7 +27,7 @@ const textProcessor = new UkrainianTextProcessor();
 /**
  * Encodes text the way DocumentProcessor.indexDocumentInternal does
  * (deduplicated vocab + [vocabIndex, charStart, charEnd] positions + joints +
- * stemmed term frequencies), minus the disk I/O and extraction.
+ * word count), minus the disk I/O and extraction.
  */
 function buildDocumentIndex(
   docId: string,
@@ -37,7 +37,6 @@ function buildDocumentIndex(
   const vocab: string[] = [];
   const vocabIndexByTerm = new Map<string, number>();
   const positions: number[] = []; // vocabIndex, charStart, charEnd each
-  const termFrequency = new Map<string, number>();
   const tokens = textProcessor.tokenize(text);
 
   for (const token of tokens) {
@@ -48,9 +47,6 @@ function buildDocumentIndex(
       vocabIndexByTerm.set(token.term, vocabIndex);
     }
     positions.push(vocabIndex, token.charStart, token.charEnd);
-
-    const stem = textProcessor.stemWord(token.normalized);
-    termFrequency.set(stem, (termFrequency.get(stem) ?? 0) + 1);
   }
 
   return {
@@ -66,7 +62,6 @@ function buildDocumentIndex(
     vocab,
     positions: TokenPositions.fromFlat(positions),
     joints: findJoints(text, tokens),
-    termFrequency,
     wordCount: tokens.filter((token) => countsAsWord(token.term)).length,
   };
 }

@@ -60,6 +60,39 @@ const findJoints = (
   return joints;
 };
 
+/**
+ * What a run of letters or digits in a text stands for: the token, and the
+ * characters it spans there — `length` of them from `offset` on, the quote
+ * marks and hyphens at its edges left out (see tokenize).
+ */
+interface WordReading {
+  term: string;
+  offset: number;
+  length: number;
+}
+
+/**
+ * The letters detectLanguage counts as Ukrainian, by UTF-16 code: А–я, Є, І,
+ * Ї and Ґ in both cases, and U+1C80–U+1C86, old variant forms of в, д, о, с,
+ * т and ъ. That's what /[а-яїієґ]/i matched — counted with it, each text
+ * became an array of its letters.
+ */
+const isUkrainianLetter = (code: number): boolean =>
+  (code >= 0x410 && code <= 0x44f) ||
+  code === 0x404 ||
+  code === 0x454 ||
+  code === 0x406 ||
+  code === 0x456 ||
+  code === 0x407 ||
+  code === 0x457 ||
+  code === 0x490 ||
+  code === 0x491 ||
+  (code >= 0x1c80 && code <= 0x1c86);
+
+/** The letters detectLanguage counts as English: a–z in both cases. */
+const isEnglishLetter = (code: number): boolean =>
+  (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+
 class UkrainianTextProcessor {
   private readonly ukrainianAlphabet = /[а-яїієґ]/i;
   private readonly englishAlphabet = /[a-z]/i;
@@ -97,45 +130,61 @@ class UkrainianTextProcessor {
     // and "\u00CF" too, the look-alikes of "\u0457" and "\u0407" (see normalizeUkrainian).
     const regex =
       /[\u0400-\u04FFa-zA-Z\u0100-\u017F\u00CF\u00EF'\u2019\u02BC-]+|[0-9]+/g;
+    // A text repeats its words: each one is read once (on 362 documents, a
+    // third of the time it took to read every occurrence)
+    const readings = new Map<string, WordReading | null>();
     let match;
 
     while ((match = regex.exec(text)) !== null) {
-      if (isNumberTerm(match[0])) {
-        tokens.push({
-          term: match[0],
-          position: tokens.length,
-          normalized: match[0],
-          charStart: match.index,
-          charEnd: match.index + match[0].length,
-        });
-        continue;
+      let reading = readings.get(match[0]);
+      if (reading === undefined) {
+        reading = this.readWord(match[0]);
+        readings.set(match[0], reading);
       }
+      if (!reading) continue;
 
-      // Inside a word an apostrophe or a hyphen is part of it ("п'ять",
-      // "науково-дослідний"). At its edges an apostrophe can only be a quote
-      // mark, and a hyphen is left over from a compound broken by a space
-      // ("інженера- конструктора", "Івано- Франківськ") or from a dash, so
-      // both stay out of the token: "інженера-" is the word "інженера".
-      const withoutLeading = match[0].replace(/^['\u2019\u02BC-]+/, '');
-      const term = withoutLeading.replace(/['\u2019\u02BC-]+$/, '');
-      const charStart = match.index + (match[0].length - withoutLeading.length);
-      const normalizedTerm = this.normalize(term);
-
-      if (
-        normalizedTerm.length > 1 &&
-        this.combinedAlphabet.test(normalizedTerm)
-      ) {
-        tokens.push({
-          term: normalizedTerm,
-          position: tokens.length,
-          normalized: normalizedTerm,
-          charStart,
-          charEnd: charStart + term.length,
-        });
-      }
+      const charStart = match.index + reading.offset;
+      tokens.push({
+        term: reading.term,
+        position: tokens.length,
+        normalized: reading.term,
+        charStart,
+        charEnd: charStart + reading.length,
+      });
     }
 
     return tokens;
+  }
+
+  /**
+   * The token a run of letters or digits the tokenizer matched stands for;
+   * null when it stands for none.
+   */
+  private readWord(match: string): WordReading | null {
+    if (isNumberTerm(match)) {
+      return { term: match, offset: 0, length: match.length };
+    }
+
+    // Inside a word an apostrophe or a hyphen is part of it ("п'ять",
+    // "науково-дослідний"). At its edges an apostrophe can only be a quote
+    // mark, and a hyphen is left over from a compound broken by a space
+    // ("інженера- конструктора", "Івано- Франківськ") or from a dash, so
+    // both stay out of the token: "інженера-" is the word "інженера".
+    const withoutLeading = match.replace(/^['\u2019\u02BC-]+/, '');
+    const term = withoutLeading.replace(/['\u2019\u02BC-]+$/, '');
+    const normalizedTerm = this.normalize(term);
+
+    if (
+      normalizedTerm.length <= 1 ||
+      !this.combinedAlphabet.test(normalizedTerm)
+    ) {
+      return null;
+    }
+    return {
+      term: normalizedTerm,
+      offset: match.length - withoutLeading.length,
+      length: term.length,
+    };
   }
 
   /**
@@ -161,8 +210,13 @@ class UkrainianTextProcessor {
   }
 
   detectLanguage(text: string): 'ukrainian' | 'english' | 'mixed' {
-    const ukrainianChars = (text.match(/[а-яїієґ]/gi) || []).length;
-    const englishChars = (text.match(/[a-z]/gi) || []).length;
+    let ukrainianChars = 0;
+    let englishChars = 0;
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      if (isUkrainianLetter(code)) ukrainianChars++;
+      else if (isEnglishLetter(code)) englishChars++;
+    }
     const totalChars = ukrainianChars + englishChars;
 
     if (totalChars === 0) return 'english'; // default
