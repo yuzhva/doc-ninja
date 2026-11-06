@@ -2,30 +2,36 @@ import * as fs from 'fs';
 
 import { levenshtein } from './fuzzy.mjs';
 import { LRUCache } from './lru-cache.mjs';
+import type { MatchedWord } from './mega-search.term-matcher.mjs';
 import type { HighlightInfo, SnippetInfo } from './mega-search.types.mjs';
-import {
-  calculateMatchConfidence,
-  getDocumentToken,
-} from './mega-search.utils.mjs';
+import { getDocumentToken } from './mega-search.utils.mjs';
 import { createLogger } from './shared/logger.mjs';
-import { UkrainianTextProcessor } from './text-processor.mjs';
-import type {
-  DocumentIndex,
-  InvertedIndexEntry,
-  ProcessedSearchToken,
-} from './types.mjs';
+import type { DocumentIndex, ProcessedSearchToken } from './types.mjs';
 
 const logger = createLogger('SnippetGenerator');
 
-export class SnippetGenerator {
-  // Caches for document vocabularies to avoid re-processing
-  private stemmedVocabCache = new LRUCache<string, string[]>(200);
-  private lowerVocabCache = new LRUCache<string, string[]>(200);
-  // Cache for raw (pre-normalization) document text, keyed by docId.
-  // Smaller cap than the token caches since full text is heavier per entry.
-  private rawTextCache = new LRUCache<string, string>(50);
+type SnippetRequest = {
+  /**
+   * The query words as matches report them (WordMatch.queryToken): stems
+   * with fuzzy match on, the words as typed otherwise. In phrase order.
+   */
+  queryTokens: string[];
+  /** Every document word the query matched (see mergeMatchedWords). */
+  matchedWords: ReadonlyMap<string, MatchedWord>;
+  isFuzzy: boolean;
+  isPhrase: boolean;
+  /** Phrase searches: the token positions of each phrase occurrence. */
+  phraseSequences?: number[][];
+  contextBefore: number;
+  contextAfter: number;
+};
 
-  constructor(private textProcessor: UkrainianTextProcessor) {}
+export type { SnippetRequest };
+
+export class SnippetGenerator {
+  // Cache for raw (pre-normalization) document text, keyed by docId.
+  // Full text is heavy per entry, hence the small cap.
+  private rawTextCache = new LRUCache<string, string>(50);
 
   /**
    * Read the original raw document text (as written to disk pre-normalization),
@@ -184,129 +190,27 @@ export class SnippetGenerator {
   }
 
   /**
-   * In token mode, the query term a document term stands for: the term
-   * itself when it is one of the query tokens, or — via `termAliases` — the
-   * query token it was matched to through typo tolerance.
-   */
-  private resolveQueryTerm(
-    docTerm: string,
-    queryTokens: string[],
-    termAliases: ReadonlyMap<string, string>,
-  ): string | undefined {
-    return queryTokens.includes(docTerm) ? docTerm : termAliases.get(docTerm);
-  }
-
-  /**
-   * Generate all highlights for a document.
-   *
-   * @param termAliases Token mode only: index terms the query matched through
-   *   typo tolerance, mapped to the query token each one stands for.
+   * Every occurrence of a matched word in the document, with raw char offsets.
    */
   generateHighlights(
-    docId: string,
     doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    isPhrase: boolean,
-    isTypoToleranceEnabled: boolean,
-    termAliases: ReadonlyMap<string, string> = new Map(),
+    matchedWords: ReadonlyMap<string, MatchedWord>,
   ): HighlightInfo[] {
     const start = Date.now();
     const highlights: HighlightInfo[] = [];
 
-    if (isPhrase && isTypoToleranceEnabled) {
-      // Use cached lowercased vocab
-      let lowerVocab = this.lowerVocabCache.get(docId);
-      if (!lowerVocab) {
-        lowerVocab = doc.vocab.map((v) => v.toLowerCase());
-        this.lowerVocabCache.set(docId, lowerVocab);
-      }
+    for (const [vocabIndex, charStart, charEnd] of doc.positions) {
+      const originalWord = doc.vocab[vocabIndex];
+      const matched = matchedWords.get(originalWord);
+      if (!matched) continue;
 
-      const matchingVocabIndices = new Map<
-        number,
-        { term: string; confidence: number }
-      >();
-
-      lowerVocab.forEach((vocabTermLower, index) => {
-        for (const queryToken of originalPhraseOrStemmedTokens) {
-          const distance = levenshtein(vocabTermLower, queryToken);
-          if (distance <= 2) {
-            const confidence =
-              distance === 0 ? 1.0 : Math.max(0.5, 1.0 - distance * 0.2);
-            if (
-              !matchingVocabIndices.has(index) ||
-              matchingVocabIndices.get(index)!.confidence < confidence
-            ) {
-              matchingVocabIndices.set(index, {
-                term: queryToken,
-                confidence,
-              });
-            }
-          }
-        }
+      highlights.push({
+        term: matched.queryToken,
+        originalWord,
+        charStart,
+        charEnd,
+        confidence: matched.confidence,
       });
-
-      if (matchingVocabIndices.size > 0) {
-        doc.positions.forEach((p) => {
-          const match = matchingVocabIndices.get(p[0]);
-          if (match) {
-            highlights.push({
-              term: match.term,
-              originalWord: doc.vocab[p[0]],
-              charStart: p[1],
-              charEnd: p[2],
-              confidence: match.confidence,
-            });
-          }
-        });
-      }
-    } else {
-      // Regular highlight extraction
-      let stemmedVocab = this.stemmedVocabCache.get(docId);
-      if (!stemmedVocab) {
-        stemmedVocab = doc.vocab.map((v) => this.textProcessor.stemWord(v));
-        this.stemmedVocabCache.set(docId, stemmedVocab);
-      }
-
-      const matchingVocabIndices = new Set<number>();
-
-      stemmedVocab.forEach((docTokenStem, index) => {
-        if (
-          this.resolveQueryTerm(
-            docTokenStem,
-            originalPhraseOrStemmedTokens,
-            termAliases,
-          ) !== undefined
-        ) {
-          matchingVocabIndices.add(index);
-        }
-      });
-
-      if (matchingVocabIndices.size > 0) {
-        doc.positions.forEach((p) => {
-          if (matchingVocabIndices.has(p[0])) {
-            const docTokenTerm = doc.vocab[p[0]];
-            const docTokenStem = stemmedVocab![p[0]];
-            const queryToken = this.resolveQueryTerm(
-              docTokenStem,
-              originalPhraseOrStemmedTokens,
-              termAliases,
-            );
-
-            highlights.push({
-              term: queryToken || docTokenStem,
-              originalWord: docTokenTerm,
-              charStart: p[1],
-              charEnd: p[2],
-              confidence: isTypoToleranceEnabled
-                ? calculateMatchConfidence(
-                    queryToken || docTokenStem,
-                    docTokenStem,
-                  )
-                : 1.0,
-            });
-          }
-        });
-      }
     }
 
     const duration = Date.now() - start;
@@ -321,41 +225,30 @@ export class SnippetGenerator {
 
   /**
    * Main entry point for snippet generation.
-   *
-   * @param termAliases See generateHighlights.
    */
   async generateSnippets(
     doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    invertedIndex: Map<string, InvertedIndexEntry[]>,
-    isPhrase: boolean,
-    isTypoToleranceEnabled: boolean,
-    matchPositions: number[][] | undefined,
-    contextBefore: number,
-    contextAfter: number,
-    termAliases: ReadonlyMap<string, string> = new Map(),
+    request: SnippetRequest,
   ): Promise<SnippetInfo[]> {
     const start = Date.now();
     let snippets: SnippetInfo[] = [];
 
-    if (isPhrase) {
-      // matchPositions already contains the correct matches from PhraseMatcher
+    if (request.isPhrase) {
+      // the sequences already are the matches PhraseMatcher verified
       snippets = await this.extractPhraseSnippetsFromPositions(
         doc,
-        originalPhraseOrStemmedTokens,
-        matchPositions,
-        isTypoToleranceEnabled,
-        contextBefore,
-        contextAfter,
+        request.queryTokens,
+        request.phraseSequences,
+        request.isFuzzy,
+        request.contextBefore,
+        request.contextAfter,
       );
     } else {
       snippets = await this.extractTokenSnippets(
         doc,
-        originalPhraseOrStemmedTokens,
-        isTypoToleranceEnabled,
-        contextBefore,
-        contextAfter,
-        termAliases,
+        request.matchedWords,
+        request.contextBefore,
+        request.contextAfter,
       );
     }
 
@@ -376,7 +269,7 @@ export class SnippetGenerator {
     doc: DocumentIndex,
     originalPhraseOrStemmedTokens: string[],
     sequences: number[][] | undefined,
-    isTypoToleranceEnabled: boolean,
+    isFuzzy: boolean,
     contextBefore: number,
     contextAfter: number,
   ): Promise<SnippetInfo[]> {
@@ -393,9 +286,7 @@ export class SnippetGenerator {
       );
       if (sequence.some((token) => token === null)) continue;
 
-      const matchType = isTypoToleranceEnabled
-        ? 'fuzzy-phrase'
-        : 'exact-phrase';
+      const matchType = isFuzzy ? 'fuzzy-phrase' : 'exact-phrase';
 
       const snippet = await this.createSnippetFromSequence(
         doc,
@@ -413,45 +304,20 @@ export class SnippetGenerator {
 
   private async extractTokenSnippets(
     doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    isTypoToleranceEnabled: boolean,
+    matchedWords: ReadonlyMap<string, MatchedWord>,
     contextBefore: number,
     contextAfter: number,
-    termAliases: ReadonlyMap<string, string>,
   ): Promise<SnippetInfo[]> {
     const snippets: SnippetInfo[] = [];
     const processedBounds = new Set<string>();
-    const matchedTokenIndices = new Set<number>();
 
-    doc.positions.forEach((p, tokenIndex) => {
-      const docTokenTerm = doc.vocab[p[0]];
-      const docTokenToCompare = isTypoToleranceEnabled
-        ? this.textProcessor.stemWord(docTokenTerm)
-        : docTokenTerm.toLowerCase();
-      if (
-        this.resolveQueryTerm(
-          docTokenToCompare,
-          originalPhraseOrStemmedTokens,
-          termAliases,
-        ) !== undefined
-      ) {
-        matchedTokenIndices.add(tokenIndex);
-      }
-    });
+    for (let tokenIndex = 0; tokenIndex < doc.positions.length; tokenIndex++) {
+      const matched = matchedWords.get(doc.vocab[doc.positions[tokenIndex][0]]);
+      if (!matched) continue;
+      const { queryToken, confidence } = matched;
 
-    for (const tokenIndex of matchedTokenIndices) {
       const docToken = getDocumentToken(doc, tokenIndex);
       if (!docToken) continue;
-
-      const docTokenToCompare = isTypoToleranceEnabled
-        ? this.textProcessor.stemWord(docToken.term)
-        : docToken.term.toLowerCase();
-      const queryToken = this.resolveQueryTerm(
-        docTokenToCompare,
-        originalPhraseOrStemmedTokens,
-        termAliases,
-      );
-      if (!queryToken) continue;
 
       const snippetBounds = await this.findSentenceBoundariesForSnippet(
         doc,
@@ -476,10 +342,6 @@ export class SnippetGenerator {
         [{ charStart: docToken.charStart, charEnd: docToken.charEnd }],
         [{ term: queryToken, originalWord: docToken.term }],
       );
-
-      const confidence = isTypoToleranceEnabled
-        ? calculateMatchConfidence(queryToken, docTokenToCompare)
-        : 1.0;
 
       const matchedText = await this.getRawSubstring(
         doc,
@@ -520,12 +382,6 @@ export class SnippetGenerator {
     contextBefore: number,
     contextAfter: number,
   ): Promise<SnippetInfo | null> {
-    if (
-      !this.isValidMatch(sequence, originalPhraseOrStemmedTokens, matchType)
-    ) {
-      return null;
-    }
-
     const matchStartPos = sequence[0].position;
     const matchEndPos = sequence[sequence.length - 1].position;
 
@@ -568,7 +424,6 @@ export class SnippetGenerator {
     const confidence = this.calculateSequenceConfidence(
       sequence,
       originalPhraseOrStemmedTokens,
-      matchType,
     );
 
     const matchedText = await this.getRawSubstring(
@@ -591,29 +446,15 @@ export class SnippetGenerator {
     };
   }
 
-  private isValidMatch(
-    sequence: ProcessedSearchToken[],
-    queryTokens: string[],
-    matchType: 'exact-phrase' | 'fuzzy-phrase',
-  ): boolean {
-    if (matchType === 'exact-phrase') {
-      return sequence.every((token, index) => {
-        const queryToken = queryTokens[index];
-        return token.term.toLowerCase() === queryToken.toLowerCase();
-      });
-    }
-    return true;
-  }
-
+  /**
+   * Lowered by the edit distance between each matched word and its query
+   * token: typos in either mode, and — with fuzzy match on, where the query
+   * tokens are stems — the endings of inflected forms too.
+   */
   private calculateSequenceConfidence(
     sequence: ProcessedSearchToken[],
     queryTokens: string[],
-    matchType: 'exact-phrase' | 'fuzzy-phrase',
   ): number {
-    if (matchType === 'exact-phrase') {
-      return 1.0;
-    }
-
     const totalDistance = sequence.reduce((sum, match, index) => {
       const queryToken = queryTokens[index];
       return sum + levenshtein(match.term.toLowerCase(), queryToken);

@@ -5,6 +5,11 @@ import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { SnippetGenerator } from '../mega-search.snippet-generator.mjs';
+import {
+  TermMatcher,
+  mergeMatchedWords,
+} from '../mega-search.term-matcher.mjs';
+import type { TermMatchOptions } from '../mega-search.term-matcher.mjs';
 import type { SnippetInfo } from '../mega-search.types.mjs';
 import {
   buildDocumentIndex,
@@ -13,6 +18,9 @@ import {
 } from '../test-utils/in-memory-index.mjs';
 import type { SearchData } from '../test-utils/in-memory-index.mjs';
 import { UkrainianTextProcessor } from '../text-processor.mjs';
+
+const textProcessor = new UkrainianTextProcessor();
+const termMatcher = new TermMatcher(textProcessor);
 
 const DOCS = {
   'apostrophe.txt': "Об'єкт прийнято. Отримано П'ять примірників.",
@@ -29,7 +37,7 @@ const highlightedSpans = (context: string) =>
   [...context.matchAll(/<b>(.*?)<\/b>/g)].map((m) => m[1]);
 
 describe('SnippetGenerator', () => {
-  const generator = new SnippetGenerator(new UkrainianTextProcessor());
+  const generator = new SnippetGenerator();
   let rawTextDir: string;
   let data: SearchData;
 
@@ -42,38 +50,55 @@ describe('SnippetGenerator', () => {
 
   after(() => fs.promises.rm(rawTextDir, { recursive: true, force: true }));
 
+  /** What MegaSearch hands the generator for a query: tokens + matched words. */
+  const matchQuery = (
+    query: string,
+    { isFuzzy = true, maxTypoDistance = 1 }: Partial<TermMatchOptions> = {},
+  ) => {
+    const words = textProcessor
+      .tokenize(query)
+      .map((token) =>
+        termMatcher.match(token.term, { isFuzzy, maxTypoDistance }, data),
+      );
+    return {
+      queryTokens: words.map((word) => word.queryToken),
+      matchedWords: mergeMatchedWords(words),
+      isFuzzy,
+    };
+  };
+
   const tokenSnippets = (
     docId: string,
     query: string,
-    { contextBefore = 0, contextAfter = 30 } = {},
+    {
+      contextBefore = 0,
+      contextAfter = 30,
+      ...matchOptions
+    }: Partial<TermMatchOptions> & {
+      contextBefore?: number;
+      contextAfter?: number;
+    } = {},
   ) =>
-    generator.generateSnippets(
-      data.docCache.get(docId)!,
-      stemQuery(query),
-      data.invertedIndex,
-      false,
-      true,
-      undefined,
+    generator.generateSnippets(data.docCache.get(docId)!, {
+      ...matchQuery(query, matchOptions),
+      isPhrase: false,
       contextBefore,
       contextAfter,
-    );
+    });
 
   const phraseSnippets = (
     docId: string,
     query: string,
-    positions: number[][] | undefined,
-    isTypoToleranceEnabled = true,
+    phraseSequences: number[][] | undefined,
+    isFuzzy = true,
   ) =>
-    generator.generateSnippets(
-      data.docCache.get(docId)!,
-      stemQuery(query),
-      data.invertedIndex,
-      true,
-      isTypoToleranceEnabled,
-      positions,
-      0,
-      30,
-    );
+    generator.generateSnippets(data.docCache.get(docId)!, {
+      ...matchQuery(query, { isFuzzy }),
+      isPhrase: true,
+      phraseSequences,
+      contextBefore: 0,
+      contextAfter: 30,
+    });
 
   describe('token snippets', () => {
     it('renders context from the raw text, keeping casing and apostrophes', async () => {
@@ -134,32 +159,31 @@ describe('SnippetGenerator', () => {
       }
     });
 
-    it('returns no snippets when no document token has the query stem', async () => {
+    it('returns no snippets when no document word matched', async () => {
       assert.deepEqual(await tokenSnippets('repeat.txt', 'bicycle'), []);
     });
 
-    it('finds typo matches through termAliases, reporting the query term at lower confidence', async () => {
-      const [queryStem] = stemQuery('упрвління'); // "упрвлін"
-      const [indexStem] = stemQuery('управління'); // "управлін", 1 edit away
-
-      const snippets = await generator.generateSnippets(
-        data.docCache.get('orders.txt')!,
-        [queryStem],
-        data.invertedIndex,
-        false,
-        true,
-        undefined,
-        0,
-        30,
-        new Map([[indexStem, queryStem]]),
-      );
+    it('reports a typo match as the query token, at lower confidence', async () => {
+      const snippets = await tokenSnippets('orders.txt', 'упрвління');
 
       assert.deepEqual(
         snippets.map((s) => s.match),
         ['управління', 'управління'],
       );
-      assert.equal(snippets[0].highlights[0].term, queryStem);
-      assert.equal(snippets[0].confidence, 1 - 1 / indexStem.length);
+      assert.equal(snippets[0].highlights[0].term, stemQuery('упрвління')[0]);
+      // one edit over the 10 letters of "управління"
+      assert.equal(snippets[0].confidence, 1 - 1 / 10);
+    });
+
+    it('without fuzzy match, renders only the form typed', async () => {
+      const snippets = await tokenSnippets('orders.txt', 'начальника', {
+        isFuzzy: false,
+      });
+
+      assert.deepEqual(
+        snippets.map((s) => [s.match, s.highlights[0].term, s.confidence]),
+        [['начальника', 'начальника', 1]],
+      );
     });
 
     describe('without a readable raw text cache', () => {
@@ -168,17 +192,16 @@ describe('SnippetGenerator', () => {
           textFilePath: path.join(os.tmpdir(), 'mega-search-missing.txt'),
         });
 
-      const fallbackSnippets = (text: string, query: string) =>
-        generator.generateSnippets(
-          docWithoutRawText(text),
-          stemQuery(query),
-          new Map(),
-          false,
-          true,
-          undefined,
-          0,
-          30,
-        );
+      // the document is not in `data`, so its matched word is given directly
+      const fallbackSnippets = (text: string, word: string) =>
+        generator.generateSnippets(docWithoutRawText(text), {
+          queryTokens: [word],
+          matchedWords: new Map([[word, { queryToken: word, confidence: 1 }]]),
+          isFuzzy: false,
+          isPhrase: false,
+          contextBefore: 0,
+          contextAfter: 30,
+        });
 
       it('falls back to joining the normalized vocabulary', async () => {
         const [snippet] = await fallbackSnippets(
@@ -248,6 +271,23 @@ describe('SnippetGenerator', () => {
       assert.equal(snippet.confidence, 1);
     });
 
+    it('renders strict matches with a typo too, at lower confidence', async () => {
+      // Regression guard: exact-phrase snippets re-checked every word for
+      // equality with the query, dropping the typo matches fuzzy match off
+      // must still find.
+      const [snippet] = await phraseSnippets(
+        'typo.txt',
+        'rich car',
+        [[0, 1]],
+        false,
+      );
+
+      assert.deepEqual(
+        [snippet.matchType, snippet.match, snippet.confidence],
+        ['exact-phrase', 'Rech car', 1 - 1 / 6],
+      );
+    });
+
     it('needs match positions — without them there is nothing to render', async () => {
       // which is why MegaSearch records positions on both phrase paths
       // (exact and proximity)
@@ -266,15 +306,19 @@ describe('SnippetGenerator', () => {
   });
 
   describe('generateHighlights()', () => {
-    it('lists every occurrence of a query stem with raw char offsets', () => {
-      const raw = DOCS['orders.txt'];
-      const highlights = generator.generateHighlights(
-        'orders.txt',
-        data.docCache.get('orders.txt')!,
-        stemQuery('управління'),
-        false,
-        true,
+    const highlightsOf = (
+      docId: string,
+      query: string,
+      options?: Partial<TermMatchOptions>,
+    ) =>
+      generator.generateHighlights(
+        data.docCache.get(docId)!,
+        matchQuery(query, options).matchedWords,
       );
+
+    it('lists every occurrence of a matched word with raw char offsets', () => {
+      const raw = DOCS['orders.txt'];
+      const highlights = highlightsOf('orders.txt', 'управління');
 
       assert.equal(highlights.length, 2);
       for (const highlight of highlights) {
@@ -282,21 +326,30 @@ describe('SnippetGenerator', () => {
           raw.slice(highlight.charStart, highlight.charEnd),
           'управління',
         );
+        assert.equal(highlight.term, stemQuery('управління')[0]);
         assert.equal(highlight.confidence, 1);
       }
     });
 
-    it('in fuzzy-phrase mode, also scores near words (up to 2 edits)', () => {
-      const [highlight] = generator.generateHighlights(
-        'typo.txt',
-        data.docCache.get('typo.txt')!,
-        stemQuery('rich'),
-        true,
-        true,
+    it('lists typo matches at lower confidence, and nothing the query did not match', () => {
+      // Regression guard: phrase highlights scored every word within 2 edits
+      // of a query stem, whether or not the search matched it.
+      assert.deepEqual(
+        highlightsOf('typo.txt', 'rich').map((h) => [
+          h.originalWord,
+          h.confidence,
+        ]),
+        [['rech', 0.75]],
       );
+    });
 
-      assert.equal(highlight.originalWord, 'rech');
-      assert.equal(highlight.confidence, 0.8);
+    it('without fuzzy match, lists only the form typed', () => {
+      assert.deepEqual(
+        highlightsOf('orders.txt', 'начальника', { isFuzzy: false }).map(
+          (h) => [h.originalWord, h.term],
+        ),
+        [['начальника', 'начальника']],
+      );
     });
   });
 });

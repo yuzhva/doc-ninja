@@ -1,6 +1,6 @@
 import path from 'path';
 import type { PaginatedSearchResult, SearchOptions } from 'toolkit--local/node';
-import { createMegaSearch, MegaSearch } from 'toolkit--local/node';
+import { MegaSearch, createMegaSearch } from 'toolkit--local/node';
 
 import { runtimePathById } from '../../supplement/index.mjs';
 
@@ -53,7 +53,7 @@ class DocumentIntelligenceService {
         const searchResult = await megaSearch.search(query, {
           maxTypoDistance: 1,
           isPhraseProximityEnabled: true,
-          maxWordsInPhraseDistance: 2,
+          maxWordsInPhraseDistance: 1, // one word may sit between phrase words
           snippetsLimit: 'ALL',
           sortBy: 'date',
           ...options, // Merge passed options, overriding defaults if provided
