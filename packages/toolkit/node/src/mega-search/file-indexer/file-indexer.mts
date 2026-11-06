@@ -301,6 +301,12 @@ class FileIndexer {
     documentCache: Map<string, DocumentIndex>,
   ): Promise<boolean> {
     try {
+      // Searches read the version in the index now until the update goes in.
+      // Its words load from its per-document file on first use, which
+      // indexing the file anew overwrites, so they load first.
+      const current = documentCache.get(file.originalFilePath);
+      if (current && !isIndexedAsIs(current, file)) void current.positions;
+
       if (await this.processor.needsReindexing(file, documentCache)) {
         documentCache.set(
           file.originalFilePath,
