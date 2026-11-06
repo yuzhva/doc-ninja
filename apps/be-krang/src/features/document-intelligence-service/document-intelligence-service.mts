@@ -5,11 +5,15 @@ import { MegaSearch, createMegaSearch } from 'toolkit--local/node';
 import { runtimePathById } from '../../supplement/index.mjs';
 import { MegaSearchEngines } from './mega-search-engines.mjs';
 
-/** Every request's search engines, one per source folder. */
+/**
+ * Every request's search engines, one per source folder. Each watches its
+ * folder, so a request lists the folder's files only after one changed.
+ */
 const engines = new MegaSearchEngines({
   createEngine: (rootDirectory) =>
-    createMegaSearch({ rootDirectory, concurrency: 4 }),
+    createMegaSearch({ rootDirectory, concurrency: 4, watchFiles: true }),
   clearCacheOf: (rootDirectory) => MegaSearch.clearCacheFor(rootDirectory),
+  closeEngine: (megaSearch) => megaSearch.close(),
 });
 
 interface SearchResult {
@@ -42,13 +46,15 @@ class DocumentIntelligenceService {
    * This folder's search engine, shared across requests and up to date with
    * the files on disk: a new engine indexes the folder as it's created, one
    * made earlier first picks up the documents added, edited or deleted
-   * since. Requests that come in together share that refresh.
+   * since. It lists the folder's files for that only when its watcher saw a
+   * change, or a minute went by. Requests that come in together share that
+   * refresh.
    */
   async getMegaSearchInstance(): Promise<MegaSearch> {
     const { megaSearch, isNew } = await engines.get(this.rootDirectory);
     if (!isNew) {
       try {
-        await megaSearch.reindex();
+        await megaSearch.refresh();
       } catch (error) {
         // The index from before is a better answer than none
         console.error('Search index refresh failed:', error);

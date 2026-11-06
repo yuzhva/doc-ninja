@@ -6,6 +6,8 @@ type MegaSearchEnginesOptions = {
   createEngine: (rootDirectory: string) => Promise<MegaSearch>;
   /** Deletes a folder's index cache with no engine (MegaSearch.clearCacheFor). */
   clearCacheOf: (rootDirectory: string) => Promise<void>;
+  /** Stops what an engine let go of runs in the background (MegaSearch.close). */
+  closeEngine?: (megaSearch: MegaSearch) => void;
   /** Folders kept at most; beyond that the least recently searched one goes. */
   maxEngines?: number;
   /** How long an engine nobody asks for is kept, in ms. */
@@ -130,12 +132,17 @@ class MegaSearchEngines {
 
   /**
    * Lets go of the engine, if it's still the folder's: searches running on
-   * it finish, and the next one gets a new engine.
+   * it finish, and the next one gets a new engine. It stops watching its
+   * folder.
    */
   private drop(key: string, engine: Engine): void {
     if (this.engines.get(key) !== engine) return;
     clearTimeout(engine.idleTimer);
     this.engines.delete(key);
+    engine.megaSearch.then(
+      (megaSearch) => this.options.closeEngine?.(megaSearch),
+      () => undefined, // never created: nothing to close
+    );
   }
 }
 

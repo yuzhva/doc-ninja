@@ -8,8 +8,9 @@ import type { MegaSearchEnginesOptions } from '../mega-search-engines.mjs';
 
 /**
  * Engines that record what was asked of them: `log` lists each creation
- * ("create /docs"), engine cache delete ("engine clear /docs") and cache
- * delete without an engine ("clear /docs"), in order.
+ * ("create /docs"), engine cache delete ("engine clear /docs"), cache
+ * delete without an engine ("clear /docs") and engine close ("close
+ * /docs"), in order.
  */
 const fakeEngines = (
   options: Partial<MegaSearchEnginesOptions> & {
@@ -33,6 +34,9 @@ const fakeEngines = (
     },
     clearCacheOf: async (rootDirectory) => {
       log.push(`clear ${rootDirectory}`);
+    },
+    closeEngine: (megaSearch) => {
+      log.push(`close ${(megaSearch as any).rootDirectory}`);
     },
     ...options,
   });
@@ -84,7 +88,14 @@ describe('MegaSearchEngines', () => {
     await engines.get('/a');
     await engines.get('/b'); // created again
 
-    assert.deepEqual(log, ['create /a', 'create /b', 'create /c', 'create /b']);
+    assert.deepEqual(log, [
+      'create /a',
+      'create /b',
+      'create /c',
+      'close /b',
+      'create /b',
+      'close /c',
+    ]);
   });
 
   it('lets go of an engine nobody asked for in idleMs, and keeps one in use', async (t) => {
@@ -99,7 +110,7 @@ describe('MegaSearchEngines', () => {
 
     assert.equal((await engines.get('/a')).isNew, false);
     assert.equal((await engines.get('/b')).isNew, true);
-    assert.deepEqual(log, ['create /a', 'create /b', 'create /b']);
+    assert.deepEqual(log, ['create /a', 'create /b', 'close /b', 'create /b']);
   });
 
   it('does not keep an engine whose creation failed', async () => {
