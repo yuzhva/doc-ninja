@@ -10,9 +10,53 @@ import type { ResolvedCachePaths } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { TokenPositions } from '../token-positions.mjs';
-import { DocumentIndex, SearchConfig } from '../types.mjs';
+import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
+
+/** What a document's per-document index holds beside its metadata. */
+type DocumentWords = Pick<DocumentIndex, 'vocab' | 'positions' | 'joints'>;
+
+/**
+ * A document as the global index holds it: its metadata and word count, and
+ * its words read from its per-document index on first use, once.
+ *
+ * One class, so every document has one shape and shares one set of getters.
+ * Getters defined on each document object, with closures of their own, left
+ * all of them but the first in V8's slow dictionary mode, read that way by
+ * every search for as long as the index was open: on 362 documents, 1925
+ * searches took a fifth longer than with this class.
+ */
+class LazyDocument implements DocumentIndex {
+  #words: DocumentWords | null;
+  readonly #readWords: () => DocumentWords;
+
+  constructor(
+    public metadata: DocumentMetadata,
+    public wordCount: number,
+    readWords: () => DocumentWords,
+    words: DocumentWords | null,
+  ) {
+    this.#readWords = readWords;
+    this.#words = words;
+  }
+
+  get vocab(): string[] {
+    return this.#load().vocab;
+  }
+
+  get positions(): TokenPositions {
+    return this.#load().positions;
+  }
+
+  get joints(): Record<number, string> {
+    return this.#load().joints;
+  }
+
+  #load(): DocumentWords {
+    return (this.#words ??= this.#readWords());
+  }
+}
 
 class IndexStorage {
   private gunzipAsync = promisify(zlib.gunzip);
@@ -438,8 +482,7 @@ class IndexStorage {
             if (doc.vocab || doc.positions) {
               this.needsOptimization = true;
             }
-            this.makeDocumentLazy(doc);
-            documentCache.set(filePath, doc);
+            documentCache.set(filePath, this.lazyDocument(doc));
           }
         },
         'Documents',
@@ -480,75 +523,51 @@ class IndexStorage {
     }
   }
 
-  private makeDocumentLazy(doc: DocumentIndex): void {
-    const indexPath = this.getIndexCachePath(doc.metadata.originalFilePath);
-    let _vocab: string[] | null = doc.vocab || null;
-    let _positions: TokenPositions | null = doc.positions || null;
-    let _joints: Record<number, string> | null = doc.joints || null;
+  /** A document read from the global index, its words read on first use. */
+  private lazyDocument(saved: any): LazyDocument {
+    const { metadata, wordCount, vocab, positions, joints } = saved;
+    return new LazyDocument(
+      metadata,
+      wordCount,
+      () => this.readWords(metadata),
+      // Indexes saved long ago held the words in the global index too
+      vocab && positions && joints ? { vocab, positions, joints } : null,
+    );
+  }
 
+  /**
+   * The words of the document's per-document index — of the version the
+   * global index holds, or none.
+   */
+  private readWords(metadata: DocumentMetadata): DocumentWords {
     // Words saved for another version of the document (indexed since) don't
     // fit the postings searches read with this one: it reads none instead.
     // FileIndexer loads a version's words before it indexes the file anew.
     const isThisVersion = (saved: DocumentIndex | undefined) =>
-      saved?.metadata?.indexedAt === doc.metadata.indexedAt;
+      saved?.metadata?.indexedAt === metadata.indexedAt;
+    const wordsOf = ({ vocab, positions, joints }: DocumentWords) => ({
+      vocab,
+      positions,
+      joints,
+    });
 
-    const loadFromDisk = () => {
-      if (_vocab && _positions && _joints) return;
-      const cached = this.documentLRU.get(doc.metadata.originalFilePath);
-      if (cached && isThisVersion(cached)) {
-        _vocab = cached.vocab;
-        _positions = cached.positions;
-        _joints = cached.joints;
-        return;
-      }
-      try {
-        const content = fs.readFileSync(indexPath, 'utf8');
-        const fullDoc = JSON.parse(content);
-        fullDoc.positions = TokenPositions.fromSaved(fullDoc.positions);
-        fullDoc.vocab ??= [];
-        fullDoc.joints ??= {};
-        this.documentLRU.set(doc.metadata.originalFilePath, fullDoc);
-        if (isThisVersion(fullDoc)) {
-          _vocab = fullDoc.vocab;
-          _positions = fullDoc.positions;
-          _joints = fullDoc.joints;
-          return;
-        }
-        this.logger.debug(
-          `📋 ${doc.metadata.fileName} was indexed anew: reading the version searches had as empty`,
-        );
-      } catch (e) {
-        // A missing or unreadable file reads as an empty document
-      }
-      _vocab = [];
-      _positions = TokenPositions.EMPTY;
-      _joints = {};
-    };
-
-    Object.defineProperty(doc, 'vocab', {
-      get: () => {
-        loadFromDisk();
-        return _vocab;
-      },
-      configurable: true,
-      enumerable: true,
-    });
-    Object.defineProperty(doc, 'positions', {
-      get: () => {
-        loadFromDisk();
-        return _positions;
-      },
-      configurable: true,
-      enumerable: true,
-    });
-    Object.defineProperty(doc, 'joints', {
-      get: () => {
-        loadFromDisk();
-        return _joints;
-      },
-      configurable: true,
-      enumerable: true,
-    });
+    const cached = this.documentLRU.get(metadata.originalFilePath);
+    if (cached && isThisVersion(cached)) return wordsOf(cached);
+    try {
+      const indexPath = this.getIndexCachePath(metadata.originalFilePath);
+      const fullDoc = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      fullDoc.positions = TokenPositions.fromSaved(fullDoc.positions);
+      fullDoc.vocab ??= [];
+      fullDoc.joints ??= {};
+      this.documentLRU.set(metadata.originalFilePath, fullDoc);
+      if (isThisVersion(fullDoc)) return wordsOf(fullDoc);
+      this.logger.debug(
+        `📋 ${metadata.fileName} was indexed anew: reading the version searches had as empty`,
+      );
+    } catch (e) {
+      // A missing or unreadable file reads as an empty document
+    }
+    return { vocab: [], positions: TokenPositions.EMPTY, joints: {} };
   }
 }
 
