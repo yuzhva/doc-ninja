@@ -116,7 +116,8 @@ class FileIndexer {
   }
 
   /**
-   * How many re-indexed files it takes to rebuild the inverted index — shared
+   * How many re-indexed files it takes to rebuild the inverted index from
+   * every document rather than update it for the changed ones only — shared
    * by full and path-scoped indexing so both apply the same configured rules.
    */
   private getRebuildThresholds(): {
@@ -124,11 +125,52 @@ class FileIndexer {
     minFiles: number;
   } {
     return {
-      // require at least 0.1% of index to have changed to trigger rebuild
+      // a full rebuild once at least 0.1% of the indexed documents changed
       rebuildThreshold: this.config.indexRebuildThreshold ?? 0.001,
-      // rebuild if at least N files changed
+      // ... and at least N files
       minFiles: this.config.minFilesForRebuild ?? 1,
     };
+  }
+
+  /**
+   * Brings the inverted index up to date with re-indexed documents. A forced
+   * rebuild, or enough changes (see getRebuildThresholds), rebuilds it from
+   * every document; fewer changes update only the changed documents.
+   *
+   * Skipping the update instead would lose the change: its per-document index
+   * is already saved as current, so no later run would re-index it. A full
+   * rebuild reads every document from disk; an update reads none.
+   */
+  private async updateInvertedIndex(
+    changedPaths: string[],
+    {
+      rebuildThreshold,
+      minFiles,
+    }: { rebuildThreshold: number; minFiles: number },
+    forceRebuild: boolean,
+  ): Promise<void> {
+    const isFullRebuild =
+      forceRebuild ||
+      changedPaths.length >=
+        Math.max(minFiles, this.documentCache.size * rebuildThreshold);
+
+    if (isFullRebuild) {
+      this.logger.info(
+        `🔗 Rebuilding inverted index (changed ${changedPaths.length}, forced ${forceRebuild})...`,
+      );
+      await this.builder.updateInvertedIndexBatch(
+        this.documentCache,
+        this.invertedIndex,
+        this.stemDictionary,
+      );
+    } else if (changedPaths.length > 0) {
+      this.builder.updateDocuments(
+        this.documentCache,
+        this.invertedIndex,
+        this.stemDictionary,
+        changedPaths,
+      );
+    }
   }
 
   /**
@@ -281,32 +323,6 @@ class FileIndexer {
     }
   }
 
-  /**
-   * Removes a document's terms from the inverted index.
-   * Crucial for partial updates to prevent stale terms.
-   */
-  private purgeDocumentFromIndex(doc: DocumentIndex, docId: string) {
-    // Iterate over all terms in the old document
-    for (const term of doc.termFrequency.keys()) {
-      // Access entries using public get() method
-      const entries = this.invertedIndex.get(term);
-
-      if (entries && Array.isArray(entries)) {
-        // Mutate array in place to remove the document entry
-        for (let i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].documentId === docId) {
-            entries.splice(i, 1);
-          }
-        }
-
-        // If term has no more documents, remove the term entirely
-        if (entries.length === 0) {
-          this.invertedIndex.delete(term);
-        }
-      }
-    }
-  }
-
   private async selectIndexingMethod(
     files: DocumentMetadata[],
   ): Promise<'sequential' | 'parallel'> {
@@ -342,10 +358,7 @@ class FileIndexer {
    */
   async buildFullIndexSequential(
     files: DocumentMetadata[],
-    {
-      rebuildThreshold,
-      minFiles,
-    }: {
+    rebuildThresholds: {
       rebuildThreshold: number;
       minFiles: number;
     } = this.getRebuildThresholds(),
@@ -367,7 +380,7 @@ class FileIndexer {
         batches.push(files.slice(i, i + BATCH_SIZE));
       }
 
-      const documentsToUpdate: string[] = [];
+      const changedPaths: string[] = [];
 
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
@@ -377,22 +390,14 @@ class FileIndexer {
 
         const batchPromises = batch.map(async (file) => {
           try {
-            const wasInCache = this.documentCache.has(file.originalFilePath);
             if (
               await this.processor.needsReindexing(file, this.documentCache)
             ) {
-              // PURGE: Remove old terms before re-indexing
-              if (wasInCache) {
-                const oldDoc = this.documentCache.get(file.originalFilePath);
-                if (oldDoc) {
-                  this.purgeDocumentFromIndex(oldDoc, file.originalFilePath);
-                }
-              }
-
               const result = await this.processor.indexDocument(file);
               this.documentCache.set(file.originalFilePath, result);
               // New or edited alike, this document now differs from what the
-              // inverted index holds, so it counts towards the rebuild.
+              // inverted index holds (updateInvertedIndex replaces its
+              // postings), so it counts towards the rebuild.
               return {
                 success: true,
                 type: 'indexed',
@@ -425,10 +430,9 @@ class FileIndexer {
             if (result.type === 'indexed') {
               indexed++;
               actuallyProcessed++;
-              documentsToUpdate.push(result.filePath);
+              changedPaths.push(result.filePath);
             } else if (result.type === 'skipped') {
               skipped++;
-              documentsToUpdate.push(result.filePath);
             }
           } else {
             errors++;
@@ -439,27 +443,11 @@ class FileIndexer {
         await this.manageMemoryPressure();
       }
 
-      const significantChanges =
-        actuallyProcessed >=
-        Math.max(minFiles, files.length * rebuildThreshold);
-
-      // A forced rebuild (files removed / no postings loaded) is always significant, to ensure index consistency
-      if (
-        (documentsToUpdate.length > 0 && significantChanges) ||
-        forceRebuild
-      ) {
-        this.logger.info(
-          `🔗 Updating inverted index (processed ${documentsToUpdate.length}, forced ${forceRebuild})...`,
-        );
-        await this.builder.updateInvertedIndexBatch(
-          this.documentCache,
-          this.invertedIndex,
-          this.stemDictionary,
-          documentsToUpdate,
-        );
-      } else if (documentsToUpdate.length > 0) {
-        this.logger.info(`🚀 Skipping inverted index rebuild`);
-      }
+      await this.updateInvertedIndex(
+        changedPaths,
+        rebuildThresholds,
+        forceRebuild,
+      );
 
       this.logger.info(
         `✅ Indexing complete: ${indexed} total, ${skipped} skipped, ${errors} errors`,
@@ -490,10 +478,7 @@ class FileIndexer {
   /** @param forceRebuild See buildFullIndexSequential. */
   async buildFullIndexParallel(
     files: DocumentMetadata[],
-    {
-      rebuildThreshold,
-      minFiles,
-    }: {
+    rebuildThresholds: {
       rebuildThreshold: number;
       minFiles: number;
     } = this.getRebuildThresholds(),
@@ -523,23 +508,16 @@ class FileIndexer {
 
       let totalIndexed = 0;
       let totalErrors = 0;
+      const changedPaths: string[] = [];
 
       const workerPromises = chunks.map(async (chunk, workerIndex) => {
         let workerIndexed = 0;
         let workerErrors = 0;
         for (const file of chunk) {
           try {
-            // PURGE: Remove old terms before re-indexing
-            const wasInCache = this.documentCache.has(file.originalFilePath);
-            if (wasInCache) {
-              const oldDoc = this.documentCache.get(file.originalFilePath);
-              if (oldDoc) {
-                this.purgeDocumentFromIndex(oldDoc, file.originalFilePath);
-              }
-            }
-
             const result = await this.processor.indexDocument(file);
             this.documentCache.set(file.originalFilePath, result);
+            changedPaths.push(file.originalFilePath);
             workerIndexed++;
             totalIndexed++;
 
@@ -561,17 +539,11 @@ class FileIndexer {
 
       await Promise.all(workerPromises);
 
-      if (
-        totalIndexed >= Math.max(minFiles, files.length * rebuildThreshold) ||
-        forceRebuild
-      ) {
-        await this.builder.updateInvertedIndexBatch(
-          this.documentCache,
-          this.invertedIndex,
-          this.stemDictionary,
-          files.map((f) => f.originalFilePath),
-        );
-      }
+      await this.updateInvertedIndex(
+        changedPaths,
+        rebuildThresholds,
+        forceRebuild,
+      );
 
       if (totalIndexed > 0 || forceRebuild || this.storage.needsOptimization) {
         await this.storage.saveGlobalIndex(

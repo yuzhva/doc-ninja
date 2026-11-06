@@ -53,6 +53,46 @@ export class InvertedIndex {
   }
 
   /**
+   * Removes every posting of the given documents, and the terms no document
+   * holds any more. One pass over the index, in memory. A document keeps its
+   * integer id, so adding it back reuses it.
+   * @returns the removed terms
+   */
+  removeDocuments(docPaths: Iterable<string>): string[] {
+    const docIds = new Set<number>();
+    for (const docPath of docPaths) {
+      const docId = this.docIdMap.get(docPath);
+      if (docId !== undefined) docIds.add(docId);
+    }
+    if (docIds.size === 0) return [];
+
+    const removedTerms: string[] = [];
+    for (const [term, list] of this.index) {
+      // [docId, freq, ...positions] per document; copied only once a
+      // posting to drop shows up
+      let kept: number[] | null = null;
+      for (let i = 0; i < list.length;) {
+        const end = i + 2 + list[i + 1];
+        if (docIds.has(list[i])) {
+          kept ??= list.slice(0, i);
+        } else if (kept) {
+          for (let j = i; j < end; j++) kept.push(list[j]);
+        }
+        i = end;
+      }
+
+      if (!kept) continue;
+      if (kept.length === 0) {
+        this.index.delete(term);
+        removedTerms.push(term);
+      } else {
+        this.index.set(term, kept);
+      }
+    }
+    return removedTerms;
+  }
+
+  /**
    * Get entries for a specific term.
    */
   get(term: string): InvertedIndexEntry[] | undefined {

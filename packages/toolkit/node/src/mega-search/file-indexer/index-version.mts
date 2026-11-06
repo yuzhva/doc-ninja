@@ -1,0 +1,16 @@
+/**
+ * Version of what the index holds: how text is tokenized, normalized and
+ * stemmed into vocab, positions and postings.
+ *
+ * Bump it with every change that indexes the same text differently: the
+ * tokenizer, normalization, stop words, the stemmer. On the next start the
+ * global index and every per-document index from another version are rebuilt.
+ * The extracted-text cache is kept, so no document is parsed again.
+ *
+ * History:
+ * 1. (unversioned) everything before versioning
+ * 2. apostrophes: U+2019 and U+02BC inside words, none at their edges
+ */
+const INDEX_VERSION = 2;
+
+export { INDEX_VERSION };

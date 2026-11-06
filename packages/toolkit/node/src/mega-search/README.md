@@ -259,6 +259,13 @@ Multi-level intelligent caching:
 3. **Global Inverted Index**: Compressed full-text search index
 4. **LRU Memory Cache**: Hot data in memory for fast access
 
+Levels 2 and 3 are stamped with `INDEX_VERSION` (`file-indexer/index-version.mts`). Bump it with any
+change that indexes the same text differently (tokenizer, normalization, stop words, stemmer): the
+next start rebuilds both from the cached text (level 1), so no document is parsed again.
+
+A few changed files update the inverted index for those documents only. A full rebuild, which reads
+every document, happens once `indexRebuildThreshold` (default 0.1%) of the documents changed.
+
 ## 🚀 Production Deployment
 
 ### Performance Tuning

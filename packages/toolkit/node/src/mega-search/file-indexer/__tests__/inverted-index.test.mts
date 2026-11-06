@@ -71,9 +71,51 @@ describe('InvertedIndex', () => {
     assert.deepEqual(restored.getDocMapping(), ['/docs/a.txt', '/docs/b.txt']);
   });
 
+  describe('removeDocuments()', () => {
+    it('drops every posting of the documents and keeps the others', () => {
+      const index = sampleIndex();
+      index.addEntry('наказ', '/docs/c.txt', [1, 3]);
+
+      assert.deepEqual(index.removeDocuments(['/docs/b.txt']), ['бюджет']);
+      assert.deepEqual(index.get('наказ'), [
+        { documentId: '/docs/a.txt', frequency: 2, positions: [0, 4] },
+        { documentId: '/docs/c.txt', frequency: 2, positions: [1, 3] },
+      ]);
+      assert.equal(index.has('бюджет'), false);
+    });
+
+    it('returns the terms no document holds any more', () => {
+      const index = sampleIndex();
+
+      assert.deepEqual(
+        index.removeDocuments(['/docs/a.txt', '/docs/b.txt']).sort(),
+        ['бюджет', 'наказ'],
+      );
+      assert.equal(index.size, 0);
+    });
+
+    it('leaves the index untouched for documents it does not hold', () => {
+      const index = sampleIndex();
+
+      assert.deepEqual(index.removeDocuments(['/docs/unknown.txt']), []);
+      assert.deepEqual(index.toLegacyMap(), sampleIndex().toLegacyMap());
+    });
+
+    it('keeps the document id, so a document added back reuses it', () => {
+      const index = sampleIndex();
+      index.removeDocuments(['/docs/a.txt']);
+      index.addEntry('кошторис', '/docs/a.txt', [0]);
+
+      assert.deepEqual(index.getDocMapping(), ['/docs/a.txt', '/docs/b.txt']);
+      assert.deepEqual(index.get('кошторис'), [
+        { documentId: '/docs/a.txt', frequency: 1, positions: [0] },
+      ]);
+    });
+  });
+
   it('get() returns a detached copy — mutating it leaves the index untouched', () => {
-    // Worth knowing for re-indexing work: FileIndexer.purgeDocumentFromIndex
-    // splices the array returned by get(), which therefore removes nothing.
+    // Removing a document goes through removeDocuments(): splicing the array
+    // get() returns removes nothing.
     const index = sampleIndex();
     index.get('наказ')!.splice(0, 1);
 
