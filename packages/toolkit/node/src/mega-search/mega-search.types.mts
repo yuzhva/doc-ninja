@@ -6,13 +6,18 @@ type SearchOptions = {
   topN?: number;
 
   /**
-   * Enable typo tolerance for individual words (default: true).
-   * Example: "apple" matches "apply" with maxTypoDistance=1
+   * "Allow fuzzy match" in the UI (default: true). Despite its name it does
+   * not control typos — maxTypoDistance does, in both modes:
+   * - true:  any inflected form of a query word matches: "Євгена" finds
+   *          "Євген", "Євгену", "Євгеній"; "parked" finds "parking", "parks".
+   * - false: only the form typed (letter case aside): "Євгена" finds "Євгена".
    */
   isTypoToleranceEnabled?: boolean;
 
   /**
-   * Max character edits allowed per word (default: 1).
+   * Max character edits allowed per word (default: 1; 0 = no typos), with
+   * fuzzy match on and off alike: "єгена" finds "Євгена" either way — and,
+   * with fuzzy match on, the other forms of "Євген" too.
    * 1 = one character difference (insertion, deletion, substitution)
    * Example: "apple" matches "apply" (1 substitution: e→y)
    * Example: "search" matches "serach" (1 transposition)
@@ -22,8 +27,9 @@ type SearchOptions = {
 
   // Word-level phrase proximity
   /**
-   * Enable proximity matching within phrase searches (default: false).
-   * Only applies when query is wrapped in quotes: "rich car"
+   * Search every multi-word query as a phrase (default: false), quoted or
+   * not: its words in order, at most maxWordsInPhraseDistance words apart.
+   * Without it, only a "quoted" query is a phrase, and a strict one.
    * Example: "rich car" matches "rich expensive car" with maxWordsInPhraseDistance=1
    */
   isPhraseProximityEnabled?: boolean;
