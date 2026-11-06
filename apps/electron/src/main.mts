@@ -13,10 +13,11 @@ import {
 } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import request from 'supertest';
 import { FileSystemService } from 'toolkit--local/browser';
 import { FileScannerNode } from 'toolkit--local/node';
 import { pathToFileURL } from 'url';
+
+import { BackendProcess } from './backend.mjs';
 
 // electron-forge's Vite plugin always bundles the main process to CommonJS,
 // so Node provides `__dirname` natively at runtime.
@@ -34,9 +35,6 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
-
-// Hold the express app instance
-let expressApp: any;
 
 // The app's one window, so a second launch can bring it back to the front
 // instead of opening another (see the single-instance lock at the bottom).
@@ -57,8 +55,8 @@ const focusWindow = (win: BrowserWindow | null) => {
  * Whether a URL should be handed to the user's real browser rather than
  * opened inside the app.
  *
- * The renderer is served from `app://` and every backend call goes through
- * IPC or the in-process express app (no localhost origin), so an http/https
+ * The renderer is served from `app://` and every backend call goes over a
+ * message port to the backend process (no localhost origin), so an http/https
  * URL in this app is by definition somewhere else — a feature-request board,
  * a privacy policy — and never part of DocNinja itself.
  *
@@ -165,10 +163,10 @@ const startApp = async () => {
     return net.fetch(pathToFileURL(fullPath).toString());
   });
 
-  // Dynamically load the backend app
+  // The backend app (be-krang), in a process of its own: see backend-process.mts
   let backendPath: string;
   if (electronApp.isPackaged) {
-    // Production: use bundled files inside ASAR
+    // Production: the files packaged next to the app (extraResource)
     backendPath = path.join(
       process.resourcesPath,
       'dist/be-krang/cjs/index.cjs',
@@ -181,67 +179,17 @@ const startApp = async () => {
     );
   }
 
-  // Use dynamic import to load the module
-  const backendModule = await import(pathToFileURL(backendPath).href);
-  expressApp = backendModule.app;
-
-  // Handle IPC calls from the React UI
-  ipcMain.handle(
-    'api-request',
-    async (event, { method, path, body, electronAPIMeta }) => {
-      // Use supertest to make an "in-memory" request to your Express app
-      const req = (request(expressApp) as any)[method.toLowerCase()](path);
-
-      /**
-       * !IMPORTANT: body is serialized by {serializeElectronIPCBody} in Front-End application
-       *
-       * If you pass a FormData object to window.electronAPI.fetch(...), the preload script receives an empty object {} instead of the form data.
-       * This happens because FormData is not "cloneable" by the structured clone algorithm used by Electron's IPC.
-       *
-       * Why it must stay in the Frontend
-       * You must convert the FormData into a plain JavaScript object (JSON-serializable) before it crosses the bridge.
-       * That is why the serialization logic lives in fetchRequest.ts inside the React app.
-       */
-      if (electronAPIMeta?.isMultipart) {
-        // Reconstruct multipart request for supertest
-
-        // 1. Attach files
-        if (body.files) {
-          for (const file of body.files) {
-            if (file.path) {
-              // Option A: Stream from disk (Best for performance)
-              req.attach(file.key, file.path, {
-                filename: file.name,
-                contentType: file.type,
-              });
-            } else if (file.data) {
-              // Option B: Buffer fallback (If path is missing)
-              req.attach(file.key, Buffer.from(file.data), {
-                filename: file.name,
-                contentType: file.type,
-              });
-            }
-          }
-        }
-
-        // 2. Attach text fields
-        if (body.fieldByName) {
-          for (const [key, value] of Object.entries(body.fieldByName)) {
-            req.field(key, value as string);
-          }
-        }
-      } else {
-        const bodyAsJSON = JSON.parse(body);
-
-        req.send(bodyAsJSON);
-      }
-
-      const response = await req;
-
-      // Return the response body and status to the UI
-      return { status: response.status, body: response.body };
-    },
+  const backend = new BackendProcess(
+    path.join(__dirname, 'backend-process.js'),
+    backendPath,
   );
+  // Started now, so it has loaded by the time the UI asks it something
+  backend.start();
+  electronApp.on('will-quit', () => backend.stop());
+
+  // A window asks for its port to the backend (see preload.cjs) with its first
+  // request, and again after the backend stopped
+  ipcMain.on('backend:connect', (event) => backend.connect(event.sender));
 
   // The renderer's showOpenFilePicker/showDirectoryPicker calls (File System
   // Access API — see file-system-bridge.ts) hang indefinitely if the user
