@@ -166,6 +166,31 @@ describe('FileIndexer', () => {
     assert.equal((await indexer.validateIndexHealth()).isHealthy, true);
   });
 
+  it('drops every document once the folder holds none', async () => {
+    // Regression guard: a folder without documents left the index as it was,
+    // so its deleted documents were still found
+    const indexer = await indexed();
+    await corpus.remove('a.txt');
+    await corpus.remove('b.txt');
+
+    await indexer.buildFullIndex();
+
+    assert.equal(indexer.getStats().documentsCount, 0);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    assert.equal((await indexed()).getStats().documentsCount, 0);
+  });
+
+  it('keeps the index while the folder cannot be read, and makes no folder anew', async () => {
+    const indexer = await indexed();
+    await fs.promises.rm(corpus.root, { recursive: true, force: true });
+
+    await indexer.buildFullIndex();
+
+    assert.equal(indexer.getStats().documentsCount, 2);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt']);
+    assert.equal(fs.existsSync(corpus.root), false);
+  });
+
   // Regression guards: an edited file already in the document cache was
   // tallied as "cached-loaded" instead of indexed, so the inverted-index
   // rebuild and the global-index save were both skipped.
