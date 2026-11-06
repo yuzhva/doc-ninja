@@ -19,6 +19,16 @@ import { IndexBuilder } from './index-builder.mjs';
 import { IndexStorage } from './index-storage.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
 
+/** Whether the folder is there, and can be listed. */
+const isReadableDirectory = async (directory: string): Promise<boolean> => {
+  try {
+    await fs.promises.readdir(directory);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Keeps the index of a folder in step with its files.
  *
@@ -145,8 +155,16 @@ class FileIndexer {
       this.loadSavedIndex(),
     ]);
 
-    if (discovered.length === 0) {
-      this.logger.info('No files found to index.');
+    // Discovery finds nothing in a folder it can't read, too. Then the index
+    // stays: the folder may be back soon (a drive, a network share), and
+    // saving the index would make the cache folder inside it anew.
+    if (
+      discovered.length === 0 &&
+      !(await isReadableDirectory(this.config.rootDirectory))
+    ) {
+      this.logger.warn(
+        `📁 Can't read ${this.config.rootDirectory}: the index stays as it is.`,
+      );
       return;
     }
     this.logger.info(`📁 Found ${discovered.length} documents to process...`);
