@@ -8,6 +8,7 @@
     "build:python": "node ./scripts/build-python-source-code.mjs",
     "build--release": "pnpm run build && pnpm run build:python",
     "serve": "node ./dist/cjs/index.cjs",
+    "test": "tsx --test \"src/**/__tests__/*.test.mts\"",
     "nlp:download-models": "tsx ./src/nlp/download-models.mts",
     "nlp:extract-info": "tsx ./src/features/nlp-extract-info.mts",
     "nlp:demo--inline": "tsx ./src/examples/nlp--inline.example.mts",

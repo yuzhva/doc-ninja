@@ -3,6 +3,14 @@ import type { PaginatedSearchResult, SearchOptions } from 'toolkit--local/node';
 import { MegaSearch, createMegaSearch } from 'toolkit--local/node';
 
 import { runtimePathById } from '../../supplement/index.mjs';
+import { MegaSearchEngines } from './mega-search-engines.mjs';
+
+/** Every request's search engines, one per source folder. */
+const engines = new MegaSearchEngines({
+  createEngine: (rootDirectory) =>
+    createMegaSearch({ rootDirectory, concurrency: 4 }),
+  clearCacheOf: (rootDirectory) => MegaSearch.clearCacheFor(rootDirectory),
+});
 
 interface SearchResult {
   query: string;
@@ -20,7 +28,6 @@ interface SearchResult {
 }
 
 class DocumentIntelligenceService {
-  private megaSearchInstance: MegaSearch | null = null;
   private rootDirectory: string;
 
   constructor(rootDirectory: string) {
@@ -31,14 +38,23 @@ class DocumentIntelligenceService {
         path.join(runtimePathById.assets, rootDirectory);
   }
 
+  /**
+   * This folder's search engine, shared across requests and up to date with
+   * the files on disk: a new engine indexes the folder as it's created, one
+   * made earlier first picks up the documents added, edited or deleted
+   * since. Requests that come in together share that refresh.
+   */
   async getMegaSearchInstance(): Promise<MegaSearch> {
-    if (!this.megaSearchInstance) {
-      this.megaSearchInstance = await createMegaSearch({
-        rootDirectory: this.rootDirectory,
-        concurrency: 4,
-      });
+    const { megaSearch, isNew } = await engines.get(this.rootDirectory);
+    if (!isNew) {
+      try {
+        await megaSearch.reindex();
+      } catch (error) {
+        // The index from before is a better answer than none
+        console.error('Search index refresh failed:', error);
+      }
     }
-    return this.megaSearchInstance;
+    return megaSearch;
   }
 
   async searchDocuments(
@@ -86,18 +102,19 @@ class DocumentIntelligenceService {
    * trigger it explicitly, independent of running a search.
    */
   async reindex(): Promise<void> {
-    const megaSearch = await this.getMegaSearchInstance();
-    await megaSearch.reindex();
+    const { megaSearch, isNew } = await engines.get(this.rootDirectory);
+    // A new engine has just indexed the folder
+    if (!isNew) await megaSearch.reindex();
   }
 
   /**
-   * Deletes the on-disk index cache for this instance's rootDirectory.
-   * Deliberately does NOT go through getMegaSearchInstance() — that would
-   * run a full initialize() (reading the very cache being deleted) first.
+   * Deletes the index cache for this instance's rootDirectory, on disk and
+   * in the folder's engine: the next search indexes the folder anew. Never
+   * creates an engine for it — that would read the very cache being deleted
+   * (see MegaSearchEngines.clearCache).
    */
   async clearCache(): Promise<void> {
-    await MegaSearch.clearCacheFor(this.rootDirectory);
-    this.megaSearchInstance = null;
+    await engines.clearCache(this.rootDirectory);
   }
 }
 
