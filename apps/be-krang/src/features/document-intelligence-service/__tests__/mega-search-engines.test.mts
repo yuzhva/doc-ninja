@@ -78,6 +78,16 @@ describe('MegaSearchEngines', () => {
     assert.deepEqual(log, [`create ${docs}`]);
   });
 
+  it('keeps only the folder searched last by default', async () => {
+    const { engines, log } = fakeEngines();
+
+    await engines.get('/a');
+    await engines.get('/b'); // lets go of /a
+
+    assert.equal((await engines.get('/b')).isNew, false);
+    assert.deepEqual(log, ['create /a', 'create /b', 'close /a']);
+  });
+
   it('keeps the most recently searched folders within the limit', async () => {
     const { engines, log } = fakeEngines({ maxEngines: 2 });
 
@@ -100,7 +110,7 @@ describe('MegaSearchEngines', () => {
 
   it('lets go of an engine nobody asked for in idleMs, and keeps one in use', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { engines, log } = fakeEngines({ idleMs: 1000 });
+    const { engines, log } = fakeEngines({ idleMs: 1000, maxEngines: 2 });
 
     await engines.get('/a');
     await engines.get('/b');

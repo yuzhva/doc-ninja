@@ -33,7 +33,11 @@ const folderKey = (rootDirectory: string): string => {
  *
  * A folder not searched for a while gives its memory back: an engine nobody
  * asked for in `idleMs` is let go, and so is the least recently searched one
- * beyond `maxEngines`.
+ * beyond `maxEngines`. That memory is large: the index and every document's
+ * words a search read run to about three times the folder's text (a folder
+ * of 1 GB of text: ~3 GB). So by default only the folder in use keeps one,
+ * and not for long once searches stop; the next search after that loads the
+ * index from its cache again.
  */
 class MegaSearchEngines {
   // Insertion order is recency: least recently used first
@@ -44,8 +48,8 @@ class MegaSearchEngines {
   private readonly idleMs: number;
 
   constructor(private options: MegaSearchEnginesOptions) {
-    this.maxEngines = options.maxEngines ?? 3;
-    this.idleMs = options.idleMs ?? 15 * 60_000;
+    this.maxEngines = options.maxEngines ?? 1;
+    this.idleMs = options.idleMs ?? 5 * 60_000;
   }
 
   /**
