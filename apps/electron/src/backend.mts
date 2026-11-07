@@ -23,6 +23,10 @@ class BackendProcess {
     const child = utilityProcess.fork(this.modulePath, [], {
       serviceName: 'DocNinja backend',
       env: { ...process.env, DOC_NINJA_BACKEND_PATH: this.backendPath },
+      // Lets the backend collect garbage when it lets a folder's search engine
+      // go (see be-krang's MegaSearchEngines): an idle utility process never
+      // collects by itself, and kept the engine's GBs until the next search
+      execArgv: ['--expose-gc'],
     });
     // Below the window's priority: when the computer is busy, the OS gives the
     // window its time first, and a search or the indexing of a folder waits.

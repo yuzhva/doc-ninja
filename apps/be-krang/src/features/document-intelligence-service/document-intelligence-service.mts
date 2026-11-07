@@ -18,8 +18,23 @@ const engines = new MegaSearchEngines({
       { indexFolder: false },
     ),
   clearCacheOf: (rootDirectory) => MegaSearch.clearCacheFor(rootDirectory),
-  closeEngine: (megaSearch) => megaSearch.close(),
+  closeEngine: (megaSearch) => {
+    megaSearch.close();
+    collectGarbageSoon();
+  },
 });
+
+/**
+ * Collects the garbage a second from now — the engine just let go, which
+ * holds about three times its folder's text, once nothing refers to it any
+ * more. Only where the process allows it (Electron's backend process runs with
+ * --expose-gc): an idle Electron utility process collects nothing by itself,
+ * and kept that memory until the next search. Plain Node collects on its own.
+ */
+const collectGarbageSoon = (): void => {
+  const { gc } = globalThis as { gc?: () => void };
+  if (gc) setTimeout(gc, 1000).unref();
+};
 
 interface SearchResult {
   query: string;
