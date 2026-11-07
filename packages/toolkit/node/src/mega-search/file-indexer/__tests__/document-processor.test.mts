@@ -127,6 +127,18 @@ describe('DocumentProcessor', () => {
         'vocab',
         'wordCount',
       ]);
+      // the document's path from the folder, and no path to its text: that
+      // one follows from it
+      assert.equal(onDisk.metadata.relativeFilePath, 'orders/order.txt');
+      assert.deepEqual(Object.keys(onDisk.metadata).sort(), [
+        'fileName',
+        'indexed',
+        'indexedAt',
+        'language',
+        'lastModified',
+        'relativeFilePath',
+        'size',
+      ]);
     });
 
     it('keeps what glues the parts of a number together, in memory, on disk and when read back', async () => {

@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-import { SearchConfig } from './types.mjs';
+import { DocumentMetadata, SearchConfig } from './types.mjs';
 
 interface ResolvedCachePaths {
   /** Absolute path to the shared cache root directory. */
@@ -71,5 +71,89 @@ function resolveCachePaths(config: SearchConfig): ResolvedCachePaths {
   };
 }
 
-export { resolveCachePaths };
-export type { ResolvedCachePaths };
+/**
+ * A document's metadata as the caches save it: its path from the folder
+ * indexed, and no path to its text, which follows from that one.
+ */
+type SavedMetadata = Omit<
+  DocumentMetadata,
+  'originalFilePath' | 'textFilePath'
+> & {
+  /** From the folder indexed, with "/" between names. */
+  relativeFilePath: string;
+};
+
+/**
+ * Documents' paths as the caches save them, and back: from the folder
+ * indexed, with "/" between names, so a cache reads the same wherever the
+ * folder is. Saved whole, a cache written with the folder elsewhere — as
+ * be-krang in Docker sees it, at /usr/src/…, or before the folder was renamed
+ * or its drive came back under another letter — held paths to nothing: the
+ * documents' words were indexed under those, the documents under their real
+ * paths, and searches found none of them.
+ */
+class SavedPaths {
+  /** The folder indexed, and its text cache: each ending in a separator. */
+  private readonly root: string;
+  private readonly txtRoot: string;
+
+  constructor(
+    config: SearchConfig,
+    cachePaths: ResolvedCachePaths = resolveCachePaths(config),
+  ) {
+    this.root = path.join(path.resolve(config.rootDirectory), path.sep);
+    this.txtRoot = path.join(cachePaths.txtCacheRoot, path.sep);
+  }
+
+  /** `filePath`, a document's absolute path, as saved. */
+  save(filePath: string): string {
+    const relative = path.relative(this.root, filePath);
+    return path.sep === '/' ? relative : relative.replace(/\\/g, '/');
+  }
+
+  /**
+   * The absolute path of the document saved as `savedPath`, as the scanner
+   * finds it there. Joined as strings: path.join takes 2–4 µs a path on
+   * Windows, ~20 ms of every start with 7,000 documents.
+   */
+  read(savedPath: string): string {
+    const relative = this.native(savedPath);
+    return this.isPlain(relative)
+      ? this.root + relative
+      : path.resolve(this.root, relative);
+  }
+
+  saveMetadata({
+    originalFilePath,
+    textFilePath,
+    ...metadata
+  }: DocumentMetadata): SavedMetadata {
+    return { ...metadata, relativeFilePath: this.save(originalFilePath) };
+  }
+
+  readMetadata({
+    relativeFilePath,
+    ...metadata
+  }: SavedMetadata): DocumentMetadata {
+    const relative = this.native(relativeFilePath);
+    return {
+      ...metadata,
+      originalFilePath: this.read(relativeFilePath),
+      textFilePath: this.isPlain(relative)
+        ? `${this.txtRoot}${relative}.txt`
+        : path.join(this.txtRoot, `${relative}.txt`),
+    };
+  }
+
+  private native(savedPath: string): string {
+    return path.sep === '/' ? savedPath : savedPath.replace(/\//g, '\\');
+  }
+
+  /** Whether `relative` is inside the folder: not outside it, nor on another drive. */
+  private isPlain(relative: string): boolean {
+    return !relative.startsWith('..') && !path.isAbsolute(relative);
+  }
+}
+
+export { resolveCachePaths, SavedPaths };
+export type { ResolvedCachePaths, SavedMetadata };

@@ -296,6 +296,11 @@ Levels 2 and 3 are stamped with `INDEX_VERSION` (`file-indexer/index-version.mts
 change that indexes the same text differently (tokenizer, normalization, function words, stemmer): the
 next start rebuilds both from the cached text (level 1), so no document is parsed again.
 
+Levels 2 and 3 save documents' paths relative to `rootDirectory`, with `/` between names, and
+read them back as absolute paths: a cache works wherever the folder is — moved, renamed, on a
+drive under another letter, or seen from Docker at another path. In memory, and in search
+results, `originalFilePath` and `textFilePath` are absolute, as before.
+
 A few changed or deleted files update the inverted index for those documents only. A full rebuild,
 which reads every document, happens once `indexRebuildThreshold` (default 20%) of the documents
 changed.
