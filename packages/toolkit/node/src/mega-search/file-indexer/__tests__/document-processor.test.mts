@@ -1,0 +1,378 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
+
+import { createLogger } from '../../shared/logger.mjs';
+import { createTempCorpus, later } from '../../test-utils/temp-corpus.mjs';
+import type { TempCorpus } from '../../test-utils/temp-corpus.mjs';
+import type {
+  DocumentIndex,
+  DocumentMetadata,
+  SearchConfig,
+} from '../../types.mjs';
+import { DocumentProcessor } from '../document-processor.mjs';
+import { INDEX_VERSION } from '../index-version.mjs';
+
+const ORDER_TEXT = 'Наказ про бюджет. Наказ виконано.';
+
+describe('DocumentProcessor', () => {
+  let corpus: TempCorpus;
+  let config: SearchConfig;
+
+  const newProcessor = () =>
+    new DocumentProcessor(config, createLogger('test:document-processor'));
+
+  /** Metadata as FileScannerIndexer would discover it. */
+  const discovered = async (
+    relativePath: string,
+  ): Promise<DocumentMetadata> => {
+    const filePath = corpus.pathOf(relativePath);
+    const stats = await fs.promises.stat(filePath);
+    return {
+      originalFilePath: filePath,
+      fileName: path.basename(filePath),
+      lastModified: stats.mtimeMs,
+      size: stats.size,
+      indexed: false,
+      language: 'mixed',
+    };
+  };
+
+  const indexCacheFile = (relativePath: string) =>
+    `.cache/index/${relativePath}.index.json`;
+
+  /**
+   * Rewrites a per-document index as an install from before index versioning
+   * left it, optionally with the vocab an older tokenizer produced.
+   */
+  const makeUnversioned = async (relativePath: string, vocab?: string[]) => {
+    const file = indexCacheFile(relativePath);
+    const { indexVersion, ...cached } = JSON.parse(await corpus.read(file));
+    await corpus.write(
+      file,
+      JSON.stringify(vocab ? { ...cached, vocab } : cached),
+      later(),
+    );
+  };
+
+  beforeEach(async () => {
+    corpus = await createTempCorpus({ 'orders/order.txt': ORDER_TEXT });
+    config = {
+      rootDirectory: corpus.root,
+      extensions: ['.txt'],
+      maxFileSize: Infinity,
+      concurrency: 1,
+    };
+  });
+
+  afterEach(() => corpus.cleanup());
+
+  describe('indexDocument()', () => {
+    it('encodes the text as vocab + positions and marks the document indexed', async () => {
+      const doc = await newProcessor().indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.deepEqual(doc.vocab, ['наказ', 'про', 'бюджет', 'виконано']);
+      assert.deepEqual(
+        Array.from({ length: doc.positions.length }, (_, token) => [
+          doc.vocab[doc.positions.vocabIndex(token)],
+          ORDER_TEXT.slice(
+            doc.positions.charStart(token),
+            doc.positions.charEnd(token),
+          ),
+        ]),
+        [
+          ['наказ', 'Наказ'],
+          ['про', 'про'],
+          ['бюджет', 'бюджет'],
+          ['наказ', 'Наказ'],
+          ['виконано', 'виконано'],
+        ],
+      );
+      // words only: the function word "про" doesn't count
+      assert.equal(doc.wordCount, 4);
+      assert.equal(doc.metadata.indexed, true);
+      assert.equal(doc.metadata.language, 'ukrainian');
+    });
+
+    it('caches the extracted text and the per-document index, mirroring the source path', async () => {
+      const doc = await newProcessor().indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.equal(
+        doc.metadata.textFilePath,
+        corpus.pathOf('.cache/txt/orders/order.txt.txt'),
+      );
+      assert.equal(
+        await corpus.read('.cache/txt/orders/order.txt.txt'),
+        ORDER_TEXT,
+      );
+      assert.ok(corpus.exists(indexCacheFile('orders/order.txt')));
+    });
+
+    it('saves what a document is read back with, and nothing else', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+      const onDisk = JSON.parse(
+        await corpus.read(indexCacheFile('orders/order.txt')),
+      );
+
+      assert.deepEqual(Object.keys(onDisk).sort(), [
+        'indexVersion',
+        'joints',
+        'metadata',
+        'positions',
+        'vocab',
+        'wordCount',
+      ]);
+      // the document's path from the folder, and no path to its text: that
+      // one follows from it
+      assert.equal(onDisk.metadata.relativeFilePath, 'orders/order.txt');
+      assert.deepEqual(Object.keys(onDisk.metadata).sort(), [
+        'fileName',
+        'indexed',
+        'indexedAt',
+        'language',
+        'lastModified',
+        'relativeFilePath',
+        'size',
+      ]);
+    });
+
+    it('keeps what glues the parts of a number together, in memory, on disk and when read back', async () => {
+      await corpus.write('dated.txt', 'Наказ № 15/2 від 22.12.2024.');
+      // наказ0 15(1) 2(2) від3 22(4) 12(5) 2024(6)
+      const joints = { 2: '/', 5: '.', 6: '.' };
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+      assert.deepEqual(doc.joints, joints);
+      assert.deepEqual(
+        JSON.parse(await corpus.read(indexCacheFile('dated.txt'))).joints,
+        joints,
+      );
+      const readBack = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+      assert.deepEqual(readBack.joints, joints);
+    });
+
+    it('saves the positions as one flat array of numbers, read back the same', async () => {
+      await corpus.write('dated.txt', 'Наказ № 15/2.');
+      const doc = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+
+      // vocabIndex, gap from the token before, length of наказ (0–5),
+      // 15 (8–10) and 2 (11–12) in turn
+      const saved = [0, 0, 5, 1, 3, 2, 2, 1, 1];
+      assert.deepEqual(doc.positions.toJSON(), saved);
+      assert.deepEqual(
+        JSON.parse(await corpus.read(indexCacheFile('dated.txt'))).positions,
+        saved,
+      );
+      const readBack = await newProcessor().indexDocument(
+        await discovered('dated.txt'),
+      );
+      assert.deepEqual(readBack.positions, doc.positions);
+      assert.deepEqual(readBack.positions.at(1), [1, 8, 10]);
+    });
+
+    it('stores an empty, indexed entry for a file without text, so it is not retried forever', async () => {
+      await corpus.write('blank.txt', '   \n  ');
+      const doc = await newProcessor().indexDocument(
+        await discovered('blank.txt'),
+      );
+
+      assert.equal(doc.wordCount, 0);
+      assert.deepEqual(doc.vocab, []);
+      assert.equal(doc.metadata.indexed, true);
+      assert.equal(doc.metadata.language, 'unknown');
+      assert.ok(corpus.exists(indexCacheFile('blank.txt')));
+    });
+
+    it('stores an empty, indexed entry when text extraction fails', async (t) => {
+      t.mock.method(console, 'error', () => {}); // DocumentExtractor logs the failure
+      await corpus.write('data.xyz', 'no parser for this extension');
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('data.xyz'),
+      );
+
+      assert.equal(doc.wordCount, 0);
+      assert.equal(doc.metadata.indexed, true);
+    });
+
+    it('reuses the cached per-document index while it is newer than the source', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+      // new content, but an mtime older than the cache files
+      await corpus.write('orders/order.txt', 'Інший зміст.');
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.deepEqual(doc.vocab, ['наказ', 'про', 'бюджет', 'виконано']);
+    });
+
+    it('stamps the per-document index with the INDEX_VERSION that built it', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+
+      const cached = JSON.parse(
+        await corpus.read(indexCacheFile('orders/order.txt')),
+      );
+      assert.equal(cached.indexVersion, INDEX_VERSION);
+    });
+
+    it('re-tokenizes a per-document index from another index version, from the cached text', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+      await makeUnversioned('orders/order.txt', ['старий', 'токенізатор', 'x']);
+      // new content with the old mtime: the extracted text cache stays valid,
+      // so a re-extraction would show up as "Інший зміст"
+      await corpus.write('orders/order.txt', 'Інший зміст.');
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.deepEqual(doc.vocab, ['наказ', 'про', 'бюджет', 'виконано']);
+      assert.equal(
+        JSON.parse(await corpus.read(indexCacheFile('orders/order.txt')))
+          .indexVersion,
+        INDEX_VERSION,
+      );
+    });
+
+    it('re-extracts a source edited after it was cached (next app start)', async () => {
+      await newProcessor().indexDocument(await discovered('orders/order.txt'));
+      await corpus.write('orders/order.txt', 'Кошторис затверджено.', later());
+
+      const doc = await newProcessor().indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.deepEqual(doc.vocab, ['кошторис', 'затверджено']);
+      assert.equal(
+        await corpus.read('.cache/txt/orders/order.txt.txt'),
+        'Кошторис затверджено.',
+      );
+    });
+
+    it('re-extracts a source edited after it was cached (same process)', async () => {
+      // Regression guard: the in-memory text LRU was keyed by path only, so
+      // the old text was re-indexed — and written back as a per-document
+      // index newer than the source, which kept it stale across restarts.
+      const processor = newProcessor();
+      await processor.indexDocument(await discovered('orders/order.txt'));
+      await corpus.write('orders/order.txt', 'Кошторис затверджено.', later());
+
+      const doc = await processor.indexDocument(
+        await discovered('orders/order.txt'),
+      );
+
+      assert.deepEqual(doc.vocab, ['кошторис', 'затверджено']);
+      assert.deepEqual(
+        (
+          await newProcessor().indexDocument(
+            await discovered('orders/order.txt'),
+          )
+        ).vocab,
+        ['кошторис', 'затверджено'],
+      );
+    });
+  });
+
+  describe('needsReindexing()', () => {
+    const inMemory = (doc: DocumentIndex) =>
+      new Map([[doc.metadata.originalFilePath, doc]]);
+
+    it('is false for an indexed in-memory entry with the same lastModified', async () => {
+      const processor = newProcessor();
+      const metadata = await discovered('orders/order.txt');
+      const doc = await processor.indexDocument(metadata);
+
+      assert.equal(
+        await processor.needsReindexing(metadata, inMemory(doc)),
+        false,
+      );
+    });
+
+    it('is true when lastModified changed or the entry was never indexed', async () => {
+      const processor = newProcessor();
+      const metadata = await discovered('orders/order.txt');
+      const doc = await processor.indexDocument(metadata);
+
+      assert.equal(
+        await processor.needsReindexing(
+          { ...metadata, lastModified: metadata.lastModified + 1 },
+          inMemory(doc),
+        ),
+        true,
+      );
+      assert.equal(
+        await processor.needsReindexing(
+          metadata,
+          inMemory({ ...doc, metadata: { ...doc.metadata, indexed: false } }),
+        ),
+        true,
+      );
+    });
+
+    it('preloads a per-document index from disk when it is newer than the source', async () => {
+      const metadata = await discovered('orders/order.txt');
+      await newProcessor().indexDocument(metadata);
+      const documentCache = new Map<string, DocumentIndex>();
+
+      assert.equal(
+        await newProcessor().needsReindexing(metadata, documentCache),
+        false,
+      );
+      assert.deepEqual(documentCache.get(metadata.originalFilePath)?.vocab, [
+        'наказ',
+        'про',
+        'бюджет',
+        'виконано',
+      ]);
+    });
+
+    it('is true when nothing is cached', async () => {
+      assert.equal(
+        await newProcessor().needsReindexing(
+          await discovered('orders/order.txt'),
+          new Map(),
+        ),
+        true,
+      );
+    });
+
+    it('is true when the cached per-document index is from another index version', async () => {
+      const metadata = await discovered('orders/order.txt');
+      await newProcessor().indexDocument(metadata);
+      await makeUnversioned('orders/order.txt');
+      const documentCache = new Map<string, DocumentIndex>();
+
+      assert.equal(
+        await newProcessor().needsReindexing(metadata, documentCache),
+        true,
+      );
+      assert.equal(documentCache.size, 0);
+    });
+
+    it('is true when the cached per-document index is corrupted', async () => {
+      const metadata = await discovered('orders/order.txt');
+      await newProcessor().indexDocument(metadata);
+      await fs.promises.writeFile(
+        corpus.pathOf(indexCacheFile('orders/order.txt')),
+        '{ not json',
+      );
+
+      assert.equal(
+        await newProcessor().needsReindexing(metadata, new Map()),
+        true,
+      );
+    });
+  });
+});

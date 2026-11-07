@@ -3,25 +3,56 @@ import * as path from 'path';
 import { promisify } from 'util';
 
 import { DocumentExtractor } from '../../document-extractor/index.mjs';
-import { resolveCachePaths } from '../cache-paths.mjs';
-import type { ResolvedCachePaths } from '../cache-paths.mjs';
+import { SavedPaths, resolveCachePaths } from '../cache-paths.mjs';
+import type { ResolvedCachePaths, SavedMetadata } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
-import { UkrainianTextProcessor } from '../text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  countsAsWord,
+  findJoints,
+} from '../text-processor.mjs';
+import { TokenPositions } from '../token-positions.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
+import { INDEX_VERSION } from './index-version.mjs';
+
+/**
+ * Whether `doc` was indexed from the file as discovery reports it now.
+ *
+ * Discovery reports whole milliseconds, while a document read back from its
+ * per-document cache carries fs.stat's fractions of one. Times less than
+ * 1 ms apart are the same version — compared exactly, every such document
+ * counted as changed on every start, and the whole index was rebuilt.
+ */
+function isIndexedAsIs(
+  doc: DocumentIndex | undefined,
+  file: DocumentMetadata,
+): boolean {
+  return (
+    !!doc?.metadata.indexed &&
+    Math.abs(doc.metadata.lastModified - file.lastModified) < 1
+  );
+}
 
 class DocumentProcessor {
   private textProcessor = new UkrainianTextProcessor();
   private documentExtractor = new DocumentExtractor();
-  private textLRU = new LRUCache<string, string>(25);
+  // Remembers which source version (mtime) the text came from, so an edit to
+  // the file invalidates it instead of re-indexing the old text.
+  private textLRU = new LRUCache<
+    string,
+    { text: string; sourceMtimeMs: number }
+  >(25);
   private createdDirectories = new Set<string>();
   private cachePaths: ResolvedCachePaths;
+  private savedPaths: SavedPaths;
 
   constructor(
     private config: SearchConfig,
     private logger: Logger,
   ) {
     this.cachePaths = resolveCachePaths(this.config);
+    this.savedPaths = new SavedPaths(this.config, this.cachePaths);
   }
 
   private getCacheRelativePath(filePath: string): string {
@@ -39,6 +70,15 @@ class DocumentProcessor {
     return path.join(this.cachePaths.indexCacheRoot, `${rel}.index.json`);
   }
 
+  /**
+   * Forgets what it keeps in memory about the caches on disk — call it when
+   * they're deleted, or the folders it created would count as still there.
+   */
+  clearMemoryCache(): void {
+    this.textLRU.clear();
+    this.createdDirectories.clear();
+  }
+
   private async ensureDirectory(dirPath: string): Promise<void> {
     if (this.createdDirectories.has(dirPath)) return;
     await fs.promises.mkdir(dirPath, { recursive: true });
@@ -47,19 +87,22 @@ class DocumentProcessor {
 
   async extractTextFromFile(filePath: string): Promise<string> {
     try {
-      const cached = this.textLRU.get(filePath);
-      if (cached) return cached;
-
       const txtPath = this.getTextCachePath(filePath);
       await this.ensureDirectory(path.dirname(txtPath));
 
       try {
         const srcStat = await promisify(fs.stat)(filePath);
+        const sourceMtimeMs = srcStat.mtimeMs;
+
+        const cached = this.textLRU.get(filePath);
+        if (cached && cached.sourceMtimeMs === sourceMtimeMs)
+          return cached.text;
+
         try {
           const txtStat = await promisify(fs.stat)(txtPath);
-          if (txtStat.mtimeMs >= srcStat.mtimeMs) {
+          if (txtStat.mtimeMs >= sourceMtimeMs) {
             const text = await promisify(fs.readFile)(txtPath, 'utf8');
-            this.textLRU.set(filePath, text);
+            this.textLRU.set(filePath, { text, sourceMtimeMs });
             return text;
           }
         } catch (statError) {
@@ -68,16 +111,16 @@ class DocumentProcessor {
 
         const text = await this.documentExtractor.extractText({ filePath });
         await promisify(fs.writeFile)(txtPath, text, 'utf8');
-        this.textLRU.set(filePath, text);
+        this.textLRU.set(filePath, { text, sourceMtimeMs });
         return text;
       } catch (diskError) {
+        // Without a source mtime the text can't be validated later, so it is
+        // not kept in the LRU.
         this.logger.warn(
           `Cache operation failed for ${path.basename(filePath)}, extracting directly:`,
           diskError instanceof Error ? diskError.message : String(diskError),
         );
-        const text = await this.documentExtractor.extractText({ filePath });
-        this.textLRU.set(filePath, text);
-        return text;
+        return await this.documentExtractor.extractText({ filePath });
       }
     } catch (error) {
       this.logger.error(
@@ -95,11 +138,7 @@ class DocumentProcessor {
     documentCache: Map<string, DocumentIndex>,
   ): Promise<boolean> {
     const cached = documentCache.get(metadata.originalFilePath);
-    if (cached) {
-      if (!cached.metadata.indexed) return true;
-      if (cached.metadata.lastModified !== metadata.lastModified) return true;
-      return false;
-    }
+    if (cached) return !isIndexedAsIs(cached, metadata);
 
     const indexPath = this.getIndexCachePath(metadata.originalFilePath);
     try {
@@ -108,20 +147,10 @@ class DocumentProcessor {
 
       if (indexStat.mtimeMs >= sourceStat.mtimeMs) {
         try {
-          const content = await promisify(fs.readFile)(indexPath, 'utf8');
-          const cached = JSON.parse(content);
-          cached.termFrequency = new Map();
+          const cached = await this.readCachedIndex(indexPath, metadata);
+          if (!cached) return true;
           cached.metadata.lastModified = sourceStat.mtimeMs;
           cached.metadata.size = sourceStat.size;
-
-          if (!cached.metadata.originalFilePath && cached.metadata.filePath) {
-            cached.metadata.originalFilePath = cached.metadata.filePath;
-          }
-          if (!cached.metadata.textFilePath) {
-            cached.metadata.textFilePath = this.getTextCachePath(
-              metadata.originalFilePath,
-            );
-          }
 
           documentCache.set(metadata.originalFilePath, cached);
           this.logger.debug(
@@ -187,25 +216,16 @@ class DocumentProcessor {
 
       try {
         const idxStat = await promisify(fs.stat)(indexPath);
-        if (idxStat.mtimeMs >= srcStat.mtimeMs) {
-          const cached = JSON.parse(
-            await promisify(fs.readFile)(indexPath, 'utf8'),
-          );
-          cached.termFrequency = new Map(Object.entries(cached.termFrequency));
+        const cached =
+          idxStat.mtimeMs >= srcStat.mtimeMs
+            ? await this.readCachedIndex(indexPath, metadata)
+            : null;
+        if (cached) {
           cached.metadata.lastModified = srcStat.mtimeMs;
           cached.metadata.size = srcStat.size;
           cached.metadata.indexed = true;
 
-          if (!cached.metadata.originalFilePath && cached.metadata.filePath) {
-            cached.metadata.originalFilePath = cached.metadata.filePath;
-          }
-          if (!cached.metadata.textFilePath) {
-            cached.metadata.textFilePath = this.getTextCachePath(
-              metadata.originalFilePath,
-            );
-          }
-
-          this.logger.info(`📋 Loaded cached index for ${metadata.fileName}`);
+          this.logger.debug(`📋 Loaded cached index for ${metadata.fileName}`);
           return cached;
         }
       } catch (cacheError) {
@@ -244,33 +264,28 @@ class DocumentProcessor {
       }
 
       const tIndexStart = Date.now();
-      const termFrequency = new Map<string, number>();
       const vocab: string[] = [];
       const vocabMap = new Map<string, number>();
-      const positions: Array<[number, number, number]> = [];
-      const stemCache = new Map<string, string>();
+      // vocabIndex, charStart, charEnd of each token in turn
+      const positions = new Uint32Array(rawTokens.length * 3);
+      // Words only: numbers and function words leave BM25 document lengths
+      // as they were
+      let wordCount = 0;
+      const vocabCountsAsWord: boolean[] = [];
 
-      rawTokens.forEach((token) => {
+      rawTokens.forEach((token, tokenIndex) => {
         let vocabIndex = vocabMap.get(token.term);
         if (vocabIndex === undefined) {
           vocabIndex = vocab.length;
           vocab.push(token.term);
           vocabMap.set(token.term, vocabIndex);
+          vocabCountsAsWord.push(countsAsWord(token.term));
         }
+        if (vocabCountsAsWord[vocabIndex]) wordCount++;
 
-        positions.push([vocabIndex, token.charStart, token.charEnd]);
-
-        let stemmedTerm = stemCache.get(token.normalized);
-        if (stemmedTerm === undefined) {
-          // REVIEW: the {isTypoToleranceEnabled} been used before
-          stemmedTerm = this.textProcessor.stemWord(token.normalized);
-          stemCache.set(token.normalized, stemmedTerm);
-        }
-
-        termFrequency.set(
-          stemmedTerm,
-          (termFrequency.get(stemmedTerm) || 0) + 1,
-        );
+        positions[tokenIndex * 3] = vocabIndex;
+        positions[tokenIndex * 3 + 1] = token.charStart;
+        positions[tokenIndex * 3 + 2] = token.charEnd;
       });
       const tIndexEnd = Date.now();
 
@@ -284,22 +299,20 @@ class DocumentProcessor {
           textFilePath: this.getTextCachePath(metadata.originalFilePath),
         },
         vocab,
-        positions,
-        termFrequency,
-        wordCount: positions.length,
+        positions: TokenPositions.fromFlat(positions),
+        joints: findJoints(text, rawTokens),
+        wordCount,
       };
 
       const tSaveStart = Date.now();
       await this.saveIndexToDisk(documentIndex);
       const tSaveEnd = Date.now();
 
-      documentIndex.termFrequency = new Map();
-
       const endTime = Date.now();
       const duration = endTime - startTime;
 
       if (duration > 1000) {
-        this.logger.info(
+        this.logger.debug(
           `🐢 Slow indexing (${duration}ms) for ${metadata.fileName}:`,
           {
             extract: tExtractEnd - tExtractStart,
@@ -310,7 +323,7 @@ class DocumentProcessor {
         );
       }
 
-      this.logger.info('💾 Document indexing completed', {
+      this.logger.debug('💾 Document indexing completed', {
         fileName: metadata.fileName,
         tokens: documentIndex.wordCount,
         duration,
@@ -324,6 +337,37 @@ class DocumentProcessor {
     }
   }
 
+  /**
+   * The per-document index of the document `metadata` describes, from disk,
+   * or null when another INDEX_VERSION built it: its vocab and positions may
+   * not be what tokenizing the text gives now. Throws on a corrupted file.
+   */
+  private async readCachedIndex(
+    indexPath: string,
+    metadata: DocumentMetadata,
+  ): Promise<any | null> {
+    const { indexVersion = 1, ...cached } = JSON.parse(
+      await promisify(fs.readFile)(indexPath, 'utf8'),
+    );
+    if (indexVersion !== INDEX_VERSION) {
+      this.logger.debug(
+        `📋 Cached index for ${metadata.fileName} is from index version ${indexVersion}, will rebuild`,
+      );
+      return null;
+    }
+    const { relativeFilePath, ...saved }: SavedMetadata = cached.metadata;
+    return {
+      ...cached,
+      // Its paths are the document's: the file was found by them
+      metadata: {
+        ...saved,
+        originalFilePath: metadata.originalFilePath,
+        textFilePath: this.getTextCachePath(metadata.originalFilePath),
+      },
+      positions: TokenPositions.fromSaved(cached.positions),
+    };
+  }
+
   private createEmptyIndex(metadata: DocumentMetadata): DocumentIndex {
     return {
       metadata: {
@@ -334,8 +378,8 @@ class DocumentProcessor {
         textFilePath: this.getTextCachePath(metadata.originalFilePath),
       },
       vocab: [],
-      positions: [],
-      termFrequency: new Map(),
+      positions: TokenPositions.EMPTY,
+      joints: {},
       wordCount: 0,
     };
   }
@@ -348,8 +392,9 @@ class DocumentProcessor {
       await this.ensureDirectory(path.dirname(indexPath));
 
       const toSave = {
+        indexVersion: INDEX_VERSION,
         ...documentIndex,
-        termFrequency: Object.fromEntries(documentIndex.termFrequency),
+        metadata: this.savedPaths.saveMetadata(documentIndex.metadata),
       };
       await promisify(fs.writeFile)(indexPath, JSON.stringify(toSave), 'utf8');
       this.logger.debug(
@@ -364,4 +409,4 @@ class DocumentProcessor {
   }
 }
 
-export { DocumentProcessor };
+export { DocumentProcessor, isIndexedAsIs };

@@ -1,4 +1,7 @@
+import { createLogger } from './shared/logger.mjs';
 import type { DocumentIndex } from './types.mjs';
+
+const logger = createLogger('BM25');
 
 interface BM25Config {
   k1: number; // Controls term frequency saturation (typically 1.0-2.0)
@@ -13,15 +16,17 @@ class BM25Scorer {
   /**
    * Calculate average document length for the corpus
    */
-  calculateAverageDocLength(documents: Map<string, DocumentIndex>): void {
+  calculateAverageDocLength(
+    documents: ReadonlyMap<string, DocumentIndex>,
+  ): void {
     const totalLength = Array.from(documents.values()).reduce(
       (sum, doc) => sum + doc.wordCount,
       0,
     );
 
     this.avgDocLength = totalLength / documents.size;
-    console.log(
-      `[BM25] Calculated average document length: ${this.avgDocLength.toFixed(2)} tokens`,
+    logger.debug(
+      `Calculated average document length: ${this.avgDocLength.toFixed(2)} tokens`,
     );
   }
 
@@ -32,7 +37,10 @@ class BM25Scorer {
    * score = IDF(qi) * (f(qi,D) * (k1 + 1)) / (f(qi,D) + k1 * (1 - b + b * |D| / avgdl))
    *
    * Where:
-   * - IDF(qi) = log((N - df(qi) + 0.5) / (df(qi) + 0.5))
+   * - IDF(qi) = ln(1 + (N - df(qi) + 0.5) / (df(qi) + 0.5)), Lucene's variant:
+   *   always positive. The classic ln((N - df + 0.5) / (df + 0.5)) is 0 at
+   *   df = N/2 and negative above, so a word most documents hold scored 0 or
+   *   less, and more occurrences of it ranked a document lower.
    * - f(qi,D) = frequency of term qi in document D
    * - |D| = length of document D in tokens
    * - avgdl = average document length in the collection
@@ -45,8 +53,7 @@ class BM25Scorer {
     docFreq: number, // df(qi) - documents containing term
     totalDocs: number, // N - total documents in corpus
   ): number {
-    // Calculate IDF component using BM25 IDF formula
-    const idf = Math.log((totalDocs - docFreq + 0.5) / (docFreq + 0.5));
+    const idf = Math.log(1 + (totalDocs - docFreq + 0.5) / (docFreq + 0.5));
 
     // Calculate term frequency component with saturation
     const tfComponent =

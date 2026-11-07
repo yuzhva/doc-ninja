@@ -6,24 +6,46 @@ type SearchOptions = {
   topN?: number;
 
   /**
-   * Enable typo tolerance for individual words (default: true).
-   * Example: "apple" matches "apply" with maxTypoDistance=1
+   * "Allow fuzzy match" in the UI (default: true). It does not control
+   * typos — maxTypoDistance does, in both modes:
+   * - true:  any inflected form of a query word matches: "Євгена" finds
+   *          "Євген", "Євгену", "Євгеній"; "parked" finds "parking", "parks".
+   * - false: only the form typed (letter case aside): "Євгена" finds "Євгена".
    */
-  isTypoToleranceEnabled?: boolean;
+  isInflectedWordFormsAllowed?: boolean;
 
   /**
-   * Max character edits allowed per word (default: 1).
-   * 1 = one character difference (insertion, deletion, substitution)
+   * With fuzzy match on, also match related words (default: true): words
+   * whose stem is the query word's plus or minus up to 2 letters. Ranked
+   * below the word's own forms. That takes in:
+   * - words derived with a short suffix: "столяр" finds "столярного",
+   *   "облік" finds "обліковими";
+   * - verb forms the stemmer splits: "призначив" finds "призначила";
+   * - surnames derived the same way: "Бондар" finds "Бондарук", "Цап" finds
+   *   "Цапик", "Кота" finds "Котика" — so turn it off to search names.
+   * Every inflected form of the word is found either way ("паперовий" finds
+   * "паперова", "Мирослав" finds "Мирослава"). No effect with fuzzy match off.
+   */
+  isRelatedWordsAllowed?: boolean;
+
+  /**
+   * Max character edits allowed per word (default: 1; 0 = no typos), with
+   * fuzzy match on and off alike: "єгена" finds "Євгена" either way — and,
+   * with fuzzy match on, the other forms of "Євген" too.
+   * 1 = one character difference (insertion, deletion, substitution, or a
+   * swap of two adjacent letters)
    * Example: "apple" matches "apply" (1 substitution: e→y)
-   * Example: "search" matches "serach" (1 transposition)
+   * Example: "search" matches "serach" (1 swap: ar→ra)
    * Increase to 2 for longer words or more typos.
+   * Numbers take no typos, nor other forms: "2024" never finds "2023".
    */
   maxTypoDistance?: number;
 
   // Word-level phrase proximity
   /**
-   * Enable proximity matching within phrase searches (default: false).
-   * Only applies when query is wrapped in quotes: "rich car"
+   * Search every multi-word query as a phrase (default: false), quoted or
+   * not: its words in order, at most maxWordsInPhraseDistance words apart.
+   * Without it, only a "quoted" query is a phrase, and a strict one.
    * Example: "rich car" matches "rich expensive car" with maxWordsInPhraseDistance=1
    */
   isPhraseProximityEnabled?: boolean;
@@ -34,6 +56,10 @@ type SearchOptions = {
    * 1 = Allow 1 word gap: "rich car" → "rich expensive car"
    * 2 = Allow 2 word gap: "rich car" → "rich very expensive car"
    * Example: "san francisco" matches "san jose to francisco" with maxWordsInPhraseDistance=2
+   * Numbers in between don't count as words: with 0, "наказ відпустку"
+   * matches "Наказ № 15 від 01.02.2024 про відпустку". A number the query
+   * writes glued together ("22.12.2024") is always found as written: its
+   * parts side by side, glued by the same characters.
    */
   maxWordsInPhraseDistance?: number;
 

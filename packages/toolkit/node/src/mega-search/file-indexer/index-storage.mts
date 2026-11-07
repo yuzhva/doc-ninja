@@ -5,17 +5,69 @@ import { promisify } from 'util';
 import * as v8 from 'v8';
 import * as zlib from 'zlib';
 
-import { resolveCachePaths } from '../cache-paths.mjs';
-import type { ResolvedCachePaths } from '../cache-paths.mjs';
+import { SavedPaths, resolveCachePaths } from '../cache-paths.mjs';
+import type { ResolvedCachePaths, SavedMetadata } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
-import { DocumentIndex, SearchConfig } from '../types.mjs';
+import { TokenPositions } from '../token-positions.mjs';
+import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
+import { INDEX_VERSION } from './index-version.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
+
+/** What a document's per-document index holds beside its metadata. */
+type DocumentWords = Pick<DocumentIndex, 'vocab' | 'positions' | 'joints'>;
+
+/** A document as the global index saves it: no words. */
+interface SavedDocument {
+  metadata: SavedMetadata;
+  wordCount: number;
+}
+
+/**
+ * A document as the global index holds it: its metadata and word count, and
+ * its words read from its per-document index on first use, once.
+ *
+ * One class, so every document has one shape and shares one set of getters.
+ * Getters defined on each document object, with closures of their own, left
+ * all of them but the first in V8's slow dictionary mode, read that way by
+ * every search for as long as the index was open: on 362 documents, 1925
+ * searches took a fifth longer than with this class.
+ */
+class LazyDocument implements DocumentIndex {
+  #words: DocumentWords | null;
+  readonly #readWords: () => DocumentWords;
+
+  constructor(
+    public metadata: DocumentMetadata,
+    public wordCount: number,
+    readWords: () => DocumentWords,
+    words: DocumentWords | null,
+  ) {
+    this.#readWords = readWords;
+    this.#words = words;
+  }
+
+  get vocab(): string[] {
+    return this.#load().vocab;
+  }
+
+  get positions(): TokenPositions {
+    return this.#load().positions;
+  }
+
+  get joints(): Record<number, string> {
+    return this.#load().joints;
+  }
+
+  #load(): DocumentWords {
+    return (this.#words ??= this.#readWords());
+  }
+}
 
 class IndexStorage {
   private gunzipAsync = promisify(zlib.gunzip);
-  public needsOptimization = false;
   private cachePaths: ResolvedCachePaths;
+  private savedPaths: SavedPaths;
 
   constructor(
     private config: SearchConfig,
@@ -23,6 +75,7 @@ class IndexStorage {
     private documentLRU: LRUCache<string, DocumentIndex>,
   ) {
     this.cachePaths = resolveCachePaths(this.config);
+    this.savedPaths = new SavedPaths(this.config, this.cachePaths);
   }
 
   private getCacheRelativePath(filePath: string): string {
@@ -48,15 +101,9 @@ class IndexStorage {
       estimatedSize += entries.length * 8;
     });
 
-    documentCache.forEach((doc) => {
-      estimatedSize += 500;
-      estimatedSize += doc.vocab.reduce(
-        (sum, term) => sum + term.length * 2,
-        0,
-      );
-      estimatedSize += doc.positions.length * 12;
-      estimatedSize += doc.termFrequency.size * 30;
-    });
+    // Documents go in with their metadata only: their words stay in the
+    // per-document indexes, and reading them would load every one from disk
+    estimatedSize += documentCache.size * 500;
     return Math.round(estimatedSize * 1.3);
   }
 
@@ -122,7 +169,18 @@ class IndexStorage {
       let result: any = null;
       try {
         const marker = JSON.parse(content);
-        if (marker.format === 'v8-chunked-compact') {
+        if (
+          marker.format === 'v8-chunked-compact' &&
+          (marker.indexVersion ?? 1) !== INDEX_VERSION
+        ) {
+          // Its postings and stems come from another tokenizer/stemmer, and
+          // so do the per-document indexes it points to (DocumentProcessor
+          // rebuilds those by the same check).
+          this.logger.warn(
+            `⚠️ Index was built by index version ${marker.indexVersion ?? 1} (current: ${INDEX_VERSION}). Rebuilding...`,
+          );
+          return null;
+        } else if (marker.format === 'v8-chunked-compact') {
           // New format version
           this.logger.debug('📦 Loading optimized V8 chunked compact index...');
           result = await this.loadGlobalInvertedIndexChunked(
@@ -187,7 +245,11 @@ class IndexStorage {
 
       // Save Document Mapping
       const docMappingPath = path.join(chunkedDir, `doc_mapping${chunkExt}`);
-      const docMappingBuffer = v8.serialize(invertedIndex.getDocMapping());
+      const docMappingBuffer = v8.serialize(
+        invertedIndex
+          .getDocMapping()
+          .map((filePath) => this.savedPaths.save(filePath)),
+      );
       await fs.promises.writeFile(
         docMappingPath,
         useCompression
@@ -196,17 +258,15 @@ class IndexStorage {
       );
 
       // Save Documents
-      const docEntries = Array.from(documentCache.entries());
-      const lightDocEntries = docEntries.map(([key, doc]) => {
-        const lightDoc: any = {
-          metadata: doc.metadata,
+      const savedDocs = Array.from(
+        documentCache.values(),
+        (doc): SavedDocument => ({
+          metadata: this.savedPaths.saveMetadata(doc.metadata),
           wordCount: doc.wordCount,
-          termFrequency: new Map(),
-        };
-        return [key, lightDoc];
-      });
+        }),
+      );
 
-      const docChunks = this.chunkMapEntries(lightDocEntries, 50);
+      const docChunks = this.chunkMapEntries(savedDocs, 50);
       this.logger.info(
         `📑 Saving document cache in ${docChunks.length} chunks`,
       );
@@ -263,7 +323,8 @@ class IndexStorage {
 
       const markerContent = JSON.stringify({
         format: 'v8-chunked-compact',
-        version: '3.0',
+        version: '3.0', // storage format; what it holds is indexVersion
+        indexVersion: INDEX_VERSION,
         compression: useCompression ? 'gzip' : 'none',
         chunkedDir: path.relative(path.dirname(globalIndexPath), chunkedDir),
         createdAt: new Date().toISOString(),
@@ -291,11 +352,6 @@ class IndexStorage {
       chunks.push(entries.slice(i, i + chunkSize));
     }
     return chunks;
-  }
-
-  private getTextCachePath(filePath: string): string {
-    const rel = this.getCacheRelativePath(filePath);
-    return path.join(this.cachePaths.txtCacheRoot, `${rel}.txt`);
   }
 
   private async loadGlobalInvertedIndexChunked(
@@ -340,7 +396,9 @@ class IndexStorage {
         compression === 'gzip'
           ? await this.gunzipAsync(docMappingData)
           : docMappingData;
-      const docMapping = v8.deserialize(docMappingBuffer) as string[];
+      const docMapping = (v8.deserialize(docMappingBuffer) as string[]).map(
+        (savedPath) => this.savedPaths.read(savedPath),
+      );
 
       // Initialize InvertedIndex with mapping but empty map
       invertedIndex.restore(new Map(), docMapping);
@@ -417,23 +475,13 @@ class IndexStorage {
       await loadChunksParallel(
         metadata.chunkInfo.documentChunks,
         'documents',
-        (entries: [string, any][]) => {
-          for (const [filePath, doc] of entries) {
-            if (!doc.metadata.originalFilePath && doc.metadata.filePath) {
-              doc.metadata.originalFilePath = doc.metadata.filePath;
-              delete doc.metadata.filePath;
-            }
-            if (!doc.metadata.textFilePath) {
-              doc.metadata.textFilePath = this.getTextCachePath(
-                doc.metadata.originalFilePath,
-              );
-            }
-            if (doc.vocab || doc.positions) {
-              this.needsOptimization = true;
-            }
-            doc.termFrequency = new Map();
-            this.makeDocumentLazy(doc);
-            documentCache.set(filePath, doc);
+        (docs: SavedDocument[]) => {
+          for (const doc of docs) {
+            const metadata = this.savedPaths.readMetadata(doc.metadata);
+            documentCache.set(
+              metadata.originalFilePath,
+              this.lazyDocument({ ...doc, metadata }),
+            );
           }
         },
         'Documents',
@@ -474,47 +522,58 @@ class IndexStorage {
     }
   }
 
-  private makeDocumentLazy(doc: DocumentIndex): void {
-    const indexPath = this.getIndexCachePath(doc.metadata.originalFilePath);
-    let _vocab: string[] | null = doc.vocab || null;
-    let _positions: [number, number, number][] | null = doc.positions || null;
+  /** A document read from the global index, its words read on first use. */
+  private lazyDocument(saved: any): LazyDocument {
+    const { metadata, wordCount, vocab, positions, joints } = saved;
+    return new LazyDocument(
+      metadata,
+      wordCount,
+      () => this.readWords(metadata),
+      // Indexes saved long ago held the words in the global index too
+      vocab && positions && joints ? { vocab, positions, joints } : null,
+    );
+  }
 
-    const loadFromDisk = () => {
-      if (_vocab && _positions) return;
-      const cached = this.documentLRU.get(doc.metadata.originalFilePath);
-      if (cached && cached.vocab && cached.positions) {
-        _vocab = cached.vocab;
-        _positions = cached.positions;
-        return;
-      }
-      try {
-        const content = fs.readFileSync(indexPath, 'utf8');
-        const fullDoc = JSON.parse(content);
-        _vocab = fullDoc.vocab || [];
-        _positions = fullDoc.positions || [];
-        this.documentLRU.set(doc.metadata.originalFilePath, fullDoc);
-      } catch (e) {
-        _vocab = [];
-        _positions = [];
-      }
-    };
+  /**
+   * The words of the document's per-document index — of the version the
+   * global index holds, or none.
+   */
+  private readWords(metadata: DocumentMetadata): DocumentWords {
+    // Words saved for another version of the document (indexed since) don't
+    // fit the postings searches read with this one: it reads none instead.
+    // FileIndexer loads a version's words before it indexes the file anew.
+    const isThisVersion = (saved: DocumentIndex | undefined) =>
+      saved?.metadata?.indexedAt === metadata.indexedAt;
+    const wordsOf = ({ vocab, positions, joints }: DocumentWords) => ({
+      vocab,
+      positions,
+      joints,
+    });
 
-    Object.defineProperty(doc, 'vocab', {
-      get: () => {
-        loadFromDisk();
-        return _vocab;
-      },
-      configurable: true,
-      enumerable: true,
-    });
-    Object.defineProperty(doc, 'positions', {
-      get: () => {
-        loadFromDisk();
-        return _positions;
-      },
-      configurable: true,
-      enumerable: true,
-    });
+    const cached = this.documentLRU.get(metadata.originalFilePath);
+    if (cached && isThisVersion(cached)) return wordsOf(cached);
+    try {
+      const indexPath = this.getIndexCachePath(metadata.originalFilePath);
+      const fullDoc = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      const { relativeFilePath, ...saved }: SavedMetadata = fullDoc.metadata;
+      // Its paths are the document's: the file was found by them
+      fullDoc.metadata = {
+        ...saved,
+        originalFilePath: metadata.originalFilePath,
+        textFilePath: metadata.textFilePath,
+      };
+      fullDoc.positions = TokenPositions.fromSaved(fullDoc.positions);
+      fullDoc.vocab ??= [];
+      fullDoc.joints ??= {};
+      this.documentLRU.set(metadata.originalFilePath, fullDoc);
+      if (isThisVersion(fullDoc)) return wordsOf(fullDoc);
+      this.logger.debug(
+        `📋 ${metadata.fileName} was indexed anew: reading the version searches had as empty`,
+      );
+    } catch (e) {
+      // A missing or unreadable file reads as an empty document
+    }
+    return { vocab: [], positions: TokenPositions.EMPTY, joints: {} };
   }
 }
 

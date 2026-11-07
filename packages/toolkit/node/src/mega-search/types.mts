@@ -1,3 +1,5 @@
+import type { TokenPositions } from './token-positions.mjs';
+
 interface DocumentMetadata {
   fileName: string;
   /** Absolute path to the original source file (e.g. .doc, .docx) */
@@ -43,8 +45,15 @@ interface ParagraphInfo {
 interface DocumentIndex {
   metadata: DocumentMetadata;
   vocab: string[]; // Array of unique words in the document
-  positions: Array<[number, number, number]>; // Tuples of [vocabIndex, charStart, charEnd]
-  termFrequency: Map<string, number>;
+  /** Each token's vocab index and the characters it spans, in text order. */
+  positions: TokenPositions;
+  /**
+   * What glues a token to the one before it, by the token's position, where
+   * one of the two is a number: "22.12.2024" → "." at 12 and at 2024. See
+   * findJoints.
+   */
+  joints: Record<number, string>;
+  /** Words only: the numbers among `positions` don't count. */
   wordCount: number;
   paragraphs?: ParagraphInfo[]; // Add paragraph structure
 }
@@ -53,6 +62,37 @@ interface InvertedIndexEntry {
   documentId: string;
   frequency: number;
   positions: number[];
+}
+
+/** Which documents a search reads, by path: see PostingsReader.get. */
+type DocumentFilter = Pick<ReadonlySet<string>, 'has'>;
+
+/** What a search reads from the inverted index. */
+interface PostingsReader {
+  /**
+   * The term's postings, one per document holding it; undefined if none does.
+   * With `documents`, only theirs: the others' positions aren't even read.
+   */
+  get(
+    term: string,
+    documents?: DocumentFilter,
+  ): InvertedIndexEntry[] | undefined;
+  /** How many documents hold at least one of the terms, of all indexed. */
+  countDocuments(terms: Iterable<string>): number;
+}
+
+/**
+ * One version of the index, as a search reads it: in place, never copied
+ * (FileIndexer.getSearchSnapshot). Nothing in it changes once searches can
+ * read it, so a search reads the same version from start to end.
+ */
+interface SearchSnapshot {
+  /** The version: see FileIndexer.indexGeneration. */
+  generation: number;
+  docCache: ReadonlyMap<string, DocumentIndex>;
+  invertedIndex: PostingsReader;
+  /** Stem → its words. Words only: a number is its own term, with no forms. */
+  stemDictionary: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 interface GlobalIndex {
@@ -91,15 +131,32 @@ interface SearchConfig {
 
   // Index rebuild threshold configuration
   /**
-   * The percentage of files that need to be re-indexed to trigger a full inverted index rebuild.
-   * A lower value means more frequent rebuilds. Default: 0.001 (0.1%).
+   * The share of indexed documents that need re-indexing to rebuild the
+   * inverted index from every document. Fewer changes update it for the
+   * changed documents only, which reads no other document from disk. Either
+   * way every change is applied, in the next search. A lower value means
+   * more frequent full rebuilds. Default: 0.2 (a fifth).
    */
   indexRebuildThreshold?: number;
   /**
-   * The minimum number of files that need re-indexing to trigger a rebuild, regardless of the threshold.
-   * Prevents skipping rebuilds for very small numbers of changes. Default: 5.
+   * The minimum number of re-indexed files for a full rebuild, whatever the
+   * threshold. Default: 1.
    */
   minFilesForRebuild?: number;
+
+  /**
+   * Watch the folder for changes, so MegaSearch.refresh() lists its files
+   * only after one: a refresh before every search then costs nothing while
+   * no file changes. Call MegaSearch.close() to stop. Default: false — every
+   * refresh lists the files.
+   */
+  watchFiles?: boolean;
+  /**
+   * With `watchFiles`: the longest a refresh goes without listing the files,
+   * in ms, in case the watcher missed a change (a network share). Default:
+   * 60000.
+   */
+  rescanAfterMs?: number;
 }
 
 interface SearchResult {
@@ -122,11 +179,14 @@ interface SafeSearchResult<T> {
 }
 
 export type {
+  DocumentFilter,
   DocumentIndex,
   DocumentMetadata,
   InvertedIndexEntry,
   GlobalIndex,
+  PostingsReader,
   SearchConfig,
+  SearchSnapshot,
   SearchMatch,
   SearchResult,
   SearchToken,

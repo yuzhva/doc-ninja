@@ -1,218 +1,121 @@
-import { levenshtein } from './fuzzy.mjs';
-import { getDocumentToken } from './mega-search.utils.mjs';
-import { UkrainianTextProcessor } from './text-processor.mjs';
-import { DocumentIndex, InvertedIndexEntry } from './types.mjs';
+import type { WordMatch } from './mega-search.term-matcher.mjs';
+import { isWordAt } from './mega-search.utils.mjs';
+import type { DocumentIndex } from './types.mjs';
 
 export class PhraseMatcher {
-  constructor(private textProcessor: UkrainianTextProcessor) {}
-
   /**
-   * Efficiently count exact phrase occurrences
+   * Find every occurrence of a phrase: its words in order, each at most
+   * `maxWordsBetween` document words after the previous one (0 = adjacent).
+   * Numbers in between don't count as words. What counts as each word —
+   * inflected forms, typos — was settled by the TermMatcher that built
+   * `words`.
+   *
+   * A word with a joint in `joints` (the query's, see findJoints) must be the
+   * very next token after the previous one, glued to it by the same
+   * characters: the parts of a number the query writes glued together
+   * ("22.12.2024" → 22, 12, 2024) are found as written, not in
+   * "12.01.2024, 22", "22/12/2024" or "22 12 2024".
+   *
+   * An occurrence is one per position of the first word, made of the nearest
+   * words after it that complete the phrase. Other ways to complete it from
+   * the same start are the same occurrence: "договір, договір оренди" holds
+   * "підписати договір" once, not twice. The same text at another place is
+   * another occurrence — documents repeat a sentence for every person, and
+   * be-krang extracts a row from each.
+   *
+   * @returns docId → the token positions of each occurrence
    */
-  countExactPhrase(doc: DocumentIndex, originalPhraseTokens: string[]): number {
-    let count = 0;
-    const phraseLength = originalPhraseTokens.length;
-    if (phraseLength === 0) return 0;
-
-    for (let i = 0; i <= doc.positions.length - phraseLength; i++) {
-      let match = true;
-      for (let j = 0; j < phraseLength; j++) {
-        const docToken = getDocumentToken(doc, i + j);
-        if (
-          !docToken ||
-          this.textProcessor.stemWord(docToken.term) !== originalPhraseTokens[j]
-        ) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  /**
-   * Get candidate documents for a phrase search by finding the intersection
-   * of documents containing each term.
-   */
-  getCandidateDocsForPhrase(
-    stemmedTokens: string[],
-    invertedIndex: Map<string, InvertedIndexEntry[]>,
-  ): string[] {
-    if (stemmedTokens.length === 0) return [];
-
-    const docSets = stemmedTokens.map((token) => {
-      const postings = invertedIndex.get(token) || [];
-      return new Set(postings.map((p) => p.documentId));
-    });
-
-    if (docSets.length === 0) return [];
-
-    let intersection = docSets[0];
-    for (let i = 1; i < docSets.length; i++) {
-      intersection = new Set(
-        [...intersection].filter((docId) => docSets[i].has(docId)),
-      );
-    }
-
-    return Array.from(intersection);
-  }
-
-  /**
-   * Index-based fuzzy phrase search.
-   */
-  findDocsWithFuzzyPhrase(
-    stemmedTokens: string[],
-    options: { maxTypoDistance: number; maxWordsInPhraseDistance: number },
-    invertedIndex: Map<string, InvertedIndexEntry[]>,
-    stemDictionary: Map<string, string[]>,
-    docCache: Map<string, DocumentIndex>,
+  findPhrases(
+    words: readonly WordMatch[],
+    maxWordsBetween: number,
+    docCache: ReadonlyMap<string, DocumentIndex>,
+    joints: Readonly<Record<number, string>> = {},
   ): Map<string, number[][]> {
-    if (stemmedTokens.length === 0) return new Map();
+    const phrases = new Map<string, number[][]>();
+    if (words.length === 0) return phrases;
 
-    // 1. Find all fuzzy matching terms for each query token
-    const termCandidatesPerQueryToken = stemmedTokens.map((queryToken) => {
-      const stem = this.textProcessor.stemWord(queryToken);
-
-      const candidates: string[] = [];
-
-      // Scan stem dictionary for matches (fuzzy or prefix)
-      // This handles declensions where stemmer produces different stems (e.g. "фін" vs "фінів")
-      for (const dictStem of stemDictionary.keys()) {
-        if (this.isStemMatch(stem, dictStem, options.maxTypoDistance)) {
-          const words = stemDictionary.get(dictStem);
-          if (words) candidates.push(...words);
-        }
-      }
-
-      return candidates;
-    });
-
-    // 2. Get document sets for each query token
-    const docSets = termCandidatesPerQueryToken.map((candidates) => {
-      const docIds = new Set<string>();
-      for (const candidateWord of candidates) {
-        const stem = this.textProcessor.stemWord(candidateWord);
-        const postings = invertedIndex.get(stem);
-        if (postings) {
-          for (const p of postings) {
-            docIds.add(p.documentId);
-          }
-        }
-      }
-      return docIds;
-    });
-
-    // 3. Find intersection
-    if (docSets.some((s) => s.size === 0)) return new Map();
-    let candidateDocIds = docSets[0];
-    for (let i = 1; i < docSets.length; i++) {
+    // Only a document holding every word can hold the phrase.
+    let candidateDocIds = new Set(words[0].documentIds());
+    for (let i = 1; i < words.length && candidateDocIds.size > 0; i++) {
+      const docIds = new Set(words[i].documentIds());
       candidateDocIds = new Set(
-        [...candidateDocIds].filter((docId) => docSets[i].has(docId)),
+        [...candidateDocIds].filter((docId) => docIds.has(docId)),
       );
     }
-
-    // 4. Verify sequences
-    const finalDocs = new Map<string, number[][]>();
-    let processedCount = 0;
 
     for (const docId of candidateDocIds) {
       const doc = docCache.get(docId);
       if (!doc) continue;
 
-      // Memory pressure check hook could go here if passed
-
-      const matchesByToken = termCandidatesPerQueryToken.map((candidates) => {
-        const positions: number[] = [];
-        for (const candidateWord of candidates) {
-          const stem = this.textProcessor.stemWord(candidateWord);
-          const postings = invertedIndex.get(stem);
-          const docPosting = postings?.find((p) => p.documentId === docId);
-
-          if (docPosting) {
-            for (const pos of docPosting.positions) {
-              const actualWord = doc.vocab[doc.positions[pos][0]];
-              if (actualWord.toLowerCase() === candidateWord) {
-                positions.push(pos);
-              }
-            }
-          }
-        }
-        return positions.sort((a, b) => a - b);
-      });
-
       const sequences = this.findSequencesInPositions(
-        matchesByToken,
-        options.maxWordsInPhraseDistance,
+        doc,
+        words.map((word) => word.positionsIn(docId, doc)),
+        maxWordsBetween,
+        joints,
       );
       if (sequences.length > 0) {
-        finalDocs.set(docId, sequences);
+        phrases.set(docId, sequences);
       }
     }
 
-    return finalDocs;
-  }
-
-  private isStemMatch(
-    queryStem: string,
-    dictStem: string,
-    threshold: number,
-  ): boolean {
-    if (queryStem === dictStem) return true;
-
-    // 1. Levenshtein check
-    if (levenshtein(queryStem, dictStem) <= threshold) return true;
-
-    // 2. Prefix check for declensions (e.g. "фін" vs "фінів")
-    // Allow prefix match if length difference is small (e.g. <= 2 chars)
-    // This catches cases where stemmer chopped too much or too little
-    const lenDiff = Math.abs(queryStem.length - dictStem.length);
-    if (lenDiff <= 2) {
-      if (queryStem.startsWith(dictStem) || dictStem.startsWith(queryStem)) {
-        return true;
-      }
-    }
-
-    return false;
+    return phrases;
   }
 
   private findSequencesInPositions(
-    matchesByToken: number[][],
-    maxWordsInPhraseDistance: number,
+    doc: DocumentIndex,
+    positionsByWord: ReadonlyArray<readonly number[]>,
+    maxWordsBetween: number,
+    joints: Readonly<Record<number, string>>,
   ): number[][] {
-    if (matchesByToken.some((m) => m.length === 0)) {
+    if (positionsByWord.some((positions) => positions.length === 0)) {
       return [];
     }
 
-    const findPaths = (
-      tokenIndex: number,
-      currentPath: number[],
-    ): number[][] => {
-      if (tokenIndex === matchesByToken.length) {
-        return [currentPath];
-      }
+    // Adjacent words are one position apart, so a gap of N words is N + 1.
+    const maxStep = maxWordsBetween + 1;
 
-      const lastPosition = currentPath[currentPath.length - 1];
-      const nextTokenPositions = matchesByToken[tokenIndex];
-      let paths: number[][] = [];
-
-      for (const nextPos of nextTokenPositions) {
-        const distance = nextPos - lastPosition;
-        if (distance > 0 && distance <= maxWordsInPhraseDistance) {
-          const newPaths = findPaths(tokenIndex + 1, [...currentPath, nextPos]);
-          paths = paths.concat(newPaths);
-        }
+    const canFollow = (
+      position: number,
+      next: number,
+      joint: string | undefined,
+    ): boolean => {
+      if (joint !== undefined) {
+        return next === position + 1 && doc.joints[next] === joint;
       }
-      return paths;
+      // A step that fits needs no count: numbers in it only shorten the gap
+      if (next - position <= maxStep) return true;
+      let wordsBetween = 0;
+      for (let p = position + 1; p < next; p++) {
+        if (isWordAt(doc, p) && ++wordsBetween > maxWordsBetween) return false;
+      }
+      return true;
     };
 
-    let allSequences: number[][] = [];
-    for (const startPos of matchesByToken[0]) {
-      allSequences = allSequences.concat(findPaths(1, [startPos]));
-    }
+    // Positions are ascending, so the first path found is the nearest one.
+    const findNearestPath = (
+      wordIndex: number,
+      path: number[],
+    ): number[] | null => {
+      if (wordIndex === positionsByWord.length) return path;
 
-    return allSequences;
+      const lastPosition = path[path.length - 1];
+      const joint = joints[wordIndex];
+      for (const nextPosition of positionsByWord[wordIndex]) {
+        if (nextPosition <= lastPosition) continue;
+        // Later positions are further still: past the first that can't
+        // follow, none can
+        if (!canFollow(lastPosition, nextPosition, joint)) break;
+        const found = findNearestPath(wordIndex + 1, [...path, nextPosition]);
+        if (found) return found;
+      }
+      return null;
+    };
+
+    const sequences: number[][] = [];
+    for (const startPosition of positionsByWord[0]) {
+      const sequence = findNearestPath(1, [startPosition]);
+      if (sequence) sequences.push(sequence);
+    }
+    return sequences;
   }
 }

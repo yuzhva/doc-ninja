@@ -1,0 +1,800 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
+
+import {
+  FIXTURE_MTIME,
+  createTempCorpus,
+  later,
+} from '../../test-utils/temp-corpus.mjs';
+import type { TempCorpus } from '../../test-utils/temp-corpus.mjs';
+import { UkrainianTextProcessor } from '../../text-processor.mjs';
+import type { SearchConfig } from '../../types.mjs';
+import { FileIndexer } from '../file-indexer.mjs';
+
+const textProcessor = new UkrainianTextProcessor();
+
+/** Names of the documents the inverted index lists for a word. */
+const docsWithWord = (indexer: FileIndexer, word: string) =>
+  (indexer.getInvertedIndex().get(textProcessor.stemWord(word)) ?? [])
+    .map((entry) => path.basename(entry.documentId))
+    .sort();
+
+/** The inverted index in an order-independent form, for comparing two. */
+const postingsOf = (indexer: FileIndexer) =>
+  Object.fromEntries(
+    [...indexer.getInvertedIndex()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([term, entries]) => [
+        term,
+        [...entries].sort((a, b) => a.documentId.localeCompare(b.documentId)),
+      ]),
+  );
+
+describe('FileIndexer', () => {
+  let corpus: TempCorpus;
+
+  const newIndexer = (overrides: Partial<SearchConfig> = {}) =>
+    new FileIndexer({
+      rootDirectory: corpus.root,
+      extensions: ['.txt'],
+      maxFileSize: Infinity,
+      concurrency: 1,
+      ...overrides,
+    });
+
+  const indexed = async (overrides: Partial<SearchConfig> = {}) => {
+    const indexer = newIndexer(overrides);
+    await indexer.buildFullIndex();
+    return indexer;
+  };
+
+  beforeEach(async () => {
+    corpus = await createTempCorpus({
+      'a.txt': 'Начальник підписав наказ.',
+      'b.txt': 'Бюджет міста затверджено.',
+    });
+  });
+
+  afterEach(() => corpus.cleanup());
+
+  it('indexes every discovered document into a consistent inverted index', async () => {
+    const indexer = await indexed();
+
+    assert.equal(indexer.getStats().documentsCount, 2);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt']);
+    assert.deepEqual(docsWithWord(indexer, 'бюджет'), ['b.txt']);
+    assert.deepEqual(await indexer.validateIndexHealth(), {
+      isHealthy: true,
+      issues: [],
+    });
+  });
+
+  it('never indexes its own cache artifacts, even under a non-dot cacheRoot', async () => {
+    // Regression guard for 42ee843f: '.json' would match the per-document
+    // index files, '.txt' the extracted text cache.
+    const config = { cacheRoot: 'search-cache', extensions: ['.txt', '.json'] };
+
+    assert.equal((await indexed(config)).getStats().documentsCount, 2);
+    assert.ok(corpus.exists('search-cache/index/a.txt.index.json'));
+    assert.equal((await indexed(config)).getStats().documentsCount, 2);
+  });
+
+  it('reuses the persisted index on the next start without re-extracting anything', async () => {
+    await indexed();
+    const cacheFiles = [
+      '.cache/txt/a.txt.txt',
+      '.cache/index/a.txt.index.json',
+    ];
+    const mtimes = () =>
+      cacheFiles.map((file) => fs.statSync(corpus.pathOf(file)).mtimeMs);
+    const before = mtimes();
+
+    const restarted = await indexed();
+
+    assert.deepEqual(mtimes(), before);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
+  });
+
+  it('rebuilds the postings from per-document caches when the global index is gone', async () => {
+    // e.g. a deleted/corrupted marker, or a legacy format that loadGlobalIndex()
+    // deliberately rejects "for a rebuild": every file is still cached, so none
+    // of them counts as changed — the rebuild must happen anyway.
+    await indexed();
+    await corpus.remove('.cache/global-inverted-index.json.gz');
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
+    assert.deepEqual(docsWithWord(await indexed(), 'наказ'), ['a.txt']);
+  });
+
+  describe('in a folder moved since it was indexed', () => {
+    // As be-krang in Docker sees the folder, at /usr/src/…, or a folder
+    // renamed, or its drive back under another letter: the caches came along
+    const files = ['a.txt', 'b.txt', 'orders/c.txt'];
+    let moved: string;
+
+    const reopened = async () => {
+      const indexer = new FileIndexer({
+        rootDirectory: moved,
+        extensions: ['.txt'],
+        maxFileSize: Infinity,
+        concurrency: 1,
+      });
+      await indexer.buildFullIndex();
+      return indexer;
+    };
+    const inMoved = (...names: string[]) =>
+      path.join(moved, ...names.flatMap((name) => name.split('/')));
+    const indexCacheTimes = () =>
+      files.map(
+        (file) =>
+          fs.statSync(inMoved('.cache/index', `${file}.index.json`)).mtimeMs,
+      );
+
+    /** Every document where it is now, and its words under that path. */
+    const assertFoundWhereItIs = async (indexer: FileIndexer) => {
+      const docs = indexer.getDocumentCache();
+      assert.deepEqual(
+        [...docs.keys()].sort(),
+        files.map((f) => inMoved(f)),
+      );
+      for (const file of files) {
+        const { originalFilePath, textFilePath } = docs.get(
+          inMoved(file),
+        )!.metadata;
+        assert.deepEqual(
+          { originalFilePath, textFilePath },
+          {
+            originalFilePath: inMoved(file),
+            textFilePath: inMoved('.cache/txt', `${file}.txt`),
+          },
+        );
+      }
+      assert.deepEqual(
+        indexer
+          .getInvertedIndex()
+          .get(textProcessor.stemWord('звіт'))!
+          .map((entry) => entry.documentId),
+        [inMoved('orders/c.txt')],
+      );
+      assert.deepEqual(await indexer.validateIndexHealth(), {
+        isHealthy: true,
+        issues: [],
+      });
+    };
+
+    beforeEach(async () => {
+      await corpus.write('orders/c.txt', 'Звіт відділу.');
+      (await indexed()).close();
+      moved = `${corpus.root}-moved`;
+      await fs.promises.rename(corpus.root, moved);
+    });
+
+    afterEach(() =>
+      fs.promises.rm(moved, { recursive: true, force: true, maxRetries: 3 }),
+    );
+
+    it('reads its documents from the caches it holds, where they are now', async () => {
+      const cachedAt = indexCacheTimes();
+
+      await assertFoundWhereItIs(await reopened());
+      assert.deepEqual(indexCacheTimes(), cachedAt); // none indexed anew
+    });
+
+    it('rebuilds the postings from its per-document caches, under where the documents are now', async () => {
+      // Regression guard: each per-document cache saved the document's
+      // absolute path, and the words were indexed under it — at the old
+      // place. Searches found none of the documents.
+      await fs.promises.rm(inMoved('.cache/global-inverted-index.json.gz'));
+      const cachedAt = indexCacheTimes();
+
+      await assertFoundWhereItIs(await reopened());
+      assert.deepEqual(indexCacheTimes(), cachedAt);
+    });
+  });
+
+  it('after a rebuild from per-document caches, re-indexes nothing on the next start', async () => {
+    // Regression guard: a document read back from its per-document cache
+    // kept fs.stat's fractions of a millisecond, while discovery reports
+    // whole ones — so from then on every start took every document for
+    // changed, re-read them all and rebuilt the index.
+    const seconds = FIXTURE_MTIME.getTime() / 1000 + 0.1234567;
+    for (const file of ['a.txt', 'b.txt']) {
+      fs.utimesSync(corpus.pathOf(file), seconds, seconds);
+    }
+    const globalIndex = '.cache/global-inverted-index.json.gz';
+    await indexed();
+    await corpus.remove(globalIndex);
+    await indexed();
+    const savedAt = fs.statSync(corpus.pathOf(globalIndex)).mtimeMs;
+
+    const restarted = await indexed();
+
+    assert.equal(fs.statSync(corpus.pathOf(globalIndex)).mtimeMs, savedAt);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
+  });
+
+  it('picks up a single added file on rebuild', async () => {
+    // Regression guard for 31f37498: one changed file must be enough to
+    // trigger the inverted-index rebuild (the threshold used to be exclusive).
+    const indexer = await indexed();
+    await corpus.write('c.txt', 'Квартальний звіт.');
+
+    await indexer.buildFullIndex();
+
+    assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+    assert.deepEqual(docsWithWord(await indexed(), 'звіт'), ['c.txt']);
+  });
+
+  it('drops a deleted file from the documents', async () => {
+    const indexer = await indexed();
+    await corpus.remove('b.txt');
+
+    await indexer.buildFullIndex();
+
+    assert.equal(indexer.getStats().documentsCount, 1);
+    assert.equal((await indexed()).getStats().documentsCount, 1);
+  });
+
+  it('drops a deleted file from the postings too', async () => {
+    // Regression guard: with nothing else changed, the "all files up to date"
+    // early return saved the index without rebuilding it, leaving orphaned
+    // postings that inflated document frequencies.
+    const indexer = await indexed();
+    await corpus.remove('b.txt');
+
+    await indexer.buildFullIndex();
+
+    assert.deepEqual(docsWithWord(indexer, 'бюджет'), []);
+    assert.equal((await indexer.validateIndexHealth()).isHealthy, true);
+  });
+
+  it('drops every document once the folder holds none', async () => {
+    // Regression guard: a folder without documents left the index as it was,
+    // so its deleted documents were still found
+    const indexer = await indexed();
+    await corpus.remove('a.txt');
+    await corpus.remove('b.txt');
+
+    await indexer.buildFullIndex();
+
+    assert.equal(indexer.getStats().documentsCount, 0);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    assert.equal((await indexed()).getStats().documentsCount, 0);
+  });
+
+  it('keeps the index while the folder cannot be read, and makes no folder anew', async () => {
+    const indexer = await indexed();
+    await fs.promises.rm(corpus.root, { recursive: true, force: true });
+
+    await indexer.buildFullIndex();
+
+    assert.equal(indexer.getStats().documentsCount, 2);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt']);
+    assert.equal(fs.existsSync(corpus.root), false);
+  });
+
+  // Regression guards: an edited file already in the document cache was
+  // tallied as "cached-loaded" instead of indexed, so the inverted-index
+  // rebuild and the global-index save were both skipped.
+  it('re-indexes a file edited while the app was closed', async () => {
+    await indexed();
+    await corpus.write('a.txt', 'Кошторис затверджено.', later());
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
+    assert.deepEqual(docsWithWord(await indexed(), 'кошторис'), ['a.txt']);
+  });
+
+  it('re-indexes a file edited while the app is running', async () => {
+    const indexer = await indexed();
+    await corpus.write('a.txt', 'Кошторис затверджено.', later());
+
+    await indexer.buildFullIndex();
+
+    assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+    assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    assert.deepEqual(docsWithWord(await indexed(), 'кошторис'), ['a.txt']);
+  });
+
+  it('by default, updates the index in place for a change to a few documents', async () => {
+    // Regression guard: with a threshold of 0.1%, one edit in a folder of
+    // under 1000 documents rebuilt the index from every document
+    for (let i = 1; i <= 8; i++) {
+      await corpus.write(`report-${i}.txt`, `Звіт номер ${i}.`);
+    }
+    await indexed();
+    await corpus.write('a.txt', 'Кошторис затверджено.', later());
+    // a full rebuild reads every document, and would drop b.txt without it
+    await corpus.remove('.cache/index/b.txt.index.json');
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
+    assert.deepEqual(docsWithWord(restarted, 'бюджет'), ['b.txt']);
+  });
+
+  describe('with fewer changes than a full rebuild takes', () => {
+    // with indexRebuildThreshold 1, only a change to every document rebuilds
+    // the inverted index from all of them, as 1–4 changes in 5000 documents
+    // would not by default
+    const fewChanges = { indexRebuildThreshold: 1 };
+
+    it('still applies a change that indexSpecificPaths() finds among unchanged files', async () => {
+      // Regression guard: below the threshold the inverted index was left as
+      // it was, while the per-document index was saved as current — so the
+      // change was lost for good, restarts included.
+      const indexer = await indexed(fewChanges);
+      await corpus.write('a.txt', 'Кошторис затверджено.', later());
+
+      await indexer.indexSpecificPaths([
+        corpus.pathOf('a.txt'),
+        corpus.pathOf('b.txt'),
+      ]);
+
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+      assert.deepEqual(docsWithWord(await indexed(fewChanges), 'кошторис'), [
+        'a.txt',
+      ]);
+    });
+
+    it('updates the postings of the changed documents to what a full rebuild gives', async () => {
+      await corpus.write('c.txt', 'Наказом затверджено кошторис.');
+      const indexer = await indexed(fewChanges);
+      // a.txt drops words only it held, and ones c.txt holds too
+      await corpus.write('a.txt', 'Бюджет міста затверджено.', later());
+
+      await indexer.buildFullIndex();
+      // no global index: a full rebuild from the per-document indexes
+      await corpus.remove('.cache/global-inverted-index.json.gz');
+      const rebuilt = await indexed();
+
+      assert.deepEqual(postingsOf(indexer), postingsOf(rebuilt));
+      // The same stems, each listing at least the words a full rebuild lists.
+      // A word gone from a stem other documents still hold may stay.
+      const stems = indexer.getStemDictionary();
+      const rebuiltStems = rebuilt.getStemDictionary();
+      assert.deepEqual(
+        [...stems.keys()].sort(),
+        [...rebuiltStems.keys()].sort(),
+      );
+      for (const [stem, words] of rebuiltStems) {
+        for (const word of words) assert.ok(stems.get(stem)!.includes(word));
+      }
+      assert.equal((await indexer.validateIndexHealth()).isHealthy, true);
+    });
+
+    it('reads no unchanged document from disk', async () => {
+      await indexed(fewChanges);
+      await corpus.write('a.txt', 'Кошторис затверджено.', later());
+      // A full rebuild reads every document's vocab from its per-document
+      // index, so without b.txt's it would drop b.txt's postings.
+      await corpus.remove('.cache/index/b.txt.index.json');
+
+      const restarted = await indexed(fewChanges);
+
+      assert.deepEqual(docsWithWord(restarted, 'кошторис'), ['a.txt']);
+      assert.deepEqual(docsWithWord(restarted, 'бюджет'), ['b.txt']);
+    });
+
+    it('drops a deleted file from the postings without reading the other documents', async () => {
+      // A deleted file used to force a full rebuild
+      await corpus.write('c.txt', 'Квартальний звіт.');
+      await indexed(fewChanges);
+      await corpus.remove('a.txt');
+      await corpus.remove('.cache/index/b.txt.index.json');
+
+      const restarted = await indexed(fewChanges);
+
+      assert.deepEqual(docsWithWord(restarted, 'наказ'), []);
+      assert.deepEqual(docsWithWord(restarted, 'бюджет'), ['b.txt']);
+      assert.deepEqual(docsWithWord(restarted, 'звіт'), ['c.txt']);
+    });
+  });
+
+  /**
+   * Counts how often the indexer lists files from now on — the folder's, or
+   * those in some of its folders — and keeps what each listing was of.
+   */
+  const countListings = (indexer: FileIndexer) => {
+    const scanner = (indexer as any).scanner;
+    const discoverFiles = scanner.discoverFiles.bind(scanner);
+    const discoverSpecificPaths = scanner.discoverSpecificPaths.bind(scanner);
+    const listed: (string[] | 'all')[] = [];
+    scanner.discoverFiles = () => {
+      listed.push('all');
+      return discoverFiles();
+    };
+    scanner.discoverSpecificPaths = (paths: string[]) => {
+      listed.push(paths);
+      return discoverSpecificPaths(paths);
+    };
+    return Object.assign(() => listed.length, { listed });
+  };
+
+  describe('refreshIfChanged() of some folders', () => {
+    beforeEach(async () => {
+      await corpus.write('orders/c.txt', 'Квартальний звіт.');
+      await corpus.write('reports/d.txt', 'Кошторис затверджено.');
+    });
+
+    it('indexes the documents in those folders only', async () => {
+      const indexer = newIndexer();
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders')]);
+
+      assert.equal(indexer.getStats().documentsCount, 1);
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), []);
+
+      await indexer.refreshIfChanged();
+      assert.equal(indexer.getStats().documentsCount, 4);
+    });
+
+    it('drops the deleted documents of those folders only', async () => {
+      const indexer = await indexed();
+      await corpus.remove('orders/c.txt');
+      await corpus.remove('reports/d.txt');
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders')]);
+
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), []);
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['d.txt']);
+    });
+
+    it('drops what a folder held once the folder is gone', async () => {
+      const indexer = await indexed();
+      await corpus.remove('orders');
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders')]);
+
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), []);
+      assert.equal(indexer.getStats().documentsCount, 3);
+    });
+
+    it('lists a folder once, though a folder in it is given too, and nothing outside', async () => {
+      const indexer = newIndexer();
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged([
+        corpus.pathOf('orders/sub'),
+        corpus.pathOf('orders'),
+        path.resolve(corpus.root, '..'),
+      ]);
+
+      assert.deepEqual(listings.listed, [[corpus.pathOf('orders')]]);
+    });
+
+    it('lists the whole folder when it is given itself', async () => {
+      const indexer = newIndexer();
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged([corpus.pathOf('orders'), corpus.root]);
+
+      assert.deepEqual(listings.listed, ['all']);
+      assert.equal(indexer.getStats().documentsCount, 4);
+    });
+  });
+
+  describe('refreshIfChanged() with watchFiles', () => {
+    /** Lets the folder watcher's reports of what just happened come in. */
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+    const watching = async (overrides: Partial<SearchConfig> = {}) => {
+      const indexer = await indexed({ watchFiles: true, ...overrides });
+      watchers.push(indexer);
+      // Reading a file to index it reports it changed on Windows: one more
+      // look follows, which finds nothing to do
+      await settle();
+      await indexer.refreshIfChanged();
+      await settle();
+      return indexer;
+    };
+    const watchers: FileIndexer[] = [];
+    afterEach(() => watchers.splice(0).forEach((indexer) => indexer.close()));
+
+    it('lists no file while none changed, its own index cache writes aside', async () => {
+      const indexer = await watching();
+      const listings = countListings(indexer);
+
+      for (let i = 0; i < 3; i++) await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 0);
+    });
+
+    it('picks up a file changed since, once the watcher reports it', async () => {
+      const indexer = await watching();
+      await corpus.write('a.txt', 'Кошторис затверджено.', later());
+
+      for (let i = 0; i < 50; i++) {
+        await indexer.refreshIfChanged();
+        if (docsWithWord(indexer, 'кошторис').length > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), []);
+    });
+
+    it('stops watching while it writes the index cache', async () => {
+      // Every cache write would be reported, and each report stalls the
+      // event loop (see FolderWatcher.pause)
+      const indexer = await watching();
+      const isWatching = () => (indexer as any).watcher.watcher !== null;
+      const watchingWhileWriting: boolean[] = [];
+      for (const [owner, method] of [
+        ['processor', 'indexDocument'],
+        ['storage', 'saveGlobalIndex'],
+      ]) {
+        const target = (indexer as any)[owner];
+        const original = target[method].bind(target);
+        target[method] = (...args: unknown[]) => {
+          watchingWhileWriting.push(isWatching());
+          return original(...args);
+        };
+      }
+      assert.equal(isWatching(), true);
+
+      await corpus.write('c.txt', 'Квартальний звіт.');
+      await settle();
+      await indexer.refreshIfChanged();
+
+      assert.deepEqual(watchingWhileWriting, [false, false]);
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+    });
+
+    it('picks up a change made while it wrote the index cache', async () => {
+      const indexer = await watching();
+      const processor = (indexer as any).processor;
+      const indexDocument = processor.indexDocument.bind(processor);
+      processor.indexDocument = async (file: unknown) => {
+        processor.indexDocument = indexDocument;
+        const indexedDocument = await indexDocument(file);
+        await corpus.write('a.txt', 'Кошторис затверджено.', later());
+        return indexedDocument;
+      };
+      await corpus.write('c.txt', 'Квартальний звіт.');
+      await settle();
+
+      // Indexes c.txt, and a.txt changes meanwhile, unwatched
+      await indexer.refreshIfChanged();
+      await settle();
+      await indexer.refreshIfChanged();
+
+      assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+    });
+
+    it('lists a folder again only after a change in it', async () => {
+      await corpus.write('orders/c.txt', 'Квартальний звіт.');
+      await corpus.write('reports/d.txt', 'Кошторис затверджено.');
+      const indexer = await watching();
+      const listings = countListings(indexer);
+      const orders = [corpus.pathOf('orders')];
+      const reports = [corpus.pathOf('reports')];
+
+      // The look at the whole folder takes in its folders
+      await indexer.refreshIfChanged(orders);
+      assert.equal(listings(), 0);
+
+      await corpus.write('reports/d.txt', 'Наказ підписано.', later());
+      await settle();
+      // The change is in the whole folder, so that look is due now: the
+      // folder searched is listed, once
+      await indexer.refreshIfChanged(orders);
+      await indexer.refreshIfChanged(orders);
+      assert.deepEqual(listings.listed, [orders]);
+
+      await indexer.refreshIfChanged(reports);
+      assert.deepEqual(listings.listed, [orders, reports]);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt', 'd.txt']);
+    });
+
+    it('lists the files anyway once rescanAfterMs went by', async () => {
+      // in case the watcher missed a change: a network share
+      const indexer = await watching({ rescanAfterMs: 0 });
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged();
+      await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 2);
+    });
+
+    it('lists the files every time once closed', async () => {
+      const indexer = await watching();
+      const listings = countListings(indexer);
+      indexer.close();
+
+      await indexer.refreshIfChanged();
+      await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 2);
+    });
+
+    it('lists the files every time without watchFiles', async () => {
+      const indexer = await indexed();
+      const listings = countListings(indexer);
+
+      await indexer.refreshIfChanged();
+      await indexer.refreshIfChanged();
+
+      assert.equal(listings(), 2);
+    });
+  });
+
+  describe('while a search reads the index', () => {
+    // A search reads the index in place, across awaits (snippets read files),
+    // so an update must leave the version it reads as it was
+    for (const [update, config] of [
+      ['an update of the changed documents', { indexRebuildThreshold: 1 }],
+      ['a full rebuild', {}],
+    ] as const) {
+      it(`leaves the version it reads as it was, through ${update}`, async () => {
+        const indexer = await indexed(config);
+        const snapshot = indexer.getSearchSnapshot();
+        const postings = indexer.getInvertedIndex();
+        const stems = indexer.getStemDictionary();
+        // a.txt drops its own words, shares b.txt's, adds a form of one of
+        // them (місту, as міста) and a new word
+        await corpus.write('a.txt', 'Кошторис місту затверджено.', later());
+
+        await indexer.buildFullIndex();
+
+        assert.deepEqual(
+          new Map(
+            [...postings.keys()].map((term) => [
+              term,
+              snapshot.invertedIndex.get(term),
+            ]),
+          ),
+          postings,
+        );
+        assert.deepEqual(
+          new Map(
+            [...snapshot.stemDictionary].map(([stem, words]) => [
+              stem,
+              [...words],
+            ]),
+          ),
+          stems,
+        );
+        assert.equal(
+          snapshot.invertedIndex.get(textProcessor.stemWord('кошторис')),
+          undefined,
+        );
+        assert.deepEqual(docsWithWord(indexer, 'кошторис'), ['a.txt']);
+        assert.notEqual(
+          indexer.getSearchSnapshot().generation,
+          snapshot.generation,
+        );
+      });
+    }
+  });
+
+  it('indexes a document its per-document cache holds and the saved index does not', async () => {
+    // e.g. the app stopped between saving the two. Regression guard: read
+    // back from its per-document cache, the document counted as unchanged,
+    // so its words never reached the postings.
+    const savedIndex = [
+      '.cache/global-inverted-index.json.gz',
+      '.cache/global-inverted-index.chunks',
+    ];
+    await indexed();
+    for (const file of savedIndex) {
+      fs.cpSync(corpus.pathOf(file), corpus.pathOf(`saved/${file}`), {
+        recursive: true,
+      });
+    }
+    await corpus.write('c.txt', 'Квартальний звіт.');
+    await indexed();
+    for (const file of savedIndex) {
+      await corpus.remove(file);
+      fs.cpSync(corpus.pathOf(`saved/${file}`), corpus.pathOf(file), {
+        recursive: true,
+      });
+    }
+
+    const restarted = await indexed();
+
+    assert.deepEqual(docsWithWord(restarted, 'звіт'), ['c.txt']);
+    assert.deepEqual(docsWithWord(restarted, 'наказ'), ['a.txt']);
+  });
+
+  it('after an index version change, re-tokenizes every document once, from the cached text', async () => {
+    await indexed();
+    // what an install from before index versioning left: no indexVersion
+    // anywhere, and vocab from an older tokenizer
+    const marker = '.cache/global-inverted-index.json.gz';
+    const { indexVersion, ...unversioned } = JSON.parse(
+      await corpus.read(marker),
+    );
+    await corpus.write(marker, JSON.stringify(unversioned), later());
+    for (const file of ['a.txt', 'b.txt']) {
+      const cacheFile = `.cache/index/${file}.index.json`;
+      const { indexVersion, vocab, ...cached } = JSON.parse(
+        await corpus.read(cacheFile),
+      );
+      await corpus.write(
+        cacheFile,
+        JSON.stringify({ ...cached, vocab: vocab.map((w: string) => `x${w}`) }),
+        later(),
+      );
+    }
+    const textCacheMtime = () =>
+      fs.statSync(corpus.pathOf('.cache/txt/a.txt.txt')).mtimeMs;
+    const textCachedAt = textCacheMtime();
+
+    const upgraded = await indexed();
+
+    assert.deepEqual(
+      upgraded.getDocumentCache().get(corpus.pathOf('a.txt'))!.vocab,
+      ['начальник', 'підписав', 'наказ'],
+    );
+    assert.deepEqual(docsWithWord(upgraded, 'наказ'), ['a.txt']);
+    assert.equal(textCacheMtime(), textCachedAt);
+
+    // and only once: the next start reuses what the upgrade wrote
+    const indexCachedAt = fs.statSync(
+      corpus.pathOf('.cache/index/a.txt.index.json'),
+    ).mtimeMs;
+    await indexed();
+    assert.equal(
+      fs.statSync(corpus.pathOf('.cache/index/a.txt.index.json')).mtimeMs,
+      indexCachedAt,
+    );
+  });
+
+  describe('indexSpecificPaths()', () => {
+    it('adds the documents found under the given paths', async () => {
+      const indexer = await indexed();
+      await corpus.write('extra/c.txt', 'Квартальний звіт.');
+
+      await indexer.indexSpecificPaths([corpus.pathOf('extra')]);
+
+      assert.equal(indexer.getStats().documentsCount, 3);
+    });
+
+    it('makes the added documents searchable', async () => {
+      // Regression guard: it passed {} as rebuild thresholds, so
+      // Math.max(undefined, NaN) made the rebuild condition "n >= NaN".
+      const indexer = await indexed();
+      await corpus.write('extra/c.txt', 'Квартальний звіт.');
+
+      await indexer.indexSpecificPaths([corpus.pathOf('extra')]);
+
+      assert.deepEqual(docsWithWord(indexer, 'звіт'), ['c.txt']);
+      assert.deepEqual(docsWithWord(indexer, 'наказ'), ['a.txt']);
+    });
+  });
+
+  it('clearCache() wipes caches on disk — including a globalIndexPath outside cacheRoot — and in memory', async () => {
+    const indexer = await indexed({ globalIndexPath: 'meta/global.json.gz' });
+    assert.ok(corpus.exists('meta/global.json.gz'));
+
+    await indexer.clearCache();
+
+    for (const artifact of [
+      '.cache',
+      'meta/global.json.gz',
+      'meta/global.chunks',
+    ]) {
+      assert.equal(
+        corpus.exists(artifact),
+        false,
+        `${artifact} should be gone`,
+      );
+    }
+    assert.deepEqual(indexer.getStats(), {
+      documentsCount: 0,
+      termsCount: 0,
+      totalTokens: 0,
+    });
+  });
+});

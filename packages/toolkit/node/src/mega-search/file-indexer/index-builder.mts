@@ -1,7 +1,47 @@
 import { Logger } from '../shared/logger.mjs';
-import { UkrainianTextProcessor } from '../text-processor.mjs';
+import {
+  UkrainianTextProcessor,
+  matchesItselfOnly,
+} from '../text-processor.mjs';
 import { DocumentIndex, SearchConfig } from '../types.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
+
+/** Files a document word under its stem in a stem dictionary. */
+type AddWord = (stem: string, word: string) => void;
+
+/**
+ * The key each vocab word is indexed under, null for none, worked out once a
+ * build: documents share most of their words (on 362 documents, 36 thousand
+ * distinct words in 337 thousand vocab entries).
+ */
+type IndexKeys = Map<string, string | null>;
+
+/** Adds to a stem dictionary no search reads yet. */
+const addingTo =
+  (stems: Map<string, Set<string>>): AddWord =>
+  (stem, word) => {
+    let words = stems.get(stem);
+    if (!words) stems.set(stem, (words = new Set()));
+    words.add(word);
+  };
+
+/**
+ * Adds to a copy of a stem dictionary that searches may still read: the
+ * copy shares its word sets, and a set is copied before its first change.
+ */
+const addingToCopy = (stems: Map<string, Set<string>>): AddWord => {
+  const copied = new Set<string>();
+  return (stem, word) => {
+    const words = stems.get(stem);
+    if (words?.has(word)) return;
+    if (words && copied.has(stem)) {
+      words.add(word);
+      return;
+    }
+    stems.set(stem, new Set(words).add(word));
+    copied.add(stem);
+  };
+};
 
 export class IndexBuilder {
   private textProcessor = new UkrainianTextProcessor();
@@ -11,11 +51,53 @@ export class IndexBuilder {
     private logger: Logger,
   ) {}
 
+  /**
+   * The inverted index and stem dictionary brought up to date for the given
+   * documents only: their old postings dropped and their current ones added,
+   * without reading any other document. Stems no document holds any more
+   * leave the stem dictionary. A word that just disappeared from a stem that
+   * other documents still hold stays listed under it until the next full
+   * rebuild. It matches no position, so search results are the same.
+   *
+   * The ones passed in are left as they are, for the searches reading them:
+   * the result shares what didn't change with them.
+   */
+  updateDocuments(
+    documentCache: ReadonlyMap<string, DocumentIndex>,
+    invertedIndex: InvertedIndex,
+    stemDictionary: ReadonlyMap<string, Set<string>>,
+    documentPaths: Iterable<string>,
+  ): {
+    invertedIndex: InvertedIndex;
+    stemDictionary: Map<string, Set<string>>;
+  } {
+    const paths = new Set(documentPaths);
+    this.logger.info(
+      `🔗 Updating the inverted index for ${paths.size} documents...`,
+    );
+
+    const updatedIndex = invertedIndex.fork();
+    const updatedStems = new Map(stemDictionary);
+    const addWord = addingToCopy(updatedStems);
+    const keys: IndexKeys = new Map();
+
+    for (const stem of updatedIndex.removeDocuments(paths)) {
+      updatedStems.delete(stem);
+    }
+    for (const docPath of paths) {
+      const doc = documentCache.get(docPath);
+      if (doc?.metadata.indexed) {
+        this.addDocument(doc, updatedIndex, addWord, keys);
+      }
+    }
+    return { invertedIndex: updatedIndex, stemDictionary: updatedStems };
+  }
+
+  /** Rebuilds the inverted index and the stem dictionary from every document. */
   async updateInvertedIndexBatch(
-    documentCache: Map<string, DocumentIndex>,
+    documentCache: ReadonlyMap<string, DocumentIndex>,
     invertedIndex: InvertedIndex,
     stemDictionary: Map<string, Set<string>>,
-    documentPaths?: string[],
   ): Promise<void> {
     const startTime = Date.now();
     this.logger.info(`🔗 Starting inverted index rebuild...`);
@@ -26,6 +108,8 @@ export class IndexBuilder {
       );
       invertedIndex.clear();
       stemDictionary.clear();
+      const addWord = addingTo(stemDictionary);
+      const keys: IndexKeys = new Map();
 
       const allDocuments = Array.from(documentCache.values()).filter(
         (doc) => doc.metadata.indexed,
@@ -55,49 +139,12 @@ export class IndexBuilder {
         let docTermsProcessed = 0;
 
         try {
-          const termPositions = new Map<string, number[]>();
-          const vocabStemMap = new Array<string | null>(docIndex.vocab.length);
-
-          for (let v = 0; v < docIndex.vocab.length; v++) {
-            const term = docIndex.vocab[v];
-            const normalized = this.textProcessor.tokenize(term)[0]?.normalized;
-
-            if (!normalized) {
-              vocabStemMap[v] = null;
-              continue;
-            }
-
-            // REVIEW: the {isTypoToleranceEnabled} been used before
-            const stemmedTerm = this.textProcessor.stemWord(normalized);
-
-            vocabStemMap[v] = stemmedTerm;
-
-            if (!stemDictionary.has(stemmedTerm)) {
-              stemDictionary.set(stemmedTerm, new Set());
-            }
-            stemDictionary.get(stemmedTerm)!.add(term);
-          }
-
-          for (let i = 0; i < docIndex.positions.length; i++) {
-            const [vocabIndex] = docIndex.positions[i];
-            const stemmedTerm = vocabStemMap[vocabIndex];
-
-            if (!stemmedTerm) continue;
-
-            if (!termPositions.has(stemmedTerm)) {
-              termPositions.set(stemmedTerm, []);
-            }
-            termPositions.get(stemmedTerm)!.push(i);
-          }
-
-          termPositions.forEach((positions, stemmedTerm) => {
-            invertedIndex.addEntry(
-              stemmedTerm,
-              docIndex.metadata.originalFilePath,
-              positions,
-            );
-            docTermsProcessed++;
-          });
+          docTermsProcessed = this.addDocument(
+            docIndex,
+            invertedIndex,
+            addWord,
+            keys,
+          );
 
           totalTermsProcessed += docIndex.vocab.length;
           processedDocs++;
@@ -105,7 +152,7 @@ export class IndexBuilder {
           const docProcessTime = Date.now() - docStartTime;
 
           if (processedDocs <= 5 || processedDocs % 10 === 0) {
-            this.logger.info(
+            this.logger.debug(
               `  📄 Doc ${processedDocs}/${allDocuments.length}: ${docIndex.metadata.fileName} (${docTermsProcessed} terms, ${docProcessTime}ms)`,
             );
           }
@@ -175,5 +222,64 @@ export class IndexBuilder {
       );
       throw error;
     }
+  }
+
+  /**
+   * Adds one document's postings and words to the index.
+   * @returns how many terms it added
+   */
+  private addDocument(
+    docIndex: DocumentIndex,
+    invertedIndex: InvertedIndex,
+    addWord: AddWord,
+    keys: IndexKeys,
+  ): number {
+    const termPositions = new Map<string, number[]>();
+    const vocabStemMap = new Array<string | null>(docIndex.vocab.length);
+
+    for (let v = 0; v < docIndex.vocab.length; v++) {
+      const term = docIndex.vocab[v];
+      const stemmedTerm = this.keyOf(term, keys);
+      vocabStemMap[v] = stemmedTerm;
+      if (stemmedTerm === null) continue;
+
+      // A number or a function word has no other forms to look up: it is
+      // matched from its postings alone (TermMatcher), so the dictionary
+      // holds only the words other forms and typos can match
+      if (matchesItselfOnly(stemmedTerm)) continue;
+      addWord(stemmedTerm, term);
+    }
+
+    for (let i = 0; i < docIndex.positions.length; i++) {
+      const stemmedTerm = vocabStemMap[docIndex.positions.vocabIndex(i)];
+
+      if (!stemmedTerm) continue;
+
+      if (!termPositions.has(stemmedTerm)) {
+        termPositions.set(stemmedTerm, []);
+      }
+      termPositions.get(stemmedTerm)!.push(i);
+    }
+
+    termPositions.forEach((positions, stemmedTerm) => {
+      invertedIndex.addEntry(
+        stemmedTerm,
+        docIndex.metadata.originalFilePath,
+        positions,
+      );
+    });
+    return termPositions.size;
+  }
+
+  /** The key a vocab word is indexed under, its stem; null when it is no token. */
+  private keyOf(word: string, keys: IndexKeys): string | null {
+    let key = keys.get(word);
+    if (key === undefined) {
+      const normalized = this.textProcessor.tokenize(word)[0]?.normalized;
+      // REVIEW: the {isInflectedWordFormsAllowed} been used before
+      key = normalized ? this.textProcessor.stemWord(normalized) : null;
+      keys.set(word, key);
+    }
+    return key;
   }
 }

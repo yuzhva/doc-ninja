@@ -7,7 +7,7 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 🎯 **Core Search Features**
 
 - **BM25 Scoring**: Industry-standard relevance ranking (used by Elasticsearch)
-- **Fuzzy Search**: Levenshtein distance-based similarity matching
+- **Fuzzy Search**: every inflected form of a word, plus typo tolerance (edit distance, a swap of two letters counting as one typo), and optionally related words (derived words, surnames derived from the one searched)
 - **Phrase Search**: Exact phrase matching with quotes (`"начальник управління"`)
 - **Multi-language Support**: Ukrainian and English with proper stemming
 - **Multiple Snippets**: Shows multiple context snippets per document
@@ -15,7 +15,9 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 🚀 **Performance & Scalability**
 
 - **Incremental Indexing**: Only reprocesses changed files
+- **No Vocabulary Scans**: a query word's forms, related words and typos are looked up, not compared with every word in the index — typos by the letter pairs they share (see `vocabulary-index.mts`)
 - **Disk Caching**: Intelligent caching of text extraction and indexes
+- **Compact Document Indexes**: each word's place is saved as the gap from the word before and its length, not where it starts and ends — half the size (see `token-positions.mts`)
 - **LRU Memory Management**: Efficient memory usage for large corpora
 - **Compressed Storage**: Compressed inverted index storage
 - **Pagination**: Efficient result pagination for large result sets
@@ -30,7 +32,7 @@ A production-ready, feature-rich document search system with Ukrainian language 
 ### 📄 **Document Processing**
 
 - **Multiple Formats**: .doc, .docx, .txt support
-- **Ukrainian Text Processing**: Proper tokenization, stemming, stop words
+- **Ukrainian Text Processing**: Proper tokenization, stemming, function words
 - **Language Detection**: Automatic detection of document language
 - **Error Resilience**: Graceful handling of corrupted files
 
@@ -79,8 +81,9 @@ results.results.forEach((result) => {
 // Advanced search with all options
 const results = await megaSearch.search('документ', {
   topN: 50, // Search through top 50 results
-  isTypoToleranceEnabled: true, // Enable fuzzy matching
-  maxTypoDistance: 1, // Allow 1 character difference
+  isInflectedWordFormsAllowed: true, // "Allow fuzzy match": any inflected form of a word
+  isRelatedWordsAllowed: false, // Not "Бондарук" for "Бондар" (on by default)
+  maxTypoDistance: 1, // Allow 1 typo per word (fuzzy match on or off)
   snippetsLimit: 5, // Show up to 5 snippets per result
   page: 1, // First page
   pageSize: 10, // 10 results per page
@@ -141,6 +144,8 @@ const megaSearch = await createMegaSearch({
 
   // Performance
   concurrency: 4, // Parallel processing threads
+  watchFiles: false, // refresh() lists the files only after the folder watcher saw a change
+  rescanAfterMs: 60000, // ...or once this long went by, in case it missed one
 
   // Caching
   cacheRoot: '.cache',
@@ -194,8 +199,11 @@ Main search method with full feature support.
 ```typescript
 {
   topN?: number;                    // Max results to process (default: 50)
-  isTypoToleranceEnabled?: boolean;                  // Enable fuzzy matching (default: true)
-  maxTypoDistance?: number;          // Levenshtein threshold (default: 1)
+  isInflectedWordFormsAllowed?: boolean; // "Allow fuzzy match": any inflected form; off = the form typed (default: true)
+  isRelatedWordsAllowed?: boolean;   // With fuzzy match: also stems ±2 letters — "столяр" → "столярного", "Бондар" → "Бондарук" (default: true)
+  maxTypoDistance?: number;          // Typo edits per word, fuzzy match on or off; 0 = none (default: 1)
+  isPhraseProximityEnabled?: boolean; // Every query is a phrase, quoted or not (default: false)
+  maxWordsInPhraseDistance?: number; // Words allowed between phrase words, 0 = adjacent (default: 0)
   snippetsLimit?: number | 'ALL';   // Snippets per result (default: 3)
   page?: number;                    // Page number (default: 1)
   pageSize?: number;                // Results per page (default: 10)
@@ -227,7 +235,10 @@ Main search method with full feature support.
 
 - `getStats()` - Get corpus statistics
 - `reindex()` - Force complete reindexing
-- `testDocumentParsing()` - Test document parsing capabilities
+- `refresh(searchScopedPaths?)` - Bring the index up to date, cheaply: with `watchFiles`, it lists
+  the files only after a change (or `rescanAfterMs`). With `searchScopedPaths`, only the files in
+  those folders — what a search in them reads
+- `close()` - Stop watching the folder
 
 ## 🌟 Advanced Features
 
@@ -236,9 +247,33 @@ Main search method with full feature support.
 The system includes sophisticated Ukrainian language processing:
 
 - **Stemming**: Handles Ukrainian morphology (управління → управлінн)
-- **Stop Words**: Comprehensive Ukrainian stop word list
+- **Every Word Indexed**: nothing is left out as a stop word. Function words (prepositions,
+  conjunctions, particles: "про", "та", "лише") match only as typed, don't count toward phrase
+  distance, and a word-by-word search skips them unless the query holds nothing else — a phrase
+  holds them as written ("наказ про відпустку" is not "наказ на відпустку")
 - **Case Handling**: Proper Unicode case normalization
+- **Mixed Alphabets**: a word typed with look-alike letters of both alphabets ("Мiнiстерство" with a
+  Latin "i") reads in the alphabet most of its letters are in, so a query typed in one finds it
 - **Mixed Language**: Handles documents with both Ukrainian and English
+
+### Numbers, Dates & Codes
+
+A run of digits is indexed as a token of its own, apart from the letters and separators around it:
+`вх№36088 від 22.12.2024` → `вх`, `36088`, `22`, `12`, `2024`.
+
+- `36088`, `№36088`, `вх№36088` and `2024` all find that text.
+- A number the query writes glued together (`22.12.2024`, `12.2024`, `248/9240`, `вх№36088`) is
+  found as written: its parts side by side, glued by the same characters. `22.12.2024` doesn't
+  find `12.01.2024, 22`, `22/12/2024` or `22 12 2024`; `15/2` doesn't find `пункти 15, 2`;
+  `вх№36088` doesn't find `вх. № 36088`, while `36088` does. With proximity off it's still searched
+  as one. Each document's index keeps these joints: the characters between a number and the token
+  glued to it, where no whitespace parts them.
+- Numbers match exactly, in every mode: `2024` never finds `2023` or `20245`, whatever the typo
+  distance or fuzzy match.
+- The query is searched as written: `5.12.2024` doesn't find `05.12.2024`.
+- Wherever distance is counted in words (phrase gaps, snippet context and sentence ends, BM25
+  document length), numbers don't count. Searches for words find, rank and show what they did
+  before numbers were indexed; only token indices (`matchStartTokenIndex`, `tokenIndex`) shift.
 
 ### BM25 vs TF-IDF
 
@@ -253,9 +288,44 @@ The system uses BM25 by default (like modern search engines):
 Multi-level intelligent caching:
 
 1. **Text Extraction Cache**: Saves .txt files to avoid re-parsing
-2. **Document Index Cache**: Saves tokenization and frequency data
+2. **Document Index Cache**: Saves each document's words and where they are
 3. **Global Inverted Index**: Compressed full-text search index
 4. **LRU Memory Cache**: Hot data in memory for fast access
+
+Levels 2 and 3 are stamped with `INDEX_VERSION` (`file-indexer/index-version.mts`). Bump it with any
+change that indexes the same text differently (tokenizer, normalization, function words, stemmer): the
+next start rebuilds both from the cached text (level 1), so no document is parsed again.
+
+Levels 2 and 3 save documents' paths relative to `rootDirectory`, with `/` between names, and
+read them back as absolute paths: a cache works wherever the folder is — moved, renamed, on a
+drive under another letter, or seen from Docker at another path. In memory, and in search
+results, `originalFilePath` and `textFilePath` are absolute, as before.
+
+A few changed or deleted files update the inverted index for those documents only. A full rebuild,
+which reads every document, happens once `indexRebuildThreshold` (default 20%) of the documents
+changed.
+
+Searches read the index in place, never a copy of it, and never see an update half-done: until
+it's complete they read the index from before it, snippets included. An update never changes what
+a search reads. It works on a copy that shares what didn't change (a term's postings are copied
+only to change them), and the copy goes in whole. Updates (`reindex()`, `indexSpecificPaths()`,
+`clearCache()`) run one at a time; `reindex()` calls made during an update share one more update,
+run after it.
+
+Results are cached per index version: a `reindex()` that finds nothing changed keeps them, so an
+engine refreshed before every search (as be-krang does) still answers a repeated search at once.
+With `watchFiles`, `refresh()` doesn't even list the folder's files until the watcher reports a
+change, or `rescanAfterMs` (default a minute) goes by — fs.watch can miss changes, on a network
+share for one, so it's a hint, never the only check.
+
+A search in some folders (`searchScopedPaths`) reads only their documents, and needs only theirs
+indexed: `refresh(searchScopedPaths)` lists and indexes the files in those folders alone, and
+drops only their deleted ones. The other folders' documents stay in the index as they were, until
+a refresh takes them in. be-krang creates its engines with
+`createMegaSearch(config, { indexFolder: false })`, which indexes nothing up front, and refreshes
+the folders searched before each search: on a large folder, the first search in one of its
+folders waits for that folder to be indexed, not for all of them. Word statistics for scoring are of all documents indexed, so a
+document scores the same whichever folders are searched.
 
 ## 🚀 Production Deployment
 
@@ -341,6 +411,65 @@ The system provides extensive logging for:
 - Cache hit/miss ratios
 - Performance metrics
 
+## 🧪 Testing
+
+Tests use the built-in `node:test` runner (through `tsx`). Run them from `packages/toolkit`:
+
+```bash
+pnpm test                 # all *.test.mts files
+pnpm test:watch           # re-run on change
+LOG_LEVEL=DEBUG pnpm test # show engine logs (tests default to ERROR)
+```
+
+- Tests live in a `__tests__/` folder beside the modules they cover, and are named
+  `<module>.test.mts` (e.g. `file-indexer/__tests__/inverted-index.test.mts`). Each layer is
+  tested on its own: pure units (`fuzzy`, `bm25-scorer`, `text-processor`, …), matching/snippets
+  on in-memory indexes (`buildSearchData`), `file-indexer/*` against temp folders, and
+  `__tests__/mega-search.test.mts` through the public `createMegaSearch()` API.
+- Shared fixtures live in `test-utils/`. Use `createTempCorpus()` for a document folder in the
+  OS temp dir and `createSearchFixture()` for a corpus plus an initialized `MegaSearch`.
+  Fixture files get a fixed past mtime, so pass `later()` as the mtime when you simulate an edit.
+- `__tests__/` and `test-utils/` are excluded from `dist` by `tsconfig.build.json` /
+  `tsconfig.build-type.json`. `tsconfig.json` still includes them for type-checking.
+
+**Known bugs.** A defect that is confirmed but not fixed yet gets a test that asserts the
+_intended_ behaviour and is marked with `knownBug('<cause>')`. The test still runs, and it is
+reported as `# TODO KNOWN BUG …` without failing the suite. Once the fix lands the test passes;
+remove the marker then, so it guards against regressions.
+
+### Regression check on a real corpus
+
+Unit tests can't show what a change does to hundreds of real searches. The snapshot tool
+(`test-utils/regression/`) samples queries from a corpus — words, word pairs, names as written
+and in lowercase, typos, swapped letters, quoted phrases, numbers and dates, a number between
+two words — and records what consumers see for each: totals, the first page's documents and
+scores, each snippet's `match@charStart` (what parser-config extraction reads) and highlight
+counts. It does so under every option set the UI can send through be-krang, plus the main API
+modes:
+
+```bash
+pnpm mega-search:snapshot <corpusDir> before.json   # add --queries names.txt for your own list
+# …make the change…
+pnpm mega-search:snapshot <corpusDir> after.json
+pnpm mega-search:compare before.json after.json
+```
+
+The comparison counts, per option set and per query group, the searches that are the same and
+those that find fewer or more documents, rank or score them differently, or return other
+snippets or highlights, with examples, and adds up the search time of each. A refactoring or a
+speed-up should leave every search the same; a behaviour change should differ only where it
+means to.
+
+- The same corpus text always gives the same queries, so two snapshots ask the same things.
+- The index is kept in a folder of the OS temp dir per corpus, so the corpus folder isn't
+  touched. Pass `--cache <corpusDir>/.cache` to use the app's own index instead.
+- Search times are only comparable between warm runs: a run that builds the index, right after
+  the documents were read from a cold disk, searched 8–28% slower than the next one on the same
+  code. Before timing a speed-up, take a throw-away snapshot first, and compare runs that both
+  loaded the index (indexing well under a second).
+- Snapshots hold document names and text: they go to the OS temp dir unless you name a file,
+  and must never be committed.
+
 ## 📈 Future Roadmap
 
 - [ ] REST API endpoints
@@ -352,7 +481,7 @@ The system provides extensive logging for:
 
 ## 🤝 Contributing
 
-1. Run tests: `npm test`
+1. Run tests: `pnpm test` (in `packages/toolkit`, see [Testing](#-testing))
 2. Check performance: `npm run benchmark`
 3. Lint code: `npm run lint`
 

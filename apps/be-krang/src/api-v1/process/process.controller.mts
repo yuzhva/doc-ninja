@@ -41,7 +41,7 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       pageSize: pageSize === 'ALL' ? pageSize : Number(pageSize) || 10,
       sortOrder,
       searchScopedPaths: req.body.searchScopedPaths,
-      isTypoToleranceEnabled: req.body.isTypoToleranceEnabled,
+      isInflectedWordFormsAllowed: req.body.isInflectedWordFormsAllowed,
       maxTypoDistance,
     };
 

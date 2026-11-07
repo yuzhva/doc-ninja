@@ -2,5 +2,6 @@
   "extends": "@mainset/dev-stack-fe/tsconfig--type-only",
   "compilerOptions": {
     "outDir": "./dist/types"
-  }
+  },
+  "exclude": ["node_modules", "dist", "**/__tests__/**"]
 }

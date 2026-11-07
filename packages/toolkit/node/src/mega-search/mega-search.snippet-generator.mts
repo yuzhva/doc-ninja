@@ -1,42 +1,95 @@
 import * as fs from 'fs';
 
-import { levenshtein } from './fuzzy.mjs';
+import { editDistance } from './fuzzy.mjs';
 import { LRUCache } from './lru-cache.mjs';
+import type { MatchedWord } from './mega-search.term-matcher.mjs';
 import type { HighlightInfo, SnippetInfo } from './mega-search.types.mjs';
-import {
-  calculateMatchConfidence,
-  getDocumentToken,
-} from './mega-search.utils.mjs';
+import { getDocumentToken, isWordAt } from './mega-search.utils.mjs';
 import { createLogger } from './shared/logger.mjs';
 import { UkrainianTextProcessor } from './text-processor.mjs';
-import type {
-  DocumentIndex,
-  InvertedIndexEntry,
-  ProcessedSearchToken,
-} from './types.mjs';
+import type { DocumentIndex, ProcessedSearchToken } from './types.mjs';
 
 const logger = createLogger('SnippetGenerator');
+const textProcessor = new UkrainianTextProcessor();
+
+/** How many of a document's words isTextOf compares, at most. */
+const WORDS_COMPARED = 32;
+
+/**
+ * Whether `text` is the text `doc` was indexed from: its words, spread over
+ * the whole text, are where the index has them.
+ *
+ * The text cache on disk holds a file's latest text only. While an update
+ * replaces `doc` with a newer version, a search still reads `doc` (see
+ * FileIndexer), and its offsets would cut the newer text into other words
+ * ("Наказ про відпустку" read as "Кошт"). An edit that moves no word and
+ * keeps every compared one may go unnoticed.
+ */
+function isTextOf(text: string, doc: DocumentIndex): boolean {
+  const { positions, vocab } = doc;
+  if (positions.length === 0) return true;
+  if (text.length < positions.charEnd(positions.length - 1)) return false;
+
+  const steps = Math.min(WORDS_COMPARED, positions.length) - 1;
+  for (let step = 0; step <= steps; step++) {
+    const i =
+      steps === 0 ? 0 : Math.round((step * (positions.length - 1)) / steps);
+    const word = textProcessor.normalize(
+      text.slice(positions.charStart(i), positions.charEnd(i)),
+    );
+    if (word !== vocab[positions.vocabIndex(i)]) return false;
+  }
+  return true;
+}
+
+type SnippetRequest = {
+  /**
+   * The query words as matches report them (WordMatch.queryToken): stems
+   * with fuzzy match on, the words as typed otherwise. In phrase order.
+   */
+  queryTokens: string[];
+  /** Every document word the query matched (see mergeMatchedWords). */
+  matchedWords: ReadonlyMap<string, MatchedWord>;
+  isFuzzy: boolean;
+  isPhrase: boolean;
+  /** Phrase searches: the token positions of each phrase occurrence. */
+  phraseSequences?: number[][];
+  contextBefore: number;
+  contextAfter: number;
+};
+
+export type { SnippetRequest };
+
+/**
+ * How much document text snippets keep in memory, in characters — 2 bytes
+ * each, as the text is mostly Cyrillic, so 64 MB at most. A folder of 362
+ * office documents holds 25 million. A text that isn't kept is read from
+ * disk and decoded again for every search showing that document, which
+ * made a search listing all of them take up to half a second.
+ */
+const TEXT_KEPT_CHARACTERS = 32_000_000;
 
 export class SnippetGenerator {
-  // Caches for document vocabularies to avoid re-processing
-  private stemmedVocabCache = new LRUCache<string, string[]>(200);
-  private lowerVocabCache = new LRUCache<string, string[]>(200);
-  // Cache for raw (pre-normalization) document text, keyed by docId.
-  // Smaller cap than the token caches since full text is heavier per entry.
-  private rawTextCache = new LRUCache<string, string>(50);
-
-  constructor(private textProcessor: UkrainianTextProcessor) {}
+  // Raw (pre-normalization) text per version of a document — null for a
+  // version whose text is gone. A reindexed document has new positions, so
+  // the text of its previous version must never be cut by them.
+  private rawTextCache = new LRUCache<string, string | null>(
+    TEXT_KEPT_CHARACTERS,
+    (text) => text?.length ?? 1,
+  );
 
   /**
    * Read the original raw document text (as written to disk pre-normalization),
    * for use cases where the normalized `doc.vocab` tokens (lowercased, stripped
-   * of apostrophes/punctuation, stop words removed) are not suitable — e.g.
+   * of apostrophes/punctuation) are not suitable — e.g.
    * rendering snippet context or highlighting exact substrings.
-   * Returns null if no text cache path is available or the read fails, so
-   * callers can fall back to vocab-reconstructed text.
+   * Returns null if no text cache path is available, the read fails, or the
+   * text is no longer this version's (see isTextOf), so callers can fall back
+   * to vocab-reconstructed text.
    */
   private async getRawText(doc: DocumentIndex): Promise<string | null> {
-    const cacheKey = doc.metadata.originalFilePath;
+    const { originalFilePath, lastModified } = doc.metadata;
+    const cacheKey = `${originalFilePath}\u0000${lastModified}`;
     const cached = this.rawTextCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -44,7 +97,13 @@ export class SnippetGenerator {
     if (!textFilePath) return null;
 
     try {
-      const text = await fs.promises.readFile(textFilePath, 'utf8');
+      const read = await fs.promises.readFile(textFilePath, 'utf8');
+      const text = isTextOf(read, doc) ? read : null;
+      if (text === null) {
+        logger.debug(
+          `Raw text of ${doc.metadata.fileName} is of a newer version, using its index words`,
+        );
+      }
       this.rawTextCache.set(cacheKey, text);
       return text;
     } catch (error) {
@@ -59,8 +118,8 @@ export class SnippetGenerator {
   /**
    * Resolve the display text for a token-index range [start, end) within a
    * snippet. Prefers an exact slice of the raw (pre-normalization) document
-   * text via char offsets — preserving original casing, apostrophes, stop
-   * words, and punctuation. Falls back to joining normalized `doc.vocab`
+   * text via char offsets — preserving original casing, apostrophes, single
+   * letters, and punctuation. Falls back to joining normalized `doc.vocab`
    * tokens only if the raw text cache is unavailable (e.g. missing/unreadable
    * textFilePath), which reproduces the previous (lossy) behavior.
    *
@@ -73,26 +132,26 @@ export class SnippetGenerator {
     doc: DocumentIndex,
     snippetBounds: { start: number; end: number },
   ): Promise<{ text: string; rawCharStart: number | null }> {
-    const boundTokens = doc.positions.slice(
-      snippetBounds.start,
-      snippetBounds.end,
-    );
-    if (boundTokens.length === 0) return { text: '', rawCharStart: null };
+    const { positions } = doc;
+    const first = snippetBounds.start;
+    const last = Math.min(snippetBounds.end, positions.length) - 1;
+    if (last < first) return { text: '', rawCharStart: null };
 
     const rawText = await this.getRawText(doc);
     if (rawText !== null) {
-      const charStart = boundTokens[0][1];
-      const charEnd = boundTokens[boundTokens.length - 1][2];
+      const charStart = positions.charStart(first);
+      const charEnd = positions.charEnd(last);
       return {
         text: rawText.slice(charStart, charEnd),
         rawCharStart: charStart,
       };
     }
 
-    return {
-      text: boundTokens.map((p) => doc.vocab[p[0]]).join(' '),
-      rawCharStart: null,
-    };
+    const words: string[] = [];
+    for (let i = first; i <= last; i++) {
+      words.push(doc.vocab[positions.vocabIndex(i)]);
+    }
+    return { text: words.join(' '), rawCharStart: null };
   }
 
   /**
@@ -184,110 +243,35 @@ export class SnippetGenerator {
   }
 
   /**
-   * Generate all highlights for a document.
+   * Every occurrence of a matched word in the document, with raw char offsets.
    */
   generateHighlights(
-    docId: string,
     doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    isPhrase: boolean,
-    isTypoToleranceEnabled: boolean,
+    matchedWords: ReadonlyMap<string, MatchedWord>,
   ): HighlightInfo[] {
     const start = Date.now();
     const highlights: HighlightInfo[] = [];
 
-    if (isPhrase && isTypoToleranceEnabled) {
-      // Use cached lowercased vocab
-      let lowerVocab = this.lowerVocabCache.get(docId);
-      if (!lowerVocab) {
-        lowerVocab = doc.vocab.map((v) => v.toLowerCase());
-        this.lowerVocabCache.set(docId, lowerVocab);
-      }
+    const { positions } = doc;
+    for (let token = 0; token < positions.length; token++) {
+      const originalWord = doc.vocab[positions.vocabIndex(token)];
+      const matched = matchedWords.get(originalWord);
+      if (!matched) continue;
+      const charStart = positions.charStart(token);
+      const charEnd = positions.charEnd(token);
 
-      const matchingVocabIndices = new Map<
-        number,
-        { term: string; confidence: number }
-      >();
-
-      lowerVocab.forEach((vocabTermLower, index) => {
-        for (const queryToken of originalPhraseOrStemmedTokens) {
-          const distance = levenshtein(vocabTermLower, queryToken);
-          if (distance <= 2) {
-            const confidence =
-              distance === 0 ? 1.0 : Math.max(0.5, 1.0 - distance * 0.2);
-            if (
-              !matchingVocabIndices.has(index) ||
-              matchingVocabIndices.get(index)!.confidence < confidence
-            ) {
-              matchingVocabIndices.set(index, {
-                term: queryToken,
-                confidence,
-              });
-            }
-          }
-        }
+      highlights.push({
+        term: matched.queryToken,
+        originalWord,
+        charStart,
+        charEnd,
+        confidence: matched.confidence,
       });
-
-      if (matchingVocabIndices.size > 0) {
-        doc.positions.forEach((p) => {
-          const match = matchingVocabIndices.get(p[0]);
-          if (match) {
-            highlights.push({
-              term: match.term,
-              originalWord: doc.vocab[p[0]],
-              charStart: p[1],
-              charEnd: p[2],
-              confidence: match.confidence,
-            });
-          }
-        });
-      }
-    } else {
-      // Regular highlight extraction
-      let stemmedVocab = this.stemmedVocabCache.get(docId);
-      if (!stemmedVocab) {
-        stemmedVocab = doc.vocab.map((v) => this.textProcessor.stemWord(v));
-        this.stemmedVocabCache.set(docId, stemmedVocab);
-      }
-
-      const matchingVocabIndices = new Set<number>();
-      const queryTokenSet = new Set(originalPhraseOrStemmedTokens);
-
-      stemmedVocab.forEach((docTokenStem, index) => {
-        if (queryTokenSet.has(docTokenStem)) {
-          matchingVocabIndices.add(index);
-        }
-      });
-
-      if (matchingVocabIndices.size > 0) {
-        doc.positions.forEach((p) => {
-          if (matchingVocabIndices.has(p[0])) {
-            const docTokenTerm = doc.vocab[p[0]];
-            const docTokenStem = stemmedVocab![p[0]];
-            const queryToken = originalPhraseOrStemmedTokens.find(
-              (t) => t === docTokenStem,
-            );
-
-            highlights.push({
-              term: queryToken || docTokenStem,
-              originalWord: docTokenTerm,
-              charStart: p[1],
-              charEnd: p[2],
-              confidence: isTypoToleranceEnabled
-                ? calculateMatchConfidence(
-                    queryToken || docTokenStem,
-                    docTokenStem,
-                  )
-                : 1.0,
-            });
-          }
-        });
-      }
     }
 
     const duration = Date.now() - start;
     if (duration > 10) {
-      logger.info(
+      logger.debug(
         `[PERF] Highlights generation for ${doc.metadata.fileName}: ${duration}ms`,
       );
     }
@@ -296,44 +280,41 @@ export class SnippetGenerator {
   }
 
   /**
-   * Main entry point for snippet generation.
+   * The document's snippets, in text order — the first `limit` of them,
+   * the rest never generated.
    */
   async generateSnippets(
     doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    invertedIndex: Map<string, InvertedIndexEntry[]>,
-    isPhrase: boolean,
-    isTypoToleranceEnabled: boolean,
-    matchPositions: number[][] | undefined,
-    contextBefore: number,
-    contextAfter: number,
+    request: SnippetRequest,
+    limit = Infinity,
   ): Promise<SnippetInfo[]> {
     const start = Date.now();
     let snippets: SnippetInfo[] = [];
 
-    if (isPhrase) {
-      // matchPositions already contains the correct matches from PhraseMatcher
+    if (request.isPhrase) {
+      // the sequences already are the matches PhraseMatcher verified
       snippets = await this.extractPhraseSnippetsFromPositions(
         doc,
-        originalPhraseOrStemmedTokens,
-        matchPositions,
-        isTypoToleranceEnabled,
-        contextBefore,
-        contextAfter,
+        request.queryTokens,
+        request.phraseSequences,
+        request.isFuzzy,
+        request.contextBefore,
+        request.contextAfter,
+        limit,
       );
     } else {
       snippets = await this.extractTokenSnippets(
         doc,
-        originalPhraseOrStemmedTokens,
-        isTypoToleranceEnabled,
-        contextBefore,
-        contextAfter,
+        request.matchedWords,
+        request.contextBefore,
+        request.contextAfter,
+        limit,
       );
     }
 
     const duration = Date.now() - start;
     if (duration > 10) {
-      logger.info(
+      logger.debug(
         `[PERF] Snippet extraction for ${doc.metadata.fileName}: ${duration}ms`,
       );
     }
@@ -341,22 +322,25 @@ export class SnippetGenerator {
   }
 
   /**
-   * ✅ UNIFIED: Extract phrase snippets from pre-computed match positions
-   * Works for both strict and fuzzy phrase search
+   * One snippet per phrase occurrence PhraseMatcher found, strict and fuzzy
+   * alike. Snippets of the same text at different places are all kept: each
+   * is its own match, and its own extraction row in be-krang.
    */
   private async extractPhraseSnippetsFromPositions(
     doc: DocumentIndex,
     originalPhraseOrStemmedTokens: string[],
     sequences: number[][] | undefined,
-    isTypoToleranceEnabled: boolean,
+    isFuzzy: boolean,
     contextBefore: number,
     contextAfter: number,
+    limit: number,
   ): Promise<SnippetInfo[]> {
     if (!sequences || sequences.length === 0) return [];
 
     const snippets: SnippetInfo[] = [];
 
     for (const sequencePositions of sequences) {
+      if (snippets.length >= limit) break;
       if (sequencePositions.length !== originalPhraseOrStemmedTokens.length)
         continue;
 
@@ -365,9 +349,7 @@ export class SnippetGenerator {
       );
       if (sequence.some((token) => token === null)) continue;
 
-      const matchType = isTypoToleranceEnabled
-        ? 'fuzzy-phrase'
-        : 'exact-phrase';
+      const matchType = isFuzzy ? 'fuzzy-phrase' : 'exact-phrase';
 
       const snippet = await this.createSnippetFromSequence(
         doc,
@@ -380,41 +362,34 @@ export class SnippetGenerator {
       if (snippet) snippets.push(snippet);
     }
 
-    return this.removeDuplicateSnippets(snippets);
+    return snippets;
   }
 
+  /**
+   * One snippet per occurrence of a matched word, unless an earlier one
+   * already has the very same window. As with phrases, the same text at
+   * different places gives a snippet each.
+   */
   private async extractTokenSnippets(
     doc: DocumentIndex,
-    originalPhraseOrStemmedTokens: string[],
-    isTypoToleranceEnabled: boolean,
+    matchedWords: ReadonlyMap<string, MatchedWord>,
     contextBefore: number,
     contextAfter: number,
+    limit: number,
   ): Promise<SnippetInfo[]> {
     const snippets: SnippetInfo[] = [];
     const processedBounds = new Set<string>();
-    const matchedTokenIndices = new Set<number>();
 
-    doc.positions.forEach((p, tokenIndex) => {
-      const docTokenTerm = doc.vocab[p[0]];
-      const docTokenToCompare = isTypoToleranceEnabled
-        ? this.textProcessor.stemWord(docTokenTerm)
-        : docTokenTerm.toLowerCase();
-      if (originalPhraseOrStemmedTokens.includes(docTokenToCompare)) {
-        matchedTokenIndices.add(tokenIndex);
-      }
-    });
+    for (let tokenIndex = 0; tokenIndex < doc.positions.length; tokenIndex++) {
+      if (snippets.length >= limit) break;
+      const matched = matchedWords.get(
+        doc.vocab[doc.positions.vocabIndex(tokenIndex)],
+      );
+      if (!matched) continue;
+      const { queryToken, confidence } = matched;
 
-    for (const tokenIndex of matchedTokenIndices) {
       const docToken = getDocumentToken(doc, tokenIndex);
       if (!docToken) continue;
-
-      const docTokenToCompare = isTypoToleranceEnabled
-        ? this.textProcessor.stemWord(docToken.term)
-        : docToken.term.toLowerCase();
-      const queryToken = originalPhraseOrStemmedTokens.find(
-        (qt) => qt === docTokenToCompare,
-      );
-      if (!queryToken) continue;
 
       const snippetBounds = await this.findSentenceBoundariesForSnippet(
         doc,
@@ -439,10 +414,6 @@ export class SnippetGenerator {
         [{ charStart: docToken.charStart, charEnd: docToken.charEnd }],
         [{ term: queryToken, originalWord: docToken.term }],
       );
-
-      const confidence = isTypoToleranceEnabled
-        ? calculateMatchConfidence(queryToken, docTokenToCompare)
-        : 1.0;
 
       const matchedText = await this.getRawSubstring(
         doc,
@@ -472,7 +443,7 @@ export class SnippetGenerator {
       });
     }
 
-    return this.removeDuplicateSnippets(snippets);
+    return snippets;
   }
 
   private async createSnippetFromSequence(
@@ -483,12 +454,6 @@ export class SnippetGenerator {
     contextBefore: number,
     contextAfter: number,
   ): Promise<SnippetInfo | null> {
-    if (
-      !this.isValidMatch(sequence, originalPhraseOrStemmedTokens, matchType)
-    ) {
-      return null;
-    }
-
     const matchStartPos = sequence[0].position;
     const matchEndPos = sequence[sequence.length - 1].position;
 
@@ -531,7 +496,6 @@ export class SnippetGenerator {
     const confidence = this.calculateSequenceConfidence(
       sequence,
       originalPhraseOrStemmedTokens,
-      matchType,
     );
 
     const matchedText = await this.getRawSubstring(
@@ -554,32 +518,18 @@ export class SnippetGenerator {
     };
   }
 
-  private isValidMatch(
-    sequence: ProcessedSearchToken[],
-    queryTokens: string[],
-    matchType: 'exact-phrase' | 'fuzzy-phrase',
-  ): boolean {
-    if (matchType === 'exact-phrase') {
-      return sequence.every((token, index) => {
-        const queryToken = queryTokens[index];
-        return token.term.toLowerCase() === queryToken.toLowerCase();
-      });
-    }
-    return true;
-  }
-
+  /**
+   * Lowered by the edit distance between each matched word and its query
+   * token: typos in either mode, and — with fuzzy match on, where the query
+   * tokens are stems — the endings of inflected forms too.
+   */
   private calculateSequenceConfidence(
     sequence: ProcessedSearchToken[],
     queryTokens: string[],
-    matchType: 'exact-phrase' | 'fuzzy-phrase',
   ): number {
-    if (matchType === 'exact-phrase') {
-      return 1.0;
-    }
-
     const totalDistance = sequence.reduce((sum, match, index) => {
       const queryToken = queryTokens[index];
-      return sum + levenshtein(match.term.toLowerCase(), queryToken);
+      return sum + editDistance(match.term.toLowerCase(), queryToken);
     }, 0);
 
     return Math.max(0.3, 1.0 - totalDistance / (queryTokens.length * 3));
@@ -592,54 +542,67 @@ export class SnippetGenerator {
     contextBefore: number,
     contextAfter: number,
   ): Promise<{ start: number; end: number }> {
-    // Punctuation is never tokenized as its own vocab entry (the tokenizer's
-    // character class only captures letters/apostrophes/hyphens — see
-    // UkrainianTextProcessor.tokenize), so a sentence terminator always lands
-    // in the raw text immediately after the preceding word token's charEnd,
-    // never as a vocab token of its own. Checking raw text here is what makes
+    // Punctuation is never tokenized as its own vocab entry (tokens are words
+    // and runs of digits only — see UkrainianTextProcessor.tokenize), so a
+    // sentence terminator always lands in the raw text immediately after the
+    // preceding token's charEnd, never as a vocab token of its own. Checking raw text here is what makes
     // boundary detection actually work, vs. the previous vocab-token check
     // (which could never match and always fell through to the fixed window).
     const rawText = await this.getRawText(doc);
 
     const isBoundaryToken = (tokenIndex: number): boolean => {
       if (rawText !== null) {
-        const charEnd = doc.positions[tokenIndex][2];
+        const charEnd = doc.positions.charEnd(tokenIndex);
         return charEnd < rawText.length && '.!?;'.includes(rawText[charEnd]);
       }
 
       // Degraded fallback when raw text is unavailable: preserves the old
       // (effectively dead) behavior rather than failing outright.
-      const token = doc.vocab[doc.positions[tokenIndex][0]];
+      const token = doc.vocab[doc.positions.vocabIndex(tokenIndex)];
       return /[.!?;]$/.test(token) || ['?', '!', ';', '.'].includes(token);
     };
 
-    let sentenceStart = Math.max(0, matchStartPos - contextBefore);
-    for (let i = matchStartPos - 1; i >= sentenceStart; i--) {
-      if (isBoundaryToken(i)) {
-        sentenceStart = i + 1;
-        break;
-      }
+    // The context is counted in words, and ends at a word: numbers within it
+    // are shown, but neither use it up nor end a sentence ("від 21.11.2022.
+    // Затвердити"), so a snippet holds the words it held before numbers were
+    // indexed.
+    let sentenceStart = matchStartPos;
+    for (
+      let i = matchStartPos - 1, words = 0;
+      i >= 0 && words < contextBefore;
+      i--
+    ) {
+      if (!isWordAt(doc, i)) continue;
+      if (isBoundaryToken(i)) break;
+      words++;
+      sentenceStart = i;
     }
 
-    let sentenceEnd = Math.min(
-      doc.positions.length,
-      matchEndPos + contextAfter,
-    );
-    for (let i = matchEndPos + 1; i < sentenceEnd; i++) {
-      if (isBoundaryToken(i)) {
-        sentenceEnd = i + 1;
-        break;
-      }
+    // contextAfter counts the match's last token as its first word
+    let sentenceEnd = matchEndPos;
+    for (
+      let i = matchEndPos, words = 0;
+      i < doc.positions.length && words < contextAfter;
+      i++
+    ) {
+      const isMatchEnd = i === matchEndPos;
+      if (!isMatchEnd && !isWordAt(doc, i)) continue;
+      words++;
+      sentenceEnd = i + 1;
+      if (!isMatchEnd && isBoundaryToken(i)) break;
     }
 
-    let bufferStart = Math.max(0, sentenceStart);
-    let bufferEnd = Math.min(doc.positions.length, sentenceEnd);
+    let bufferStart = sentenceStart;
+    let bufferEnd = sentenceEnd;
 
     const MAX_SNIPPET_TOKENS = Math.max(
       100,
       contextBefore + contextAfter + (matchEndPos - matchStartPos),
     );
-    const snippetTokenCount = bufferEnd - bufferStart;
+    let snippetTokenCount = 0;
+    for (let i = bufferStart; i < bufferEnd; i++) {
+      if (isWordAt(doc, i)) snippetTokenCount++;
+    }
 
     if (snippetTokenCount > MAX_SNIPPET_TOKENS) {
       const matchCenter = (matchStartPos + matchEndPos) / 2;
@@ -672,7 +635,12 @@ export class SnippetGenerator {
       const pattern = uniqueTerms
         .map((t) => this.escapeRegExp(t.originalWord))
         .join('|');
-      const regex = new RegExp(`\\b(${pattern})\\b`, 'gi');
+      // `\b` only knows ASCII word characters, so it never matches around
+      // Cyrillic words — use Unicode-aware lookarounds instead.
+      const regex = new RegExp(
+        `(?<![\\p{L}\\p{N}_])(${pattern})(?![\\p{L}\\p{N}_])`,
+        'giu',
+      );
 
       text = text.replace(regex, (match) => {
         highlightedWords.push(match);
@@ -681,22 +649,6 @@ export class SnippetGenerator {
     }
 
     return { text, highlightedWords };
-  }
-
-  private removeDuplicateSnippets(snippets: SnippetInfo[]): SnippetInfo[] {
-    const seen = new Set<string>();
-    return snippets.filter((snippet) => {
-      const simplifiedContext = snippet.context
-        .replace(/<b>|<\/b>/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (seen.has(simplifiedContext)) {
-        return false;
-      } else {
-        seen.add(simplifiedContext);
-        return true;
-      }
-    });
   }
 
   private escapeRegExp(string: string): string {
