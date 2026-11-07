@@ -295,7 +295,6 @@ class FileIndexer {
 
     if (toIndex.length === 0 && removed.length === 0) {
       this.logger.info('✅ All files are up to date. No reindexing needed.');
-      if (this.storage.needsOptimization) await this.save();
       return;
     }
 
@@ -416,7 +415,6 @@ class FileIndexer {
       this.invertedIndex,
       this.stemDictionary,
     );
-    this.storage.needsOptimization = false;
   }
 
   /**

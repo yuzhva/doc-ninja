@@ -25,7 +25,10 @@
  * 9. positions saved as [vocabIndex, gap, length] a token: the characters
  *    from the end of the token before, and its own, not where it starts and
  *    ends (see TokenPositions); no term frequencies, which nothing read
+ * 10. documents' paths saved from the folder indexed, with "/" between names
+ *    (relativeFilePath), and no textFilePath: a cache reads the same
+ *    wherever the folder is (see SavedPaths)
  */
-const INDEX_VERSION = 9;
+const INDEX_VERSION = 10;
 
 export { INDEX_VERSION };

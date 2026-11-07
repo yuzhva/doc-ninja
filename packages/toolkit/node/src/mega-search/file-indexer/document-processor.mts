@@ -3,8 +3,8 @@ import * as path from 'path';
 import { promisify } from 'util';
 
 import { DocumentExtractor } from '../../document-extractor/index.mjs';
-import { resolveCachePaths } from '../cache-paths.mjs';
-import type { ResolvedCachePaths } from '../cache-paths.mjs';
+import { SavedPaths, resolveCachePaths } from '../cache-paths.mjs';
+import type { ResolvedCachePaths, SavedMetadata } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import {
@@ -45,12 +45,14 @@ class DocumentProcessor {
   >(25);
   private createdDirectories = new Set<string>();
   private cachePaths: ResolvedCachePaths;
+  private savedPaths: SavedPaths;
 
   constructor(
     private config: SearchConfig,
     private logger: Logger,
   ) {
     this.cachePaths = resolveCachePaths(this.config);
+    this.savedPaths = new SavedPaths(this.config, this.cachePaths);
   }
 
   private getCacheRelativePath(filePath: string): string {
@@ -150,15 +152,6 @@ class DocumentProcessor {
           cached.metadata.lastModified = sourceStat.mtimeMs;
           cached.metadata.size = sourceStat.size;
 
-          if (!cached.metadata.originalFilePath && cached.metadata.filePath) {
-            cached.metadata.originalFilePath = cached.metadata.filePath;
-          }
-          if (!cached.metadata.textFilePath) {
-            cached.metadata.textFilePath = this.getTextCachePath(
-              metadata.originalFilePath,
-            );
-          }
-
           documentCache.set(metadata.originalFilePath, cached);
           this.logger.debug(
             `📋 Pre-loaded cached index for ${metadata.fileName} - no reindexing needed`,
@@ -231,15 +224,6 @@ class DocumentProcessor {
           cached.metadata.lastModified = srcStat.mtimeMs;
           cached.metadata.size = srcStat.size;
           cached.metadata.indexed = true;
-
-          if (!cached.metadata.originalFilePath && cached.metadata.filePath) {
-            cached.metadata.originalFilePath = cached.metadata.filePath;
-          }
-          if (!cached.metadata.textFilePath) {
-            cached.metadata.textFilePath = this.getTextCachePath(
-              metadata.originalFilePath,
-            );
-          }
 
           this.logger.debug(`📋 Loaded cached index for ${metadata.fileName}`);
           return cached;
@@ -354,9 +338,9 @@ class DocumentProcessor {
   }
 
   /**
-   * A per-document index from disk, or null when another INDEX_VERSION built
-   * it: its vocab and positions may not be what tokenizing the text gives
-   * now. Throws on a corrupted file.
+   * The per-document index of the document `metadata` describes, from disk,
+   * or null when another INDEX_VERSION built it: its vocab and positions may
+   * not be what tokenizing the text gives now. Throws on a corrupted file.
    */
   private async readCachedIndex(
     indexPath: string,
@@ -371,7 +355,17 @@ class DocumentProcessor {
       );
       return null;
     }
-    return { ...cached, positions: TokenPositions.fromSaved(cached.positions) };
+    const { relativeFilePath, ...saved }: SavedMetadata = cached.metadata;
+    return {
+      ...cached,
+      // Its paths are the document's: the file was found by them
+      metadata: {
+        ...saved,
+        originalFilePath: metadata.originalFilePath,
+        textFilePath: this.getTextCachePath(metadata.originalFilePath),
+      },
+      positions: TokenPositions.fromSaved(cached.positions),
+    };
   }
 
   private createEmptyIndex(metadata: DocumentMetadata): DocumentIndex {
@@ -397,7 +391,11 @@ class DocumentProcessor {
       );
       await this.ensureDirectory(path.dirname(indexPath));
 
-      const toSave = { indexVersion: INDEX_VERSION, ...documentIndex };
+      const toSave = {
+        indexVersion: INDEX_VERSION,
+        ...documentIndex,
+        metadata: this.savedPaths.saveMetadata(documentIndex.metadata),
+      };
       await promisify(fs.writeFile)(indexPath, JSON.stringify(toSave), 'utf8');
       this.logger.debug(
         `💾 Cached index for ${documentIndex.metadata.fileName}`,

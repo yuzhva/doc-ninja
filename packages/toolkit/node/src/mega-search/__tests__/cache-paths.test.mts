@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { resolveCachePaths } from '../cache-paths.mjs';
-import type { SearchConfig } from '../types.mjs';
+import { SavedPaths, resolveCachePaths } from '../cache-paths.mjs';
+import type { DocumentMetadata, SearchConfig } from '../types.mjs';
 
 // Pure path arithmetic — nothing touches the disk. path.resolve keeps the
 // expectations platform-native (C:\corpus on Windows, /corpus elsewhere).
@@ -91,5 +91,75 @@ describe('resolveCachePaths()', () => {
 
     assert.equal(paths.cacheRoot, path.join(outside, 'cache'));
     assert.deepEqual(paths.excludeAbsoluteDirs, []);
+  });
+});
+
+describe('SavedPaths', () => {
+  const pathsFor = (rootDirectory: string) =>
+    new SavedPaths({
+      rootDirectory,
+      extensions: ['.txt'],
+      maxFileSize: Infinity,
+      concurrency: 1,
+    });
+  const metadataIn = (folder: string): DocumentMetadata => ({
+    originalFilePath: path.join(folder, 'orders', '2024', 'order.txt'),
+    textFilePath: path.join(
+      folder,
+      '.cache',
+      'txt',
+      'orders',
+      '2024',
+      'order.txt.txt',
+    ),
+    fileName: 'order.txt',
+    lastModified: 1,
+    size: 2,
+    indexed: true,
+    indexedAt: 3,
+    language: 'ukrainian',
+  });
+
+  it('saves a document’s path from the folder, with "/" between names', () => {
+    const saved = pathsFor(root).saveMetadata(metadataIn(root));
+
+    assert.deepEqual(saved, {
+      relativeFilePath: 'orders/2024/order.txt',
+      fileName: 'order.txt',
+      lastModified: 1,
+      size: 2,
+      indexed: true,
+      indexedAt: 3,
+      language: 'ukrainian',
+    });
+  });
+
+  it('reads it back as it was, where the scanner finds the document', () => {
+    const { originalFilePath } = metadataIn(root);
+    // the scanner's path.resolve(root, relative): one separator, whatever
+    // the root ends with
+    for (const rootDirectory of [root, root + path.sep]) {
+      const paths = pathsFor(rootDirectory);
+
+      assert.deepEqual(
+        paths.readMetadata(paths.saveMetadata(metadataIn(root))),
+        metadataIn(root),
+      );
+      assert.equal(paths.read(paths.save(originalFilePath)), originalFilePath);
+    }
+  });
+
+  it('reads it where the folder is now', () => {
+    const moved = path.resolve('/moved/corpus');
+    const saved = pathsFor(root).saveMetadata(metadataIn(root));
+
+    assert.deepEqual(pathsFor(moved).readMetadata(saved), metadataIn(moved));
+  });
+
+  it('keeps a document outside the folder where it is', () => {
+    const paths = pathsFor(root);
+    const elsewhere = path.join(outside, 'note.txt');
+
+    assert.equal(paths.read(paths.save(elsewhere)), elsewhere);
   });
 });
