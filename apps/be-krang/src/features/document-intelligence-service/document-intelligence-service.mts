@@ -1,6 +1,8 @@
 import path from 'path';
 import type { PaginatedSearchResult, SearchOptions } from 'toolkit--local/node';
 import { MegaSearch, createMegaSearch } from 'toolkit--local/node';
+import v8 from 'v8';
+import vm from 'vm';
 
 import { runtimePathById } from '../../supplement/index.mjs';
 import { MegaSearchEngines } from './mega-search-engines.mjs';
@@ -25,15 +27,24 @@ const engines = new MegaSearchEngines({
 });
 
 /**
+ * V8's garbage collector, callable. The backend runs in an Electron utility
+ * process, and --expose-gc given to one doesn't reach its scripts: switched on
+ * here instead, the flag gives gc() to every context created after it.
+ */
+const collectGarbage: () => void = (() => {
+  v8.setFlagsFromString('--expose-gc');
+  return vm.runInNewContext('gc');
+})();
+
+/**
  * Collects the garbage a second from now — the engine just let go, which
  * holds about three times its folder's text, once nothing refers to it any
- * more. Only where the process allows it (Electron's backend process runs with
- * --expose-gc): an idle Electron utility process collects nothing by itself,
- * and kept that memory until the next search. Plain Node collects on its own.
+ * more. An idle Electron utility process collects nothing by itself, and kept
+ * that memory until the next search. Plain Node collects on its own; this
+ * only makes it sooner.
  */
 const collectGarbageSoon = (): void => {
-  const { gc } = globalThis as { gc?: () => void };
-  if (gc) setTimeout(gc, 1000).unref();
+  setTimeout(collectGarbage, 1000).unref();
 };
 
 interface SearchResult {
