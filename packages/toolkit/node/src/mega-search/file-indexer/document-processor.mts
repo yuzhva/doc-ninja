@@ -15,6 +15,7 @@ import {
 import { TokenPositions } from '../token-positions.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
+import { SharedWords } from './shared-words.mjs';
 
 /**
  * Whether `doc` was indexed from the file as discovery reports it now.
@@ -50,6 +51,7 @@ class DocumentProcessor {
   constructor(
     private config: SearchConfig,
     private logger: Logger,
+    private sharedWords = new SharedWords(),
   ) {
     this.cachePaths = resolveCachePaths(this.config);
     this.savedPaths = new SavedPaths(this.config, this.cachePaths);
@@ -277,7 +279,7 @@ class DocumentProcessor {
         let vocabIndex = vocabMap.get(token.term);
         if (vocabIndex === undefined) {
           vocabIndex = vocab.length;
-          vocab.push(token.term);
+          vocab.push(this.sharedWords.get(token.term));
           vocabMap.set(token.term, vocabIndex);
           vocabCountsAsWord.push(countsAsWord(token.term));
         }
@@ -364,6 +366,7 @@ class DocumentProcessor {
         originalFilePath: metadata.originalFilePath,
         textFilePath: this.getTextCachePath(metadata.originalFilePath),
       },
+      vocab: this.sharedWords.share(cached.vocab ?? []),
       positions: TokenPositions.fromSaved(cached.positions),
     };
   }
