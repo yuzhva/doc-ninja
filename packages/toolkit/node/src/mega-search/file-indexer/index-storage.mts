@@ -5,8 +5,8 @@ import { promisify } from 'util';
 import * as v8 from 'v8';
 import * as zlib from 'zlib';
 
-import { resolveCachePaths } from '../cache-paths.mjs';
-import type { ResolvedCachePaths } from '../cache-paths.mjs';
+import { SavedPaths, resolveCachePaths } from '../cache-paths.mjs';
+import type { ResolvedCachePaths, SavedMetadata } from '../cache-paths.mjs';
 import { LRUCache } from '../lru-cache.mjs';
 import { Logger } from '../shared/logger.mjs';
 import { TokenPositions } from '../token-positions.mjs';
@@ -16,6 +16,12 @@ import { InvertedIndex } from './inverted-index.mjs';
 
 /** What a document's per-document index holds beside its metadata. */
 type DocumentWords = Pick<DocumentIndex, 'vocab' | 'positions' | 'joints'>;
+
+/** A document as the global index saves it: no words. */
+interface SavedDocument {
+  metadata: SavedMetadata;
+  wordCount: number;
+}
 
 /**
  * A document as the global index holds it: its metadata and word count, and
@@ -60,8 +66,8 @@ class LazyDocument implements DocumentIndex {
 
 class IndexStorage {
   private gunzipAsync = promisify(zlib.gunzip);
-  public needsOptimization = false;
   private cachePaths: ResolvedCachePaths;
+  private savedPaths: SavedPaths;
 
   constructor(
     private config: SearchConfig,
@@ -69,6 +75,7 @@ class IndexStorage {
     private documentLRU: LRUCache<string, DocumentIndex>,
   ) {
     this.cachePaths = resolveCachePaths(this.config);
+    this.savedPaths = new SavedPaths(this.config, this.cachePaths);
   }
 
   private getCacheRelativePath(filePath: string): string {
@@ -238,7 +245,11 @@ class IndexStorage {
 
       // Save Document Mapping
       const docMappingPath = path.join(chunkedDir, `doc_mapping${chunkExt}`);
-      const docMappingBuffer = v8.serialize(invertedIndex.getDocMapping());
+      const docMappingBuffer = v8.serialize(
+        invertedIndex
+          .getDocMapping()
+          .map((filePath) => this.savedPaths.save(filePath)),
+      );
       await fs.promises.writeFile(
         docMappingPath,
         useCompression
@@ -247,16 +258,15 @@ class IndexStorage {
       );
 
       // Save Documents
-      const docEntries = Array.from(documentCache.entries());
-      const lightDocEntries = docEntries.map(([key, doc]) => {
-        const lightDoc: any = {
-          metadata: doc.metadata,
+      const savedDocs = Array.from(
+        documentCache.values(),
+        (doc): SavedDocument => ({
+          metadata: this.savedPaths.saveMetadata(doc.metadata),
           wordCount: doc.wordCount,
-        };
-        return [key, lightDoc];
-      });
+        }),
+      );
 
-      const docChunks = this.chunkMapEntries(lightDocEntries, 50);
+      const docChunks = this.chunkMapEntries(savedDocs, 50);
       this.logger.info(
         `📑 Saving document cache in ${docChunks.length} chunks`,
       );
@@ -344,11 +354,6 @@ class IndexStorage {
     return chunks;
   }
 
-  private getTextCachePath(filePath: string): string {
-    const rel = this.getCacheRelativePath(filePath);
-    return path.join(this.cachePaths.txtCacheRoot, `${rel}.txt`);
-  }
-
   private async loadGlobalInvertedIndexChunked(
     globalIndexPath: string,
     marker: any,
@@ -391,7 +396,9 @@ class IndexStorage {
         compression === 'gzip'
           ? await this.gunzipAsync(docMappingData)
           : docMappingData;
-      const docMapping = v8.deserialize(docMappingBuffer) as string[];
+      const docMapping = (v8.deserialize(docMappingBuffer) as string[]).map(
+        (savedPath) => this.savedPaths.read(savedPath),
+      );
 
       // Initialize InvertedIndex with mapping but empty map
       invertedIndex.restore(new Map(), docMapping);
@@ -468,21 +475,13 @@ class IndexStorage {
       await loadChunksParallel(
         metadata.chunkInfo.documentChunks,
         'documents',
-        (entries: [string, any][]) => {
-          for (const [filePath, doc] of entries) {
-            if (!doc.metadata.originalFilePath && doc.metadata.filePath) {
-              doc.metadata.originalFilePath = doc.metadata.filePath;
-              delete doc.metadata.filePath;
-            }
-            if (!doc.metadata.textFilePath) {
-              doc.metadata.textFilePath = this.getTextCachePath(
-                doc.metadata.originalFilePath,
-              );
-            }
-            if (doc.vocab || doc.positions) {
-              this.needsOptimization = true;
-            }
-            documentCache.set(filePath, this.lazyDocument(doc));
+        (docs: SavedDocument[]) => {
+          for (const doc of docs) {
+            const metadata = this.savedPaths.readMetadata(doc.metadata);
+            documentCache.set(
+              metadata.originalFilePath,
+              this.lazyDocument({ ...doc, metadata }),
+            );
           }
         },
         'Documents',
@@ -556,6 +555,13 @@ class IndexStorage {
     try {
       const indexPath = this.getIndexCachePath(metadata.originalFilePath);
       const fullDoc = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      const { relativeFilePath, ...saved }: SavedMetadata = fullDoc.metadata;
+      // Its paths are the document's: the file was found by them
+      fullDoc.metadata = {
+        ...saved,
+        originalFilePath: metadata.originalFilePath,
+        textFilePath: metadata.textFilePath,
+      };
       fullDoc.positions = TokenPositions.fromSaved(fullDoc.positions);
       fullDoc.vocab ??= [];
       fullDoc.joints ??= {};

@@ -110,6 +110,92 @@ describe('FileIndexer', () => {
     assert.deepEqual(docsWithWord(await indexed(), 'наказ'), ['a.txt']);
   });
 
+  describe('in a folder moved since it was indexed', () => {
+    // As be-krang in Docker sees the folder, at /usr/src/…, or a folder
+    // renamed, or its drive back under another letter: the caches came along
+    const files = ['a.txt', 'b.txt', 'orders/c.txt'];
+    let moved: string;
+
+    const reopened = async () => {
+      const indexer = new FileIndexer({
+        rootDirectory: moved,
+        extensions: ['.txt'],
+        maxFileSize: Infinity,
+        concurrency: 1,
+      });
+      await indexer.buildFullIndex();
+      return indexer;
+    };
+    const inMoved = (...names: string[]) =>
+      path.join(moved, ...names.flatMap((name) => name.split('/')));
+    const indexCacheTimes = () =>
+      files.map(
+        (file) =>
+          fs.statSync(inMoved('.cache/index', `${file}.index.json`)).mtimeMs,
+      );
+
+    /** Every document where it is now, and its words under that path. */
+    const assertFoundWhereItIs = async (indexer: FileIndexer) => {
+      const docs = indexer.getDocumentCache();
+      assert.deepEqual(
+        [...docs.keys()].sort(),
+        files.map((f) => inMoved(f)),
+      );
+      for (const file of files) {
+        const { originalFilePath, textFilePath } = docs.get(
+          inMoved(file),
+        )!.metadata;
+        assert.deepEqual(
+          { originalFilePath, textFilePath },
+          {
+            originalFilePath: inMoved(file),
+            textFilePath: inMoved('.cache/txt', `${file}.txt`),
+          },
+        );
+      }
+      assert.deepEqual(
+        indexer
+          .getInvertedIndex()
+          .get(textProcessor.stemWord('звіт'))!
+          .map((entry) => entry.documentId),
+        [inMoved('orders/c.txt')],
+      );
+      assert.deepEqual(await indexer.validateIndexHealth(), {
+        isHealthy: true,
+        issues: [],
+      });
+    };
+
+    beforeEach(async () => {
+      await corpus.write('orders/c.txt', 'Звіт відділу.');
+      (await indexed()).close();
+      moved = `${corpus.root}-moved`;
+      await fs.promises.rename(corpus.root, moved);
+    });
+
+    afterEach(() =>
+      fs.promises.rm(moved, { recursive: true, force: true, maxRetries: 3 }),
+    );
+
+    it('reads its documents from the caches it holds, where they are now', async () => {
+      const cachedAt = indexCacheTimes();
+
+      await assertFoundWhereItIs(await reopened());
+      assert.deepEqual(indexCacheTimes(), cachedAt); // none indexed anew
+    });
+
+    it('rebuilds the postings from its per-document caches, under where the documents are now', async () => {
+      // Regression guard: each per-document cache saved the document's
+      // absolute path, and the words were indexed under it — at the old
+      // place. Searches found none of the documents.
+      await fs.promises.rm(inMoved('.cache/global-inverted-index.json.gz'));
+      const cachedAt = indexCacheTimes();
+
+      await assertFoundWhereItIs(await reopened());
+      assert.deepEqual(indexCacheTimes(), cachedAt);
+    });
+  });
+
   it('after a rebuild from per-document caches, re-indexes nothing on the next start', async () => {
     // Regression guard: a document read back from its per-document cache
     // kept fs.stat's fractions of a millisecond, while discovery reports
