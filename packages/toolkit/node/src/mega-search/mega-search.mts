@@ -104,8 +104,19 @@ class MegaSearch {
   private readonly QUERY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   // Search result cache, keyed by query+options and the index generation
-  // searched, to speed up repeat requests.
-  private searchCache = new LRUCache<string, PaginatedSearchResult>(100);
+  // searched, to speed up repeat requests. Kept by size, not by count: all
+  // results with all snippets of a common word run to tens of thousands of
+  // snippets, ~1.4 KB each — a hundred such results held GBs. One bigger
+  // than the whole cache isn't kept.
+  private searchCache = new LRUCache<string, PaginatedSearchResult>(
+    20_000,
+    ({ results }) =>
+      results.reduce(
+        (size, { snippets, highlights }) =>
+          size + 1 + (snippets?.length ?? 0) + (highlights?.length ?? 0),
+        0,
+      ),
+  );
   // The index generation the cached results were last tidied for.
   private searchCacheGeneration = -1;
   // The index generation BM25's average document length was computed for.
