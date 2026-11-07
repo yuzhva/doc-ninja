@@ -18,6 +18,7 @@ import { FolderWatcher, isWithin } from './folder-watcher.mjs';
 import { IndexBuilder } from './index-builder.mjs';
 import { IndexStorage } from './index-storage.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
+import { SharedWords } from './shared-words.mjs';
 
 /** Whether the folder is there, and can be listed. */
 const isReadableDirectory = async (directory: string): Promise<boolean> => {
@@ -62,14 +63,25 @@ class FileIndexer {
   private processor: DocumentProcessor;
   private storage: IndexStorage;
   private builder: IndexBuilder;
+  // One copy of each word for all the folder's documents
+  private sharedWords = new SharedWords();
   /** With `watchFiles`: whether the files may have changed since the last look. */
   private watcher: FolderWatcher | null;
 
   constructor(private config: SearchConfig) {
     this.config.rootDirectory = path.resolve(this.config.rootDirectory);
     this.scanner = new FileScannerIndexer(this.config, this.logger);
-    this.processor = new DocumentProcessor(this.config, this.logger);
-    this.storage = new IndexStorage(this.config, this.logger, this.documentLRU);
+    this.processor = new DocumentProcessor(
+      this.config,
+      this.logger,
+      this.sharedWords,
+    );
+    this.storage = new IndexStorage(
+      this.config,
+      this.logger,
+      this.documentLRU,
+      this.sharedWords,
+    );
     this.builder = new IndexBuilder(this.config, this.logger);
     this.watcher = this.config.watchFiles
       ? new FolderWatcher(
@@ -696,6 +708,7 @@ class FileIndexer {
     this.stemDictionary = new Map();
     this.generation++;
     this.documentLRU.clear();
+    this.sharedWords.clear();
     this.processor.clearMemoryCache();
   }
 }

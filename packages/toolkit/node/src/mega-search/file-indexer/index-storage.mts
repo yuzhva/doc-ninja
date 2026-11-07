@@ -13,6 +13,7 @@ import { TokenPositions } from '../token-positions.mjs';
 import { DocumentIndex, DocumentMetadata, SearchConfig } from '../types.mjs';
 import { INDEX_VERSION } from './index-version.mjs';
 import { InvertedIndex } from './inverted-index.mjs';
+import { SharedWords } from './shared-words.mjs';
 
 /** What a document's per-document index holds beside its metadata. */
 type DocumentWords = Pick<DocumentIndex, 'vocab' | 'positions' | 'joints'>;
@@ -73,6 +74,7 @@ class IndexStorage {
     private config: SearchConfig,
     private logger: Logger,
     private documentLRU: LRUCache<string, DocumentIndex>,
+    private sharedWords = new SharedWords(),
   ) {
     this.cachePaths = resolveCachePaths(this.config);
     this.savedPaths = new SavedPaths(this.config, this.cachePaths);
@@ -563,7 +565,7 @@ class IndexStorage {
         textFilePath: metadata.textFilePath,
       };
       fullDoc.positions = TokenPositions.fromSaved(fullDoc.positions);
-      fullDoc.vocab ??= [];
+      fullDoc.vocab = this.sharedWords.share(fullDoc.vocab ?? []);
       fullDoc.joints ??= {};
       this.documentLRU.set(metadata.originalFilePath, fullDoc);
       if (isThisVersion(fullDoc)) return wordsOf(fullDoc);
