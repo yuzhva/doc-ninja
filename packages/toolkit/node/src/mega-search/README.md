@@ -207,6 +207,7 @@ Main search method with full feature support.
   snippetsLimit?: number | 'ALL';   // Snippets per result (default: 3)
   page?: number;                    // Page number (default: 1)
   pageSize?: number;                // Results per page (default: 10)
+  signal?: AbortSignal;             // Stops the search between documents; rejects with its reason, caches nothing
 }
 ```
 
@@ -238,7 +239,8 @@ Main search method with full feature support.
 - `refresh(searchScopedPaths?)` - Bring the index up to date, cheaply: with `watchFiles`, it lists
   the files only after a change (or `rescanAfterMs`). With `searchScopedPaths`, only the files in
   those folders — what a search in them reads
-- `close()` - Stop watching the folder
+- `close()` - Stop watching the folder. Resolves once the index update running, if any, is over
+  (it goes on to its end)
 
 ## 🌟 Advanced Features
 

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import * as fs from 'fs';
 import { ReasonPhrases, StatusCodes } from 'http-status-codes';
 import * as path from 'path';
+import { setImmediate as nextTurn } from 'timers/promises';
 import { FileScannerNode } from 'toolkit--local/node';
 
 import {
@@ -22,7 +23,25 @@ const normalizeSearchQueries = (bulkNames: unknown): string[] =>
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
 
+/**
+ * Aborts once the client is gone before its answer is sent: the connection
+ * closed by a fetch() cancelled in the browser, or by a request Electron's
+ * backend process cancelled (see backend-process.mts in apps/electron).
+ *
+ * The response's close, not the request's: since Node 16 the request's
+ * fires as soon as its body is read.
+ */
+const abortedWhenClientLeaves = (res: Response): AbortSignal => {
+  const controller = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+  return controller.signal;
+};
+
 const postProcessDocuments = async (req: Request, res: Response) => {
+  const signal = abortedWhenClientLeaves(res);
+
   try {
     // Get queries from bulkNames payload
     const queries = normalizeSearchQueries(req.body.bulkNames);
@@ -43,6 +62,7 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       searchScopedPaths: req.body.searchScopedPaths,
       isInflectedWordFormsAllowed: req.body.isInflectedWordFormsAllowed,
       maxTypoDistance,
+      signal,
     };
 
     // Use DocumentIntelligenceService for search
@@ -54,6 +74,11 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       queries,
       searchOptions,
     );
+
+    // Parsing what was found takes its time too: not for a search cancelled
+    // as its last query ended
+    await nextTurn();
+    signal.throwIfAborted();
 
     const extractorSchema: ExtractorSchema | undefined =
       req.body.extractorSchema;
@@ -74,6 +99,12 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       extractedResults,
     });
   } catch (error) {
+    // Nobody to answer: the connection is closed
+    if (signal.aborted) {
+      console.info('Search cancelled by the client');
+      return;
+    }
+
     console.error('Process documents error:', error);
 
     res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({

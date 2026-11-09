@@ -377,14 +377,17 @@ const SearchDocumentsContainer = ({
           destinationHandle: outputDirectory?.browserFSAPIhandle!,
           validationMessage: t(`${I18N_NS}.validationMessage`),
           successMessage: t(`${I18N_NS}.successMessage`),
+          cancelledMessage: t(`${I18N_NS}.cancelledMessage`),
           isWritingFilesSkipped: true,
           isLocalFileSystemRequest: true,
           // No subfolderPath specified - files will be saved in root
         },
-        async () => {
+        async (_batchFiles, _batchIndex, _totalBatches, _structure, signal) => {
           return fetchRequest('/api-local/process/documents', {
             method: 'POST',
             body: JSON.stringify(payload),
+            // The Cancel button in SearchPage's progress footer
+            signal,
           }).then((resAsJson: ProcessDocumentsApiResponse) => {
             if (resAsJson && resAsJson.extractedResults) {
               // 1. Create a lookup map for search results by originalFilePath (unique)

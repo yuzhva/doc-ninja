@@ -38,7 +38,8 @@
       "closeLabel": "Close"
     },
     "batchProcessor": {
-      "failedMessage": "Processing failed. Check the console for details."
+      "failedMessage": "Processing failed. Check the console for details.",
+      "cancelledMessage": "Processing cancelled."
     },
     "confirmModal": {
       "cancelButton": "Cancel"
@@ -71,10 +72,12 @@
     "search": {
       "fileSystemNotSupportedWarning": "File System Access API is not supported. Use Chrome 86+ or Edge 86+.",
       "processingMessage": "Processing request ...",
+      "cancelButton": "Cancel",
       "container": {
         "searchDocumentsContainer": {
           "validationMessage": "Please select an output folder.",
-          "successMessage": "Search across the documents completed."
+          "successMessage": "Search across the documents completed.",
+          "cancelledMessage": "Search cancelled. If the folder was being indexed, indexing continues in the background, and the next search waits for it to finish."
         },
         "searchForm": {
           "selectSourceFolderFirstWarning": "First select a folder with documents.",

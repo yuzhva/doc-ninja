@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type {
@@ -23,7 +23,19 @@ interface BatchProcessorHookOptions extends Pick<
   destinationHandle: WriteFilesViaDestinationHandle;
   validationMessage: string;
   successMessage: string;
+  // Shown once the run was cancelled (see useBatchProcessor's `cancel`)
+  cancelledMessage?: string;
 }
+
+// One batch's request. `signal` aborts once the run is cancelled: hand it to
+// fetchRequest, and the request stops.
+type BatchApiCall = (
+  batchFiles: BatchFile[],
+  batchIndex: number,
+  totalBatches: number,
+  structure: any,
+  signal: AbortSignal,
+) => Promise<any>;
 
 // The prop contract handed down to a page section that wires up
 // useDirectoryPicker + useFilePicker + useBatchProcessor together (both
@@ -52,12 +64,7 @@ interface BatchFileProcessingSectionProps {
   ) => void;
   executeBatch: (
     options: BatchProcessorHookOptions,
-    apiCall: (
-      batchFiles: BatchFile[],
-      batchIndex: number,
-      totalBatches: number,
-      structure: any,
-    ) => Promise<any>,
+    apiCall: BatchApiCall,
   ) => Promise<void>;
   initSubmitHandler: (
     fn: (data: { [k: string]: FormDataEntryValue }) => Promise<any>,
@@ -74,19 +81,27 @@ function useBatchProcessor(
     total: 0,
     batch: 0,
   });
+  // The run in progress is cancelled by this
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Stops the run in progress: its request is cancelled, and execute()
+  // reports it cancelled, not done
+  const cancel = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const execute = useCallback(
-    async (
-      options: BatchProcessorHookOptions,
-      apiCall: (
-        batchFiles: BatchFile[],
-        batchIndex: number,
-        totalBatches: number,
-        structure: any,
-      ) => Promise<any>,
-    ) => {
-      const { processedDir, destinationHandle, ...executeBatchParams } =
-        options;
+    async (options: BatchProcessorHookOptions, apiCall: BatchApiCall) => {
+      const {
+        processedDir,
+        destinationHandle,
+        cancelledMessage,
+        ...executeBatchParams
+      } = options;
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      const { signal } = abortController;
 
       setIsProcessing(true);
       setProgress({ current: 0, total: 0, batch: 0 });
@@ -114,24 +129,56 @@ function useBatchProcessor(
             ...executeBatchParams,
             onProgress: setProgress,
           },
-          apiCall,
+          // executeBatch counts a batch that throws as failed, logs it as an
+          // error and goes on: a cancelled one is neither, so it comes back
+          // as nothing done, and the check below reports the cancel
+          async (batchFiles, batchIndex, totalBatches, structure) => {
+            if (signal.aborted) return {};
+            try {
+              return await apiCall(
+                batchFiles,
+                batchIndex,
+                totalBatches,
+                structure,
+                signal,
+              );
+            } catch (error) {
+              if (signal.aborted) return {};
+              throw error;
+            }
+          },
         );
+
+        // A cancelled run comes back from executeBatch as done: it isn't
+        signal.throwIfAborted();
 
         addToast('success', result.message);
         NotificationBridge.notify(result.message);
       } catch (error) {
+        // The user cancelled it, in the app: no system notification
+        if (signal.aborted) {
+          addToast(
+            'warning',
+            cancelledMessage || t('component.batchProcessor.cancelledMessage'),
+          );
+          return;
+        }
+
         console.error('Processing failed:', error);
         const msg = `❌ ${t('component.batchProcessor.failedMessage')}`;
         addToast('error', msg);
         NotificationBridge.notify(msg);
       } finally {
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
         setIsProcessing(false);
       }
     },
     [addToast, t],
   );
 
-  return { execute, isProcessing, progress };
+  return { execute, cancel, isProcessing, progress };
 }
 
 export { useBatchProcessor };

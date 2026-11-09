@@ -76,6 +76,44 @@ const serializeElectronIPCBody = async (requestBody: any) => {
   return { body: requestBody };
 };
 
+// Electron only, and only here: typed in place rather than in
+// file-system-bridge's ElectronAPI, the way use-app-zoom types setZoomFactor.
+type ElectronFetchAbortAPI = { abortFetch?: (abortKey: string) => void };
+
+let nextAbortKey = 0;
+
+/**
+ * Electron's fetch, cancelled by `signal` the way fetch() is: it rejects at
+ * once with the signal's reason, and the backend stops working on the
+ * request. A signal can't cross over to the preload script, so the request
+ * goes with a key instead, which abortFetch cancels it by.
+ */
+const fetchViaElectron = (
+  electronPath: string,
+  options: any,
+  signal: AbortSignal | undefined,
+): Promise<any> => {
+  if (!signal) return window.electronAPI!.fetch(electronPath, options);
+  if (signal.aborted) return Promise.reject(signal.reason);
+
+  const abortKey = `fetch-${nextAbortKey++}`;
+  const answer = window.electronAPI!.fetch(electronPath, {
+    ...options,
+    abortKey,
+  });
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      (window.electronAPI as ElectronFetchAbortAPI).abortFetch?.(abortKey);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    answer
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort));
+  });
+};
+
 async function fetchRequest(path: string, customOptions) {
   const options = Object.assign(
     {},
@@ -89,19 +127,23 @@ async function fetchRequest(path: string, customOptions) {
 
   if (window.electronAPI) {
     const electronPath = path.replace('/api-local/', '/');
+    // A signal doesn't go over to the preload script: see fetchViaElectron
+    const { signal, ...electronOptions } = options;
 
     const electronAPIRequestOptions = {
-      ...options,
-      ...(await serializeElectronIPCBody(options.body)),
+      ...electronOptions,
+      ...(await serializeElectronIPCBody(electronOptions.body)),
     };
 
-    return window.electronAPI
-      .fetch(electronPath, electronAPIRequestOptions)
-      .then((response) => {
-        // NOTE: the response from {ipcMain.handle('api-request'} is already parsed to JSON
-        // return unified response format same as the Fetch API
-        return response.body;
-      });
+    return fetchViaElectron(
+      electronPath,
+      electronAPIRequestOptions,
+      signal,
+    ).then((response) => {
+      // NOTE: the response from {ipcMain.handle('api-request'} is already parsed to JSON
+      // return unified response format same as the Fetch API
+      return response.body;
+    });
   }
 
   return fetch(path, options).then((res) => res.json());

@@ -3,9 +3,39 @@ import { describe, it } from 'node:test';
 
 import {
   calculateMatchConfidence,
+  createAbortCheck,
   getDocumentToken,
 } from '../mega-search.utils.mjs';
 import { buildDocumentIndex } from '../test-utils/in-memory-index.mjs';
+
+describe('createAbortCheck()', () => {
+  it('passes without a signal', async () => {
+    await createAbortCheck(undefined, 0)();
+  });
+
+  it('throws the reason of a signal aborted already', async () => {
+    await assert.rejects(createAbortCheck(AbortSignal.abort())(), {
+      name: 'AbortError',
+    });
+  });
+
+  it('lets the event loop in once everyMs went by, and sees an abort that came in', async () => {
+    const controller = new AbortController();
+    setImmediate(() => controller.abort());
+
+    await assert.rejects(createAbortCheck(controller.signal, 0)(), {
+      name: 'AbortError',
+    });
+  });
+
+  it('lets nothing in before everyMs went by', async () => {
+    const controller = new AbortController();
+    setImmediate(() => controller.abort());
+
+    await createAbortCheck(controller.signal, 60_000)();
+    assert.equal(controller.signal.aborted, false);
+  });
+});
 
 describe('getDocumentToken()', () => {
   const doc = buildDocumentIndex('doc.txt', 'Бюджет міста. Бюджет області.');

@@ -19,6 +19,7 @@ import type {
   SearchOptions,
   SnippetInfo,
 } from './mega-search.types.mjs';
+import { createAbortCheck } from './mega-search.utils.mjs';
 import { createLogger } from './shared/logger.mjs';
 import {
   UkrainianTextProcessor,
@@ -88,6 +89,8 @@ type BuildPaginatedResultsParams = {
   includeHighlights: boolean;
   /** Everything but the per-document phrase sequences. */
   snippetRequest: Omit<SnippetRequest, 'phraseSequences'>;
+  /** Stops it between documents (see SearchOptions.signal). */
+  signal?: AbortSignal;
 };
 
 class MegaSearch {
@@ -209,9 +212,12 @@ class MegaSearch {
   /**
    * Stops watching the folder (see `watchFiles`): for an instance no longer
    * in use. Searches still work, and refresh() lists the files every time.
+   * @returns when the index update running, if any, is over — one a search
+   * stopped waiting for goes on to its end, and holds the instance until
+   * then. Never rejects.
    */
-  close(): void {
-    this.fileIndexer.close();
+  close(): Promise<void> {
+    return this.fileIndexer.close();
   }
 
   /**
@@ -661,11 +667,15 @@ class MegaSearch {
       phraseMatches,
       includeHighlights,
       snippetRequest,
+      signal,
     } = params;
 
     const paginatedResults: PaginatedSearchResult['results'] = [];
+    // A page of every result makes snippets for thousands of documents
+    const checkAborted = createAbortCheck(signal);
 
     for (let i = 0; i < rawResults.length; i++) {
+      await checkAborted();
       const [docId, score] = rawResults[i];
       paginatedResults.push(
         await this.processSearchResult(
@@ -706,15 +716,22 @@ class MegaSearch {
       snippetContextBefore = 0,
       snippetContextAfter = 30,
       searchScopedPaths = [],
+      signal,
     } = options;
+
+    signal?.throwIfAborted();
 
     const resolvedScopedPaths = this.resolveScopedPaths(searchScopedPaths);
 
     // Cache key includes all options, so different option combos don't
     // collide, and the index generation, so an update can't serve results
-    // of the index before it.
+    // of the index before it. The signal changes no result: out of the key.
     const indexGeneration = this.fileIndexer.indexGeneration;
-    const cacheKey = JSON.stringify({ query, options, indexGeneration });
+    const cacheKey = JSON.stringify({
+      query,
+      options: { ...options, signal: undefined },
+      indexGeneration,
+    });
 
     const cachedResult = this.searchCache.get(cacheKey);
     if (cachedResult) {
@@ -848,6 +865,7 @@ class MegaSearch {
           contextBefore: snippetContextBefore,
           contextAfter: snippetContextAfter,
         },
+        signal,
       });
       logger.debug(
         `Snippet generation for ${paginatedResults.length} results completed in ${Date.now() - snippetGenerationStartTime}ms`,
@@ -880,6 +898,8 @@ class MegaSearch {
       );
       return result;
     } catch (error) {
+      // Cancelled, not failed: the caller looks for the abort's own reason
+      signal?.throwIfAborted();
       logger.error(
         'Search failed:',
         error instanceof Error ? error.message : String(error),

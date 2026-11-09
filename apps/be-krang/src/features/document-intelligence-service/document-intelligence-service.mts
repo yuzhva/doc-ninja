@@ -1,4 +1,5 @@
 import path from 'path';
+import { setImmediate as nextTurn } from 'timers/promises';
 import type { PaginatedSearchResult, SearchOptions } from 'toolkit--local/node';
 import { MegaSearch, createMegaSearch } from 'toolkit--local/node';
 import v8 from 'v8';
@@ -6,6 +7,7 @@ import vm from 'vm';
 
 import { runtimePathById } from '../../supplement/index.mjs';
 import { MegaSearchEngines } from './mega-search-engines.mjs';
+import { untilAborted } from './until-aborted.mjs';
 
 /**
  * Every request's search engines, one per source folder. Each watches its
@@ -20,9 +22,10 @@ const engines = new MegaSearchEngines({
       { indexFolder: false },
     ),
   clearCacheOf: (rootDirectory) => MegaSearch.clearCacheFor(rootDirectory),
+  // An index update a cancelled search left running holds the engine until
+  // it's over: what the engine held is garbage only then
   closeEngine: (megaSearch) => {
-    megaSearch.close();
-    collectGarbageSoon();
+    void megaSearch.close().then(collectGarbageSoon);
   },
 });
 
@@ -81,31 +84,47 @@ class DocumentIntelligenceService {
    * them, the first time a folder is searched — and lists the folders'
    * files for that only when its watcher saw a change, or a minute went by.
    * Requests that come in together share that refresh.
+   *
+   * Once `signal` aborts it stops waiting for the refresh, which goes on:
+   * other requests may wait for it too, and the documents it indexes are
+   * saved for the next search rather than indexed by it all over again.
    */
   async getMegaSearchInstance(
     searchScopedPaths?: string[],
+    signal?: AbortSignal,
   ): Promise<MegaSearch> {
     const { megaSearch } = await engines.get(this.rootDirectory);
-    try {
-      await megaSearch.refresh(searchScopedPaths);
-    } catch (error) {
+    const refreshed = megaSearch.refresh(searchScopedPaths).catch((error) => {
       // The index from before is a better answer than none — if there is one
       if (megaSearch.getStats().documentsCount === 0) throw error;
       console.error('Search index refresh failed:', error);
-    }
+    });
+    await untilAborted(refreshed, signal);
     return megaSearch;
   }
 
+  /**
+   * Searches each of `queries` in turn. Once `options.signal` aborts it stops
+   * — between queries, or between documents within one (see
+   * SearchOptions.signal) — and rejects with the signal's reason.
+   */
   async searchDocuments(
     queries: string[],
     options: SearchOptions = {},
   ): Promise<SearchResult[]> {
+    const { signal } = options;
     const megaSearch = await this.getMegaSearchInstance(
       options.searchScopedPaths,
+      signal,
     );
     const results: SearchResult[] = [];
 
     for (const query of queries) {
+      // Lets an abort in: scoring a query runs in one go, and one with its
+      // results cached reads nothing from disk, so queries alone never would
+      if (signal) await nextTurn();
+      signal?.throwIfAborted();
+
       try {
         const searchResult = await megaSearch.search(query, {
           maxTypoDistance: 1,
@@ -123,6 +142,8 @@ class DocumentIntelligenceService {
           pagination: searchResult.pagination,
         });
       } catch (error: Error | any) {
+        // Cancelled, not failed: no query after it is searched either
+        signal?.throwIfAborted();
         results.push({
           query,
           success: false,
