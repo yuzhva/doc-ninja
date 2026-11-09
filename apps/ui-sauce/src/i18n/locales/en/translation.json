@@ -110,9 +110,13 @@
           "parserConfigLabel": "Processing for found text",
           "noParsingOption": "No processing",
           "parserSettingsTitle": "Document parser settings",
-          "searchFoldersLabelAll": "Searching all folder",
+          "searchFoldersLabelAll": "Searching all folders",
           "searchFoldersLabelScoped": "Searching selected only",
-          "searchFoldersHintAll": "(if none selected)"
+          "searchFoldersHintAll": "(if none selected)",
+          "searchFilesCount_one": "{{count}} file",
+          "searchFilesCount_other": "{{count}} files",
+          "searchFoldersNoSubfolders": "Every file in this folder is searched.",
+          "searchFoldersEmpty": "This folder has no files to search. Pick another folder or add documents to it."
         },
         "searchResults": {
           "excelFileTypeDescription": "Excel File",
