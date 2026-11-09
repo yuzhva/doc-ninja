@@ -128,7 +128,9 @@ const Checkbox = ({
             fill="none"
             viewBox="0 0 16 16"
             stroke="currentColor"
-            strokeWidth="2"
+            // The plugin's own tick, scaled to the box, was ~1.4px: 2px read
+            // as noticeably bolder
+            strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           >

@@ -7,6 +7,9 @@ type ExtractionInput = {
   searchQuery: string;
   foundInDocument: string;
   originalFilePath?: string;
+  // The source folder searched that the document is in, as the request named
+  // it — which tells the client the parser config it was extracted with.
+  sourcePath?: string;
   matchedText: string;
   position?: number;
 };
@@ -497,11 +500,24 @@ class InformationExtractor {
     return { ...match, extractedFieldById };
   }
 
+  /**
+   * Extracts the fields of every match found. `schema` is one for all of
+   * them, or — when the results come from several source folders, each
+   * parsed its own way — the one for the folder each was found in.
+   */
   static async extractSearchResults(
-    schema: ExtractorSchema = DEFAULT_EXTRACTOR_SCHEMA,
+    schema:
+      | ExtractorSchema
+      | ((
+          sourcePath: string,
+        ) => ExtractorSchema | undefined) = DEFAULT_EXTRACTOR_SCHEMA,
     searchResults: SearchResult[],
   ): Promise<ExtractedInfo[]> {
-    const schemaConfig = schema?.config ?? DEFAULT_EXTRACTOR_SCHEMA.config;
+    const schemaConfigFor = (sourcePath: string): ExtractorConfig => {
+      const schemaFound =
+        typeof schema === 'function' ? schema(sourcePath) : schema;
+      return schemaFound?.config ?? DEFAULT_EXTRACTOR_SCHEMA.config;
+    };
     const extractedResults: ExtractedInfo[] = [];
 
     const fileContentCache = new Map<string, string>();
@@ -514,6 +530,8 @@ class InformationExtractor {
         const docName = searchMatch.doc.fileName;
         const originalFilePath =
           (searchMatch.doc as any).originalFilePath || docPath;
+        const { sourcePath } = searchMatch;
+        const schemaConfig = schemaConfigFor(sourcePath);
 
         try {
           let content = fileContentCache.get(docPath);
@@ -527,6 +545,7 @@ class InformationExtractor {
               searchQuery: searchResult.query,
               foundInDocument: docName,
               originalFilePath,
+              sourcePath,
               matchedText: matchedSnippet.match || '',
               position: matchedSnippet.matchCharStart || 0,
             };

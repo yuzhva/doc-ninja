@@ -19,6 +19,7 @@ import { FPDDocmTemplatesDropdown } from './components/FPDDocmTemplatesDropdown'
 import {
   calculateDynamicValues,
   collectFilterMatchedTexts,
+  getPrimaryText,
 } from './result-helpers';
 import type { ExtractedTableField } from './result-helpers';
 
@@ -319,13 +320,7 @@ const ProcessedResultRow = ({
 
                       <div className="relative group">
                         <HighlightedText
-                          text={
-                            (primaryFieldId &&
-                              item.extracted.extractedFieldById[
-                                primaryFieldId
-                              ]) ??
-                            ''
-                          }
+                          text={getPrimaryText(item, primaryFieldId) ?? ''}
                           highlights={highlights}
                         />
                         <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -338,11 +333,7 @@ const ProcessedResultRow = ({
                           >
                             <ButtonCopyToClipboard
                               textToCopy={
-                                (primaryFieldId &&
-                                  item.extracted.extractedFieldById[
-                                    primaryFieldId
-                                  ]) ??
-                                ''
+                                getPrimaryText(item, primaryFieldId) ?? ''
                               }
                               placement="left"
                             />

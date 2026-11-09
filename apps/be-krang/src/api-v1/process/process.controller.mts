@@ -9,6 +9,7 @@ import {
   DocumentIntelligenceService,
   ExcelReportGenerator,
 } from '../../features/document-intelligence-service/index.mjs';
+import type { SearchFolder } from '../../features/document-intelligence-service/index.mjs';
 import { InformationExtractor } from '../../features/document-intelligence-service/information-extractor.mjs';
 import type { ExtractorSchema } from '../../features/document-intelligence-service/information-extractor.mjs';
 
@@ -22,6 +23,45 @@ const normalizeSearchQueries = (bulkNames: unknown): string[] =>
     .filter((entry): entry is string => typeof entry === 'string')
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
+
+/** A source folder to search, and the parser config for what's found in it. */
+type SearchSource = SearchFolder & { extractorSchema?: ExtractorSchema };
+
+/**
+ * The source folders a search request names, in `sources` — or, from a
+ * client that searches one folder, at the top level of the body
+ * (`sourcePath`, `searchScopedPaths`, `extractorSchema`). Null when there is
+ * none, or one without a path.
+ */
+const readSearchSources = (body: any): SearchSource[] | null => {
+  const named: unknown[] = Array.isArray(body?.sources)
+    ? body.sources
+    : [
+        {
+          sourcePath: body?.sourcePath,
+          searchScopedPaths: body?.searchScopedPaths,
+          extractorSchema: body?.extractorSchema,
+        },
+      ];
+
+  const sources: SearchSource[] = [];
+  for (const source of named as any[]) {
+    if (typeof source?.sourcePath !== 'string' || !source.sourcePath) {
+      return null;
+    }
+    sources.push({
+      sourcePath: source.sourcePath,
+      searchScopedPaths: Array.isArray(source.searchScopedPaths)
+        ? source.searchScopedPaths.filter(
+            (scope: unknown): scope is string => typeof scope === 'string',
+          )
+        : [],
+      extractorSchema: source.extractorSchema ?? undefined,
+    });
+  }
+
+  return sources.length > 0 ? sources : null;
+};
 
 /**
  * Aborts once the client is gone before its answer is sent: the connection
@@ -52,6 +92,14 @@ const postProcessDocuments = async (req: Request, res: Response) => {
       });
     }
 
+    const sources = readSearchSources(req.body);
+
+    if (!sources) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: { message: 'No source folder provided to search in' },
+      });
+    }
+
     // Extract search options from request
     const pageSize = req.body.pageSize;
     const sortOrder = req.body.sortOrder;
@@ -59,18 +107,13 @@ const postProcessDocuments = async (req: Request, res: Response) => {
     const searchOptions = {
       pageSize: pageSize === 'ALL' ? pageSize : Number(pageSize) || 10,
       sortOrder,
-      searchScopedPaths: req.body.searchScopedPaths,
       isInflectedWordFormsAllowed: req.body.isInflectedWordFormsAllowed,
       maxTypoDistance,
       signal,
     };
 
-    // Use DocumentIntelligenceService for search
-    const documentIntelligenceService = new DocumentIntelligenceService(
-      req.body.sourcePath,
-    );
-
-    const searchResults = await documentIntelligenceService.searchDocuments(
+    const searchResults = await DocumentIntelligenceService.searchFolders(
+      sources,
       queries,
       searchOptions,
     );
@@ -80,10 +123,12 @@ const postProcessDocuments = async (req: Request, res: Response) => {
     await nextTurn();
     signal.throwIfAborted();
 
-    const extractorSchema: ExtractorSchema | undefined =
-      req.body.extractorSchema;
+    // Each result is parsed the way its own folder asked for
+    const extractorSchemaBySourcePath = new Map(
+      sources.map((source) => [source.sourcePath, source.extractorSchema]),
+    );
     const extractedResults = await InformationExtractor.extractSearchResults(
-      extractorSchema,
+      (sourcePath) => extractorSchemaBySourcePath.get(sourcePath),
       searchResults,
     );
 

@@ -3,6 +3,8 @@ export {
   createMegaSearch,
   FileScannerNode,
   MegaSearch,
+  mergeSearchResults,
+  pageOptionsForMerge,
 } from './mega-search/index.mjs';
 export type {
   PaginatedSearchResult,

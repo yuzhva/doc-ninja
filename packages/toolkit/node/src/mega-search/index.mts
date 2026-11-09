@@ -4,3 +4,7 @@ export type {
   PaginatedSearchResult,
   SearchOptions,
 } from './mega-search.types.mjs';
+export {
+  mergeSearchResults,
+  pageOptionsForMerge,
+} from './search-result-order.mjs';

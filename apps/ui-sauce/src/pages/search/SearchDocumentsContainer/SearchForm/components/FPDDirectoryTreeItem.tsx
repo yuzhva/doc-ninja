@@ -2,6 +2,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileSystemItem } from 'toolkit--local/browser';
 
+import { Checkbox } from '../../../../../components';
+
 const I18N_NS = 'page.search.component.fpdDirectoryTreeItem';
 
 const FPDDirectoryTreeItem = ({
@@ -24,10 +26,6 @@ const FPDDirectoryTreeItem = ({
     e.preventDefault();
     e.stopPropagation();
     setIsExpanded(!isExpanded);
-  };
-
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onTogglePath(fsNestedItem.path, e.target.checked);
   };
 
   const handleContentClick = (e: React.MouseEvent) => {
@@ -65,12 +63,12 @@ const FPDDirectoryTreeItem = ({
 
         {/* Content */}
         <div className="grow flex items-center gap-x-2 px-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-          {/* Checkbox */}
-          <input
-            type="checkbox"
+          {/* The app's own box, as in the folder's header and the results */}
+          <Checkbox
             checked={isSelected}
-            onChange={handleCheckboxChange}
-            className="shrink-0 w-4 h-4 bg-gray-100 border-gray-300 rounded text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+            onChange={(checked) => onTogglePath(fsNestedItem.path, checked)}
+            title={fsNestedItem.name}
+            className="shrink-0"
           />
 
           {/* Icon & Name */}

@@ -77,13 +77,18 @@
         "searchDocumentsContainer": {
           "validationMessage": "Please select an output folder.",
           "successMessage": "Search across the documents completed.",
-          "cancelledMessage": "Search cancelled. If the folder was being indexed, indexing continues in the background, and the next search waits for it to finish."
+          "cancelledMessage": "Search cancelled. If the folder was being indexed, indexing continues in the background, and the next search waits for it to finish.",
+          "sourceFolderOverlapsWarning": "“{{name}}” wasn't added: it overlaps “{{other}}”, which is already in the list. Searching both would find the same documents twice."
         },
         "searchForm": {
-          "selectSourceFolderFirstWarning": "First select a folder with documents.",
-          "reindexSuccessToast": "Reindexing completed.",
-          "deleteCacheSuccessToast": "Index cache deleted.",
-          "actionFailedToast": "Failed to perform the action: {{message}}",
+          "reindexSuccessToast": "“{{name}}” reindexed.",
+          "deleteCacheSuccessToast": "Index cache of “{{name}}” deleted.",
+          "actionFailedToast": "“{{name}}”: failed to perform the action: {{message}}",
+          "removeSourceConfirmTitle": "Remove the folder from search?",
+          "removeSourceConfirmMessage": "<strong>{{name}}</strong> will be removed from the list.<br/><br/>Its index cache is kept in the folder itself (<code>.cache</code>).<br/>Keep it, and the folder can be searched right away when you add it back, without indexing it anew.",
+          "removeSourceKeepCacheButton": "Hide from list",
+          "removeSourceWithCacheButton": "Delete with cache",
+          "removeSourceWithCacheSuccessToast": "“{{name}}” removed from search, and its index cache deleted.",
           "searchTextLabel": "Text to search",
           "searchTextPlaceholder": "Enter a keyword or phrase ...",
           "perLineModeLabel": "Multi search",
@@ -103,20 +108,14 @@
           "searchButton": "Search",
           "expandSettingsTitle": "Show settings",
           "collapseSettingsTitle": "Collapse settings",
-          "sourceFolderLabel": "Folder with documents to search",
-          "documentsIndexActionsTitle": "Document indexing settings",
-          "reindexAction": "Reindex",
-          "deleteCacheAction": "Delete cache",
-          "parserConfigLabel": "Processing for found text",
-          "noParsingOption": "No processing",
-          "parserSettingsTitle": "Document parser settings",
+          "sourceFoldersLabel": "Folders to search",
+          "addSourceFolderButton": "Add",
+          "addFirstSourceFolderButton": "Add a folder with documents",
           "searchFoldersLabelAll": "Searching all folders",
           "searchFoldersLabelScoped": "Searching selected only",
           "searchFoldersHintAll": "(if none selected)",
           "searchFilesCount_one": "{{count}} file",
-          "searchFilesCount_other": "{{count}} files",
-          "searchFoldersNoSubfolders": "Every file in this folder is searched.",
-          "searchFoldersEmpty": "This folder has no files to search. Pick another folder or add documents to it."
+          "searchFilesCount_other": "{{count}} files"
         },
         "searchResults": {
           "excelFileTypeDescription": "Excel File",
@@ -278,6 +277,19 @@
         "fpdDirectoryTreeItem": {
           "expandLabel": "Expand",
           "collapseLabel": "Collapse"
+        },
+        "fpdSourceFolderItem": {
+          "expandLabel": "Expand",
+          "collapseLabel": "Collapse",
+          "actionsTitle": "Folder actions",
+          "reindexAction": "Reindex",
+          "deleteCacheAction": "Delete cache",
+          "removeAction": "Remove from search",
+          "parserConfigTitle": "Processing for found text",
+          "noParsing": "No processing",
+          "parserSettingsAction": "Document processing settings",
+          "createParserConfigAction": "Create a config",
+          "emptyFolderMessage": "No files to search in this folder."
         },
         "fpdDocmTemplatesDropdown": {
           "wordTemplatesFileTypeDescription": "Word Templates",

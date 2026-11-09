@@ -108,6 +108,71 @@ describe('MegaSearchEngines', () => {
     ]);
   });
 
+  describe('getAll()', () => {
+    it('keeps the folders searched together, beyond maxEngines', async () => {
+      const { engines, log } = fakeEngines();
+
+      const together = await engines.getAll(['/a', '/b', '/c']);
+      const again = await engines.getAll(['/a', '/b', '/c']);
+
+      assert.deepEqual(log, ['create /a', 'create /b', 'create /c']);
+      assert.deepEqual(
+        together.map((engine) => engine.isNew),
+        [true, true, true],
+      );
+      assert.deepEqual(
+        again.map((engine) => engine.isNew),
+        [false, false, false],
+      );
+      assert.equal(again[1].megaSearch, together[1].megaSearch);
+    });
+
+    it('lets go of the others once a search reads fewer folders', async () => {
+      const { engines, log } = fakeEngines();
+
+      await engines.getAll(['/a', '/b']);
+      await engines.get('/b'); // back to the one folder: lets go of /a
+
+      assert.deepEqual(log, ['create /a', 'create /b', 'close /a']);
+    });
+
+    it('lets go of folders searched before, beyond the ones it was given', async () => {
+      const { engines, log } = fakeEngines();
+
+      await engines.get('/old');
+      await engines.getAll(['/a', '/b']);
+
+      assert.deepEqual(log, [
+        'create /old',
+        'create /a',
+        'create /b',
+        'close /old',
+      ]);
+    });
+
+    it('gives the same engine for a folder given twice', async () => {
+      const { engines, log } = fakeEngines();
+
+      const [first, second] = await engines.getAll([docs, docs + path.sep]);
+
+      assert.equal(first.megaSearch, second.megaSearch);
+      assert.deepEqual(log, [`create ${docs}`]);
+    });
+
+    it('rejects when one of them failed, and keeps the others', async () => {
+      const { engines, log } = fakeEngines({ failFirstCreation: true });
+
+      await assert.rejects(engines.getAll(['/a', '/b']), /index failed/);
+      const retry = await engines.getAll(['/a', '/b']);
+
+      assert.deepEqual(
+        retry.map((engine) => engine.isNew),
+        [true, false],
+      );
+      assert.deepEqual(log, ['create /a', 'create /b', 'create /a']);
+    });
+  });
+
   it('lets go of an engine nobody asked for in idleMs, and keeps one in use', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { engines, log } = fakeEngines({ idleMs: 1000, maxEngines: 2 });

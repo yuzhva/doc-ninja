@@ -1,12 +1,17 @@
 import path from 'path';
 import { setImmediate as nextTurn } from 'timers/promises';
 import type { PaginatedSearchResult, SearchOptions } from 'toolkit--local/node';
-import { MegaSearch, createMegaSearch } from 'toolkit--local/node';
+import {
+  MegaSearch,
+  createMegaSearch,
+  mergeSearchResults,
+  pageOptionsForMerge,
+} from 'toolkit--local/node';
 import v8 from 'v8';
 import vm from 'vm';
 
 import { runtimePathById } from '../../supplement/index.mjs';
-import { MegaSearchEngines } from './mega-search-engines.mjs';
+import { MegaSearchEngines, folderKey } from './mega-search-engines.mjs';
 import { untilAborted } from './until-aborted.mjs';
 
 /**
@@ -50,13 +55,22 @@ const collectGarbageSoon = (): void => {
   setTimeout(collectGarbage, 1000).unref();
 };
 
+/**
+ * One thing found, and the source folder it was found in — as the request
+ * named that folder, so a caller can tell which of its folders it came from.
+ */
+type SearchResultItem = PaginatedSearchResult['results'][number] & {
+  sourcePath: string;
+};
+
 interface SearchResult {
   query: string;
   success: boolean;
   error?: string;
-  results: PaginatedSearchResult['results'];
+  results: SearchResultItem[];
   pagination: {
     totalResults: number;
+    totalMatches?: number;
     currentPage?: number;
     totalPages?: number;
     resultsPerPage?: number;
@@ -65,58 +79,142 @@ interface SearchResult {
   };
 }
 
+/** A source folder to search, and where in it. */
+interface SearchFolder {
+  /** As the client knows it: absolute, or relative to the assets folder. */
+  sourcePath: string;
+  /** Folders (or files) within it to search; all of it when empty. */
+  searchScopedPaths?: string[];
+}
+
+const SEARCH_DEFAULTS: SearchOptions = {
+  maxTypoDistance: 1,
+  isPhraseProximityEnabled: true,
+  maxWordsInPhraseDistance: 1, // one word may sit between phrase words
+  snippetsLimit: 'ALL',
+  sortBy: 'date',
+};
+
+/**
+ * Where a source folder is on disk. A relative one is the "browser dev mode"
+ * workaround: that backend runs in a Docker container with no access to the
+ * local file system, so it reads the folder from its assets instead.
+ */
+const resolveRootDirectory = (sourcePath: string): string =>
+  path.isAbsolute(sourcePath)
+    ? sourcePath
+    : path.join(runtimePathById.assets, sourcePath);
+
+/**
+ * The folder's engine with what a search in `searchScopedPaths` reads up to
+ * date with the files on disk: the documents in those folders, or in all of
+ * them when none are given. It picks up the documents added, edited or
+ * deleted there since — all of them, the first time a folder is searched —
+ * and lists the folders' files for that only when its watcher saw a change,
+ * or a minute went by. Requests that come in together share that refresh.
+ *
+ * Once `signal` aborts it stops waiting for the refresh, which goes on:
+ * other requests may wait for it too, and the documents it indexes are
+ * saved for the next search rather than indexed by it all over again.
+ */
+const refreshForSearch = async (
+  megaSearch: MegaSearch,
+  searchScopedPaths: string[] | undefined,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  const refreshed = megaSearch.refresh(searchScopedPaths).catch((error) => {
+    // The index from before is a better answer than none — if there is one
+    if (megaSearch.getStats().documentsCount === 0) throw error;
+    console.error('Search index refresh failed:', error);
+  });
+  await untilAborted(refreshed, signal);
+};
+
 class DocumentIntelligenceService {
+  private sourcePath: string;
   private rootDirectory: string;
 
-  constructor(rootDirectory: string) {
-    this.rootDirectory = path.isAbsolute(rootDirectory)
-      ? rootDirectory
-      : // NOTE: "workaround" for "Browser dev mode"
-        // Docker container - does NOT have access to Local File System, so we are resolving to assets folder
-        path.join(runtimePathById.assets, rootDirectory);
+  constructor(sourcePath: string) {
+    this.sourcePath = sourcePath;
+    this.rootDirectory = resolveRootDirectory(sourcePath);
   }
 
   /**
-   * This folder's search engine, shared across requests, with what a search
-   * in `searchScopedPaths` reads up to date with the files on disk: the
-   * documents in those folders, or in all of them when none are given. It
-   * picks up the documents added, edited or deleted there since — all of
-   * them, the first time a folder is searched — and lists the folders'
-   * files for that only when its watcher saw a change, or a minute went by.
-   * Requests that come in together share that refresh.
-   *
-   * Once `signal` aborts it stops waiting for the refresh, which goes on:
-   * other requests may wait for it too, and the documents it indexes are
-   * saved for the next search rather than indexed by it all over again.
+   * This folder's search engine, shared across requests, brought up to date
+   * for a search in `searchScopedPaths` (see refreshForSearch).
    */
   async getMegaSearchInstance(
     searchScopedPaths?: string[],
     signal?: AbortSignal,
   ): Promise<MegaSearch> {
     const { megaSearch } = await engines.get(this.rootDirectory);
-    const refreshed = megaSearch.refresh(searchScopedPaths).catch((error) => {
-      // The index from before is a better answer than none — if there is one
-      if (megaSearch.getStats().documentsCount === 0) throw error;
-      console.error('Search index refresh failed:', error);
-    });
-    await untilAborted(refreshed, signal);
+    await refreshForSearch(megaSearch, searchScopedPaths, signal);
     return megaSearch;
   }
 
-  /**
-   * Searches each of `queries` in turn. Once `options.signal` aborts it stops
-   * — between queries, or between documents within one (see
-   * SearchOptions.signal) — and rejects with the signal's reason.
-   */
+  /** searchFolders() over this one folder. */
   async searchDocuments(
     queries: string[],
     options: SearchOptions = {},
   ): Promise<SearchResult[]> {
-    const { signal } = options;
-    const megaSearch = await this.getMegaSearchInstance(
-      options.searchScopedPaths,
-      signal,
+    return DocumentIntelligenceService.searchFolders(
+      [
+        {
+          sourcePath: this.sourcePath,
+          searchScopedPaths: options.searchScopedPaths,
+        },
+      ],
+      queries,
+      options,
     );
+  }
+
+  /**
+   * Searches each of `queries` in turn, in every one of `folders` (each
+   * where its `searchScopedPaths` says, not `options.searchScopedPaths`),
+   * as one search: each query's results ordered and cut to the page across
+   * all of them, with the totals of all of them (mergeSearchResults). Each
+   * result says which folder it came from.
+   *
+   * Every folder's engine is kept while they're searched together (see
+   * MegaSearchEngines.getAll), so their memory adds up, as it would for one
+   * folder holding them all.
+   *
+   * Once `options.signal` aborts it stops — between folders or queries, or
+   * between documents within one (see SearchOptions.signal) — and rejects
+   * with the signal's reason.
+   */
+  static async searchFolders(
+    foldersNamed: SearchFolder[],
+    queries: string[],
+    options: SearchOptions = {},
+  ): Promise<SearchResult[]> {
+    const { signal } = options;
+    const searchOptions = { ...SEARCH_DEFAULTS, ...options };
+
+    // A folder named twice would find everything twice: searched once, as
+    // first named
+    const folderKeys = new Set<string>();
+    const folders = foldersNamed.filter((folder) => {
+      const key = folderKey(resolveRootDirectory(folder.sourcePath));
+      if (folderKeys.has(key)) return false;
+      folderKeys.add(key);
+      return true;
+    });
+
+    const folderEngines = await engines.getAll(
+      folders.map((folder) => resolveRootDirectory(folder.sourcePath)),
+    );
+    // One at a time: refreshing indexes documents, and each folder's indexer
+    // takes the CPU it's given already
+    for (const [index, folder] of folders.entries()) {
+      await refreshForSearch(
+        folderEngines[index].megaSearch,
+        folder.searchScopedPaths,
+        signal,
+      );
+    }
+
     const results: SearchResult[] = [];
 
     for (const query of queries) {
@@ -126,20 +224,32 @@ class DocumentIntelligenceService {
       signal?.throwIfAborted();
 
       try {
-        const searchResult = await megaSearch.search(query, {
-          maxTypoDistance: 1,
-          isPhraseProximityEnabled: true,
-          maxWordsInPhraseDistance: 1, // one word may sit between phrase words
-          snippetsLimit: 'ALL',
-          sortBy: 'date',
-          ...options, // Merge passed options, overriding defaults if provided
-        });
+        const resultsPerFolder: PaginatedSearchResult[] = [];
+
+        for (const [index, folder] of folders.entries()) {
+          const found = await folderEngines[index].megaSearch.search(query, {
+            ...searchOptions,
+            ...pageOptionsForMerge(searchOptions),
+            searchScopedPaths: folder.searchScopedPaths ?? [],
+          });
+
+          // New objects: the engine caches the ones it returned
+          resultsPerFolder.push({
+            ...found,
+            results: found.results.map((item) => ({
+              ...item,
+              sourcePath: folder.sourcePath,
+            })),
+          });
+        }
+
+        const merged = mergeSearchResults(resultsPerFolder, searchOptions);
 
         results.push({
           query,
           success: true,
-          results: searchResult.results,
-          pagination: searchResult.pagination,
+          results: merged.results as SearchResultItem[],
+          pagination: merged.pagination,
         });
       } catch (error: Error | any) {
         // Cancelled, not failed: no query after it is searched either
@@ -181,4 +291,4 @@ class DocumentIntelligenceService {
 
 // Singleton instance
 export { DocumentIntelligenceService };
-export type { SearchResult };
+export type { SearchFolder, SearchResult, SearchResultItem };
