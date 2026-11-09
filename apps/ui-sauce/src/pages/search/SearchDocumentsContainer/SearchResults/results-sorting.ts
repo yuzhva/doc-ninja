@@ -1,5 +1,6 @@
 import type { ProcessedResultGroup } from '../../search-page.types';
-import { calculateDynamicValues } from './result-helpers';
+import type { FilterConfig } from './frontend-information-extractor';
+import type { MatchFiltersReader } from './match-filters';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -58,8 +59,8 @@ const writeStoredResultsSort = (sort: ResultsSortState) => {
 const getGroupSortValue = (
   group: ProcessedResultGroup,
   columnId: string,
-  filterConfigs: any[],
-  primaryFieldId: string | null,
+  filterConfigs: FilterConfig[],
+  readMatchFilters: MatchFiltersReader,
 ): string => {
   if (columnId === DOC_NAME_SORT_COLUMN_ID) {
     return group.docName || group.items[0]?.extracted?.foundInDocument || '';
@@ -69,19 +70,12 @@ const getGroupSortValue = (
     return group.search?.doc?.originalFilePath || '';
   }
 
-  const filterConfig = filterConfigs.find((conf) => conf?.id === columnId);
-  if (filterConfig) {
+  if (filterConfigs.some((conf) => conf?.id === columnId)) {
     // The filter cell shows every distinct badge value in the group, so sort on
-    // that same joined list. Only the one config is handed to
-    // calculateDynamicValues — re-running every filter's regex here would cost
-    // as much as the whole filtering pass, for values nothing reads.
+    // that same joined list.
     const uniqueValues = new Set<string>();
     group.items.forEach((item) => {
-      const value = calculateDynamicValues(
-        item,
-        [filterConfig],
-        primaryFieldId,
-      )[columnId];
+      const value = readMatchFilters(item).valueByFilterId[columnId];
       if (value) uniqueValues.add(value);
     });
 
@@ -181,21 +175,20 @@ const compareRows = (
 const sortGroupedResults = (
   filteredResults: Record<string, ProcessedResultGroup[]>,
   sort: ResultsSortState,
-  filterConfigs: any[],
-  primaryFieldId: string | null,
+  filterConfigs: FilterConfig[],
+  readMatchFilters: MatchFiltersReader,
 ): Record<string, ProcessedResultGroup[]> =>
   Object.fromEntries(
     Object.entries(filteredResults).map(([searchQuery, groups]) => {
-      // Decorate/sort/undecorate: a filter column's value comes out of the
-      // regex extractor, and its date parse costs a regex of its own — far too
-      // much to re-derive inside a comparator that revisits each row O(log n)
-      // times.
+      // Decorate/sort/undecorate: a filter column's value joins the group's
+      // labels, and its date parse costs a regex of its own — far too much to
+      // re-derive inside a comparator that revisits each row O(log n) times.
       const decorated: DecoratedRow[] = groups.map((group) => {
         const text = getGroupSortValue(
           group,
           sort.columnId,
           filterConfigs,
-          primaryFieldId,
+          readMatchFilters,
         );
 
         return { group, text, timestamp: parseDateValue(text) };

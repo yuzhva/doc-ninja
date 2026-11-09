@@ -1,45 +1,38 @@
-import type { BatchFileProcessingSectionProps } from '../../../../hooks/use-batch-processor';
-import type { SearchSource, SearchSourceChanges } from '../search-sources';
+import type { UseDirectoryPicker } from '../../../../hooks/use-file-system';
 
+/**
+ * What the form asks to search for, as its fields stand when it's submitted.
+ * Where to search — the folders and their ticks — isn't in it: those are kept
+ * by searchSourcesStore, which the search rescans right before it runs.
+ */
+interface SearchRequest {
+  /** One per entry, as typed: blank rows and padding are dropped on send. */
+  queries: string[];
+  /** Whether other forms of a query's words match too. */
+  isInflectedWordFormsAllowed: boolean;
+  /** How many typos a word may have and still match. */
+  maxTypoDistance: number;
+  /** How many documents each query brings back. */
+  pageSize: number | 'ALL';
+  sortOrder: 'asc' | 'desc';
+}
+
+/**
+ * The form owns its fields, and shows and changes the folders through
+ * searchSourcesStore: typing, ticking or folding renders the form alone,
+ * never the container and the results beside it. Only a submit reaches the
+ * container, as a SearchRequest.
+ */
 interface SearchFormProps {
-  // Opens the folder picker; the folder picked joins `sources` (see the
-  // container).
-  onSelectSourceDirectory: BatchFileProcessingSectionProps['onSelectSourceDirectory'];
-  initSubmitHandler: BatchFileProcessingSectionProps['initSubmitHandler'];
+  // Opens the folder picker, resolving to the folder picked (or null): the
+  // form adds it to the folders searched.
+  onSelectSourceDirectory: UseDirectoryPicker['selectDirectory'];
   isFileSystemAccessSupported: boolean;
   isProcessing: boolean;
 
-  // The folders searched, each with its parser config — owned by the
-  // container, which builds the search request out of them.
-  sources: SearchSource[];
-  onRemoveSource: (sourcePath: string) => void;
-  onSourceChange: (sourcePath: string, changes: SearchSourceChanges) => void;
-
-  // Directory trees — the selection lives in the container (shared with the
-  // search request payload), the form only renders and toggles it.
-  selectedPaths: Set<string>;
-  onTogglePath: (path: string, checked: boolean) => void;
-
-  // One search query per entry. Owned by the container because the payload
-  // sends it as an array, and FormData can't carry one through the
-  // Object.fromEntries() the submit handler builds `formDataJSON` with.
-  searchQueries: string[];
-  onSearchQueriesChange: (queries: string[]) => void;
-
-  // Typo tolerance — read directly from state (not FormData) when building
-  // the search payload, so the container owns it.
-  allowFuzzyMatch: boolean;
-  onAllowFuzzyMatchChange: (value: boolean) => void;
-  maxTypoDistance: string;
-  onMaxTypoDistanceChange: (value: string) => void;
-
-  // Every parser config there is, for each folder to pick from.
-  parserConfigs: any[];
-  onParserConfigsSaved: () => void;
-
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
 
-  onSubmit: Parameters<BatchFileProcessingSectionProps['initSubmitHandler']>[0];
+  onSearch: (request: SearchRequest) => void;
 }
 
-export type { SearchFormProps };
+export type { SearchFormProps, SearchRequest };

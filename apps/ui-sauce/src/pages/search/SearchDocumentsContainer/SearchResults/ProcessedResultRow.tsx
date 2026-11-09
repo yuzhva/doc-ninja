@@ -14,13 +14,9 @@ import type {
 } from '../../search-page.types';
 import { HighlightedText } from './FormProcessDocumentSideOver';
 import type { Highlight } from './FormProcessDocumentSideOver';
-import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
-import { FPDDocmTemplatesDropdown } from './components/FPDDocmTemplatesDropdown';
-import {
-  calculateDynamicValues,
-  collectFilterMatchedTexts,
-  getPrimaryText,
-} from './result-helpers';
+import type { FilterConfig } from './frontend-information-extractor';
+import type { MatchFiltersReader } from './match-filters';
+import { getPrimaryText } from './result-helpers';
 import type { ExtractedTableField } from './result-helpers';
 
 const I18N_NS = 'page.search.component.processedResultRow';
@@ -32,26 +28,26 @@ const ProcessedResultRow = ({
   onToggleExpand,
   onOpenFile,
   onViewContent,
-  filterConfigs, // Add prop
+  filterConfigs,
+  readMatchFilters,
   tableFields,
   primaryFieldId,
-  templateTagFieldIds,
   searchTerm,
   isMatchSelectionEnabled,
   selectedMatches,
   onMatchesSelectionChange,
-  onBtnGenerateDocmClick,
-  addToast,
+  onOpenDocmMenu,
 }: {
   result: ResultGroup;
   isExpanded: boolean;
   onToggleExpand: () => void;
   onOpenFile: (result: ResultGroup) => void;
   onViewContent: (result: ResultGroup) => void;
-  filterConfigs: any[]; // Add type
+  // The filters' columns, and what each match makes of them
+  filterConfigs: FilterConfig[];
+  readMatchFilters: MatchFiltersReader;
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
-  templateTagFieldIds: string[];
   searchTerm: string;
   isMatchSelectionEnabled: boolean;
   selectedMatches: Set<RichProcessedResultItem>;
@@ -59,8 +55,8 @@ const ProcessedResultRow = ({
     matches: RichProcessedResultItem[],
     isSelected: boolean,
   ) => void;
-  onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
-  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
+  // Opens the page's one .docm menu (MatchDocmMenu) at a match's button
+  onOpenDocmMenu: (anchor: HTMLElement, match: RichProcessedResultItem) => void;
 }) => {
   const { t } = useTranslation();
   // Aggregate data from items in the group
@@ -78,15 +74,10 @@ const ProcessedResultRow = ({
   const areAllMatchesSelected =
     items.length > 0 && selectedMatchCount === items.length;
 
-  // Pre-calculate dynamic values for each item in this group
-  // Returns: [ { item: item, dynamicValues: { [filterId]: string | null } }, ... ]
+  // Each match with its filters' labels, and what to highlight in its text
   const enrichedItems = React.useMemo(() => {
     return items.map((item) => {
-      const dynamicValues = calculateDynamicValues(
-        item,
-        filterConfigs,
-        primaryFieldId,
-      );
+      const { valueByFilterId, highlightedTexts } = readMatchFilters(item);
 
       // The phrase the extractor matched keeps its yellow; the term typed into
       // the results filter is layered on top in green, and the keywords behind
@@ -96,14 +87,15 @@ const ProcessedResultRow = ({
       const highlights: Highlight[] = [
         { value: item.extracted.matchedText, variant: 'yellow' },
         { value: searchTerm, variant: 'green' },
-        ...collectFilterMatchedTexts(item, filterConfigs, primaryFieldId).map(
-          (value): Highlight => ({ value, variant: 'blue' }),
-        ),
+        ...highlightedTexts.map((value): Highlight => ({
+          value,
+          variant: 'blue',
+        })),
       ];
 
-      return { item, dynamicValues, highlights };
+      return { item, dynamicValues: valueByFilterId, highlights };
     });
-  }, [items, filterConfigs, primaryFieldId, searchTerm]);
+  }, [items, readMatchFilters, searchTerm]);
 
   // Aggregate unique values for the closed row view (e.g. show all statuses found in group)
   const aggregatedValues = React.useMemo(() => {
@@ -323,7 +315,9 @@ const ProcessedResultRow = ({
                           text={getPrimaryText(item, primaryFieldId) ?? ''}
                           highlights={highlights}
                         />
-                        <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* Shown on hover — and while this match's .docm menu
+                            is open, which marks its button aria-expanded. */}
+                        <div className="flex items-center justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100 transition-opacity">
                           <Tooltip
                             content={
                               <Trans i18nKey={`${I18N_NS}.copyTooltip`} />
@@ -338,49 +332,40 @@ const ProcessedResultRow = ({
                               placement="left"
                             />
                           </Tooltip>
-                          <FPDDocmTemplatesDropdown
-                            items={[item]}
-                            templateTagFieldIds={templateTagFieldIds}
-                            primaryFieldId={primaryFieldId}
-                            onGenerate={onBtnGenerateDocmClick}
-                            addToast={addToast}
-                            openDirection="up"
-                            renderTrigger={({ toggle }) => (
-                              <div className="flex">
-                                <Tooltip
-                                  content={
-                                    <Trans
-                                      i18nKey={`${I18N_NS}.generateDocmTooltip`}
-                                    />
-                                  }
-                                  placement="top"
-                                  align="end"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={toggle}
-                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                                  >
-                                    <svg
-                                      className="w-4 h-4"
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      strokeWidth="2"
-                                      stroke="currentColor"
-                                      aria-hidden="true"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
-                                      />
-                                    </svg>
-                                  </button>
-                                </Tooltip>
-                              </div>
-                            )}
-                          />
+                          <Tooltip
+                            content={
+                              <Trans
+                                i18nKey={`${I18N_NS}.generateDocmTooltip`}
+                              />
+                            }
+                            placement="top"
+                            align="end"
+                          >
+                            <button
+                              type="button"
+                              aria-haspopup="dialog"
+                              onClick={(event) =>
+                                onOpenDocmMenu(event.currentTarget, item)
+                              }
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                strokeWidth="2"
+                                stroke="currentColor"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"
+                                />
+                              </svg>
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
                     </div>

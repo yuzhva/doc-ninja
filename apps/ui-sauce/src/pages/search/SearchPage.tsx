@@ -3,11 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import { LoadingSpinner, Toast } from '../../components';
 import type { ToastMessage } from '../../components';
-import { useBatchProcessor } from '../../hooks/use-batch-processor';
-import type { BatchFileProcessingSectionProps } from '../../hooks/use-batch-processor';
-import { useDirectoryPicker, useFilePicker } from '../../hooks/use-file-system';
+import { useDirectoryPicker } from '../../hooks/use-file-system';
 import { NotificationBridge } from '../../utils/notification-bridge';
 import { SearchDocumentsContainer } from './SearchDocumentsContainer';
+import { useSearchRun } from './use-search-run';
 
 const I18N_NS = 'page.search';
 
@@ -27,50 +26,11 @@ const SearchPage = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // --- File System Hooks ---
+  // The folders to search are picked with this
   const sourceDir = useDirectoryPicker({ mode: 'read' });
-  const outputDir = useDirectoryPicker({ mode: 'readwrite' });
 
-  const filePicker = useFilePicker({
-    types: [
-      {
-        description: 'Excel files',
-        accept: {
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-            '.xlsx',
-          ],
-          'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm', '.xlsb'],
-          'application/vnd.ms-excel': ['.xls'],
-        },
-      },
-      {
-        description: 'JSON Config',
-        accept: {
-          'application/json': ['.json'],
-        },
-      },
-    ],
-  });
-
-  // --- Batch Processor Hook ---
-  const { execute, cancel, isProcessing, progress } =
-    useBatchProcessor(addToast);
-
-  const initSubmitHandler = React.useCallback(
-    (
-      apiCallFunction: Parameters<
-        BatchFileProcessingSectionProps['initSubmitHandler']
-      >[0],
-    ) => {
-      return (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        const formData = new FormData(e.currentTarget);
-        const formDataJSON = { ...Object.fromEntries(formData || {}) };
-        return apiCallFunction(formDataJSON);
-      };
-    },
-    [],
-  );
+  // The search running, if any — the footer below cancels it
+  const search = useSearchRun(addToast);
 
   React.useEffect(() => {
     NotificationBridge.requestPermission();
@@ -94,17 +54,10 @@ const SearchPage = () => {
       )}
 
       <SearchDocumentsContainer
-        onSelectFile={filePicker.selectFile}
         onSelectSourceDirectory={sourceDir.selectDirectory}
-        onSelectOutputDirectory={outputDir.selectDirectory}
-        executeBatch={execute}
-        initSubmitHandler={initSubmitHandler}
-        sourceDirectory={sourceDir.processedDir}
-        outputDirectory={outputDir.processedDir}
-        selectedFile={filePicker.processedDir}
-        progress={progress}
         isFileSystemAccessSupported={sourceDir.isSupported}
-        isProcessing={isProcessing}
+        runSearch={search.run}
+        isSearching={search.isSearching}
         addToast={addToast}
       />
 
@@ -112,7 +65,7 @@ const SearchPage = () => {
           hidden below the viewport via translate-y-full when idle. */}
       <div
         className={`fixed inset-x-0 bottom-0 z-40 transform transition-transform duration-300 ease-in-out ${
-          isProcessing ? 'translate-y-0' : 'translate-y-full'
+          search.isSearching ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
         <div className="py-3 px-4 bg-yellow-300 border-t border-yellow-400 text-gray-900 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] dark:bg-yellow-200 dark:border-yellow-300">
@@ -122,8 +75,8 @@ const SearchPage = () => {
             {/* Disabled while the footer is hidden, so Tab never lands on it */}
             <button
               type="button"
-              onClick={cancel}
-              disabled={!isProcessing}
+              onClick={search.cancel}
+              disabled={!search.isSearching}
               className="ml-auto rounded-lg border border-gray-900/40 px-3 py-1 text-sm font-semibold text-gray-900 hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-gray-900/40 dark:hover:bg-yellow-300"
             >
               {t(`${I18N_NS}.cancelButton`)}
