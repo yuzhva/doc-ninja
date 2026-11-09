@@ -169,8 +169,10 @@ const SearchForm = ({
         data-testid="flowbite-card"
       >
         {/* Own scroll container from `lg` up — `justify-start` because a
-            centered flex child gets clipped at the top once it overflows. */}
-        <div className="flex h-full flex-col justify-center gap-4 p-6 lg:min-h-0 lg:flex-1 lg:justify-start lg:overflow-y-auto">
+            centered flex child gets clipped at the top once it overflows.
+            `relative` keeps absolutely positioned descendants inside it, so
+            they scroll and clip with the form instead of growing the page. */}
+        <div className="relative flex h-full flex-col justify-center gap-4 p-6 lg:min-h-0 lg:flex-1 lg:justify-start lg:overflow-y-auto">
           {/*
           <h3 className="mb-4 text-xl font-bold dark:text-white">
             Пошук в документах
