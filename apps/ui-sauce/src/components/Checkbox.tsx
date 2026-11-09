@@ -51,7 +51,13 @@ const Checkbox = ({
 
   if (theme === 'toggle') {
     return (
-      <label className={`inline-flex items-center cursor-pointer ${className}`}>
+      // `relative` anchors the `sr-only` (absolutely positioned) input to this
+      // label. Otherwise it anchors to the nearest positioned ancestor, and
+      // inside a scroll container (the Search form column) it escapes the
+      // clipping and stretches the page's scroll height below the footer.
+      <label
+        className={`relative inline-flex items-center cursor-pointer ${className}`}
+      >
         {isLabelFirst && label && (
           <span
             className={`me-3 text-sm font-medium text-gray-900 dark:text-gray-300 ${labelClassName}`}
