@@ -1,5 +1,6 @@
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
+import type { FileSystemItem } from 'toolkit--local/browser';
 
 import {
   ButtonProcessing,
@@ -50,6 +51,30 @@ const SearchForm = ({
   // every gate below (submit button, index actions, parser/tree sections, the
   // card's own height) reads the same signal instead of re-deriving it.
   const isSourceDirectorySelected = !!directoryData?.structure;
+
+  const subfolders: FileSystemItem[] =
+    directoryData?.structure?.fsNestedItems ?? [];
+
+  // How many files the next search reads. `fsFileCount` already includes
+  // everything below a folder, and the backend searches a selected folder by
+  // path prefix (subfolders included), so only the top-most selected folders
+  // count — adding their selected descendants too would count files twice.
+  // No selection means the whole source folder.
+  const searchedFileCount = React.useMemo(() => {
+    const root: FileSystemItem | undefined = directoryData?.structure;
+    if (!root) return 0;
+    if (selectedPaths.size === 0) return root.fsFileCount ?? 0;
+
+    const countSelected = (node: FileSystemItem): number =>
+      selectedPaths.has(node.path)
+        ? (node.fsFileCount ?? 0)
+        : (node.fsNestedItems ?? []).reduce(
+            (sum, child) => sum + countSelected(child),
+            0,
+          );
+
+    return countSelected(root);
+  }, [directoryData, selectedPaths]);
 
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
@@ -586,12 +611,13 @@ const SearchForm = ({
                 </div>
               )}
 
-              {/* Directory Tree View */}
-              {isSourceDirectorySelected &&
-                directoryData.structure.fsNestedItems &&
-                directoryData.structure.fsNestedItems.length > 0 && (
-                  <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">
+              {/* Directory Tree View — shown for any picked folder: one with
+                  files but no subfolders still needs its file count, and an
+                  empty one needs saying so before a search finds nothing. */}
+              {isSourceDirectorySelected && (
+                <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-baseline justify-between gap-2 mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    <span className="uppercase">
                       <Trans
                         i18nKey={`${I18N_NS}.${
                           selectedPaths.size === 0
@@ -599,29 +625,51 @@ const SearchForm = ({
                             : 'searchFoldersLabelScoped'
                         }`}
                       />
-                    </div>
-                    {/* An empty selection searches everything — without saying
+                    </span>
+                    <span className="shrink-0 whitespace-nowrap font-normal">
+                      {t(`${I18N_NS}.searchFilesCount`, {
+                        count: searchedFileCount,
+                      })}
+                    </span>
+                  </div>
+
+                  {subfolders.length === 0 && (
+                    <p
+                      className={`px-1 py-1 text-sm ${
+                        (directoryData.structure.fsFileCount ?? 0) > 0
+                          ? 'text-gray-500 dark:text-gray-400'
+                          : 'text-yellow-700 dark:text-yellow-400'
+                      }`}
+                    >
+                      {t(
+                        `${I18N_NS}.${
+                          (directoryData.structure.fsFileCount ?? 0) > 0
+                            ? 'searchFoldersNoSubfolders'
+                            : 'searchFoldersEmpty'
+                        }`,
+                      )}
+                    </p>
+                  )}
+                  {/* An empty selection searches everything — without saying
                         so, the unchecked boxes read as "nothing is included"
                         and users tick every folder by hand. */}
-                    {/*
+                  {/*
                     <div className={`text-xs text-gray-400 dark:text-gray-500 mb-2 ${selectedPaths.size === 0 ? '' : 'opacity-0'}`}>
                         <Trans
                           i18nKey={`${I18N_NS}.searchFoldersHintAll`}
                         />
                     </div>
                     */}
-                    {directoryData.structure.fsNestedItems.map(
-                      (fsNestedItem: any) => (
-                        <FPDDirectoryTreeItem
-                          key={fsNestedItem.path}
-                          fsNestedItem={fsNestedItem}
-                          selectedPaths={selectedPaths}
-                          onTogglePath={onTogglePath}
-                        />
-                      ),
-                    )}
-                  </div>
-                )}
+                  {subfolders.map((fsNestedItem) => (
+                    <FPDDirectoryTreeItem
+                      key={fsNestedItem.path}
+                      fsNestedItem={fsNestedItem}
+                      selectedPaths={selectedPaths}
+                      onTogglePath={onTogglePath}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </form>
         </div>

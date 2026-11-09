@@ -114,7 +114,13 @@
           "parserSettingsTitle": "Налаштування парсера документів",
           "searchFoldersLabelAll": "Пошук у всіх папках",
           "searchFoldersLabelScoped": "Пошук лише у вибраних",
-          "searchFoldersHintAll": "(якщо не обрано жодної)"
+          "searchFoldersHintAll": "(якщо не обрано жодної)",
+          "searchFilesCount_one": "{{count}} файл",
+          "searchFilesCount_few": "{{count}} файли",
+          "searchFilesCount_many": "{{count}} файлів",
+          "searchFilesCount_other": "{{count}} файлів",
+          "searchFoldersNoSubfolders": "Пошук відбувається по усих файлах папки.",
+          "searchFoldersEmpty": "У цій папці немає файлів для пошуку. Оберіть іншу папку або додайте до неї документи."
         },
         "searchResults": {
           "excelFileTypeDescription": "Файл Excel",
