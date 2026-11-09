@@ -316,6 +316,84 @@ const buildSearchSourcesPayload = (
   });
 
 /**
+ * The selection after ticking (or unticking) the folder at `path`. Everything
+ * below it follows; above it, a folder is ticked once all of its subfolders
+ * are, and unticked as soon as one of them isn't. Each source folder is a root
+ * of its own: ticking all of one's subfolders ticks it, and never reaches
+ * another folder.
+ */
+const toggleSelectedPath = (
+  selectedPaths: Set<string>,
+  sources: SearchSource[],
+  path: string,
+  checked: boolean,
+): Set<string> => {
+  const parentPathByPath = new Map<string, string | null>();
+  const childPathsByPath = new Map<string, string[]>();
+  const traverse = (node: FileSystemItem, parentPath: string | null) => {
+    parentPathByPath.set(node.path, parentPath);
+    childPathsByPath.set(
+      node.path,
+      (node.fsNestedItems ?? []).map((child) => child.path),
+    );
+    node.fsNestedItems?.forEach((child) => traverse(child, node.path));
+  };
+  sources.forEach(({ structure }) => traverse(structure, null));
+
+  const next = new Set(selectedPaths);
+
+  const toggleWithEverythingBelow = (folderPath: string) => {
+    if (checked) next.add(folderPath);
+    else next.delete(folderPath);
+    childPathsByPath.get(folderPath)?.forEach(toggleWithEverythingBelow);
+  };
+  toggleWithEverythingBelow(path);
+
+  for (
+    let parentPath = parentPathByPath.get(path);
+    parentPath;
+    parentPath = parentPathByPath.get(parentPath)
+  ) {
+    if (!checked) {
+      next.delete(parentPath);
+    } else if (
+      (childPathsByPath.get(parentPath) ?? []).every((childPath) =>
+        next.has(childPath),
+      )
+    ) {
+      next.add(parentPath);
+    } else {
+      // Not all of this one's subfolders are ticked: nor is anything above it
+      break;
+    }
+  }
+
+  return next;
+};
+
+/**
+ * The folders as they are, but with a parser config that no longer exists
+ * (renamed or removed in its settings) set back to none — '', which always
+ * is. Left as they are while there are no configs at all.
+ */
+const withKnownParserConfigs = (
+  sources: SearchSource[],
+  parserConfigs: any[],
+): SearchSource[] => {
+  if (parserConfigs.length === 0) return sources;
+
+  const configNames = new Set(parserConfigs.map((config) => config.name));
+  const isStale = (source: SearchSource) =>
+    source.parserConfigName !== '' && !configNames.has(source.parserConfigName);
+
+  return sources.some(isStale)
+    ? sources.map((source) =>
+        isStale(source) ? { ...source, parserConfigName: '' } : source,
+      )
+    : sources;
+};
+
+/**
  * A selection carried over to the folders' trees as they are now: see
  * reconcileSelectedPaths. A path in none of them drops out.
  */
@@ -341,7 +419,9 @@ export {
   reconcileSelectedPathsAcross,
   storeSearchSources,
   storeSelectedPaths,
+  toggleSelectedPath,
   toRootRelativePath,
   withFullPaths,
+  withKnownParserConfigs,
 };
 export type { SearchSource, SearchSourceChanges, SearchSourcePayload };

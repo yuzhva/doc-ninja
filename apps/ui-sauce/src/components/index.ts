@@ -4,7 +4,7 @@ export { ButtonCopyToClipboard } from './ButtonCopyToClipboard';
 export { ButtonProcessing } from './ButtonProcessing';
 export { Checkbox } from './Checkbox';
 export { ConfirmModal } from './ConfirmModal';
-export { Dropdown } from './Dropdown';
+export { Dropdown, visibleBoundsOf } from './Dropdown';
 export { FilterDropdown } from './FilterDropdown';
 export { FormConfigSelect } from './FormConfigSelect';
 export { FormFileDropzone, hasAllowedExtension } from './FormFileDropzone';

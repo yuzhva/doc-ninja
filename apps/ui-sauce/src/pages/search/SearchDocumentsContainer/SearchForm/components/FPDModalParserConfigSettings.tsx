@@ -10,10 +10,9 @@ import {
   Tabs,
 } from '../../../../../components';
 import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
+import { parserConfigsStore } from '../../search-configs-store';
 
 const I18N_NS = 'page.search.component.fpdModalParserConfigSettings';
-
-const PARSER_CONFIGS_STORAGE_KEY = 'docNinja_parserConfigs';
 
 // Consumed as plain strings by Select's options list (not rendered as JSX),
 // so these need an actual t() value rather than <Trans> — hence taking `t`
@@ -94,23 +93,6 @@ interface ParserConfigEntry {
   pipelines: PipelineEntry[];
   compounds: CompoundEntry[];
 }
-
-const readStoredParserConfigs = (): unknown[] => {
-  let config: unknown[] = [];
-  try {
-    const saved = localStorage.getItem(PARSER_CONFIGS_STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        config = parsed;
-      }
-    }
-  } catch (e) {
-    console.warn('Failed to load parser config from storage', e);
-  }
-
-  return config;
-};
 
 // Rendered as <Field>/<Checkbox> JSX by pipeline/compound cards below. These
 // must live at module scope, not inside FPDModalParserConfigSettings' body —
@@ -320,7 +302,7 @@ const FPDModalParserConfigSettings = ({
 
   React.useEffect(() => {
     if (isOpen) {
-      const stored = readStoredParserConfigs();
+      const stored = parserConfigsStore.get();
       setConfigJson(JSON.stringify(stored, null, 2));
       setParserConfigEntries(buildParserConfigEntries(stored));
     }
@@ -333,7 +315,7 @@ const FPDModalParserConfigSettings = ({
         alert(t(`${I18N_NS}.invalidConfigArrayAlert`));
         return;
       }
-      localStorage.setItem(PARSER_CONFIGS_STORAGE_KEY, JSON.stringify(parsed));
+      parserConfigsStore.save(parsed);
       onSave();
     } catch (e) {
       alert(t(`${I18N_NS}.invalidJsonAlert`));
@@ -1301,8 +1283,4 @@ const FPDModalParserConfigSettings = ({
   );
 };
 
-export {
-  FPDModalParserConfigSettings,
-  PARSER_CONFIGS_STORAGE_KEY,
-  readStoredParserConfigs,
-};
+export { FPDModalParserConfigSettings };

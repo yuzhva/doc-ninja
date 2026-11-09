@@ -3,6 +3,10 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { Checkbox, Modal, SortableList, Tabs } from '../../../../../components';
 import { FileSystemBridge } from '../../../../../utils/file-system-bridge';
+import {
+  filterConfigsStore,
+  readSavedFilterConfigs,
+} from '../../search-configs-store';
 
 const I18N_NS = 'page.search.component.fpdModalFilterSettings';
 
@@ -104,16 +108,9 @@ const FPDModalFilterSettings = ({
 
   React.useEffect(() => {
     if (isOpen) {
-      try {
-        const saved = localStorage.getItem('docNinja_filterConfig');
-        const parsed = saved ? JSON.parse(saved) : [];
-        setConfigJson(JSON.stringify(parsed, null, 2));
-        setFilterCategories(buildFilterCategories(parsed));
-      } catch (e) {
-        // Fallback if local storage is corrupted
-        setConfigJson('[]');
-        setFilterCategories([]);
-      }
+      const saved = readSavedFilterConfigs();
+      setConfigJson(JSON.stringify(saved, null, 2));
+      setFilterCategories(buildFilterCategories(saved));
     }
   }, [isOpen]);
 
@@ -121,8 +118,7 @@ const FPDModalFilterSettings = ({
     try {
       // Validate JSON before saving
       const parsed = JSON.parse(configJson);
-      // Minify or keep formatted? Keep formatted for editability usually, but storage size matters less here.
-      localStorage.setItem('docNinja_filterConfig', JSON.stringify(parsed));
+      filterConfigsStore.save(parsed);
       onSave();
     } catch (e) {
       alert(t(`${I18N_NS}.invalidJsonAlert`));

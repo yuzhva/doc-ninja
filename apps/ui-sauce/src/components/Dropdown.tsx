@@ -15,23 +15,26 @@ interface DropdownProps {
 }
 
 /**
- * The part of the window the element can be seen in: the window itself, or
- * the box of its nearest scrolling ancestor, which cuts off what it holds
- * before the window does.
+ * The part of the window the element can be seen in, top to bottom: inside
+ * the window and every ancestor that cuts off what overflows it. All of them,
+ * not just the nearest: a table's horizontal scroller clips too, yet its box
+ * can reach far past the scrolling list that holds it.
  */
 const visibleBoundsOf = (element: HTMLElement) => {
+  let top = 0;
+  let bottom = innerHeight;
   for (
     let ancestor = element.parentElement;
     ancestor;
     ancestor = ancestor.parentElement
   ) {
-    const { overflowY } = getComputedStyle(ancestor);
-    if (overflowY === 'auto' || overflowY === 'scroll') {
-      const { top, bottom } = ancestor.getBoundingClientRect();
-      return { top: Math.max(top, 0), bottom: Math.min(bottom, innerHeight) };
+    if (getComputedStyle(ancestor).overflowY !== 'visible') {
+      const box = ancestor.getBoundingClientRect();
+      top = Math.max(top, box.top);
+      bottom = Math.min(bottom, box.bottom);
     }
   }
-  return { top: 0, bottom: innerHeight };
+  return { top, bottom };
 };
 
 const Dropdown = ({
@@ -111,4 +114,4 @@ const Dropdown = ({
   );
 };
 
-export { Dropdown };
+export { Dropdown, visibleBoundsOf };

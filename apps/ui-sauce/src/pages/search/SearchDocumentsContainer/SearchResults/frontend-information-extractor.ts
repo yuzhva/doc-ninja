@@ -6,6 +6,7 @@ interface FilterRule {
 interface FilterConfig {
   id: string; // unique key
   labelFilterTitle: string; // Column header / Label
+  labelFilterDescription?: string; // The filter dropdown's title
   isHighlightedInResults?: boolean; // Opt out of highlighting the matched phrases
   filterRules: FilterRule[];
 }
@@ -15,7 +16,13 @@ interface FilterMatch {
   matchedTexts: string[]; // The slices of the summary that triggered it
 }
 
-export class FrontendInformationExtractor {
+// A summary as the keyword lookups read it: lowercased and split into words.
+interface PreparedSummary {
+  lowerSummary: string;
+  summaryWords: string[];
+}
+
+class FrontendInformationExtractor {
   /**
    * Finds the slice of text a keyword matches, with support for partial
    * matches (declensions). Returns null when the keyword isn't present.
@@ -45,21 +52,34 @@ export class FrontendInformationExtractor {
   }
 
   /**
-   * Resolves a filter configuration against the summary text, keeping the
-   * phrases that made the winning rule apply.
+   * Resolves each filter configuration against the summary text, keeping the
+   * phrases that made the winning rule apply — one entry per config, in their
+   * order, null where no rule applies.
    *
-   * Both the returned label and the matched phrases come out of a single pass,
-   * so surfacing the "why" behind a filter value costs nothing extra.
+   * The summary is lowercased and split once for all of them, and both the
+   * label and the matched phrases come out of the same pass, so surfacing the
+   * "why" behind a filter value costs nothing extra.
    */
-  static findMatch(
+  static findMatches(
     summary: string | null | undefined,
-    config: FilterConfig,
-  ): FilterMatch | null {
-    if (!config.filterRules || !summary) return null;
+    configs: FilterConfig[],
+  ): (FilterMatch | null)[] {
+    if (!summary) return configs.map(() => null);
 
     const lowerSummary = summary.toLowerCase();
-    // Split once for performance
-    const summaryWords = lowerSummary.split(/[\s,.;:!?()"]+/);
+    const prepared: PreparedSummary = {
+      lowerSummary,
+      summaryWords: lowerSummary.split(/[\s,.;:!?()"]+/),
+    };
+
+    return configs.map((config) => this.findPreparedMatch(prepared, config));
+  }
+
+  private static findPreparedMatch(
+    { lowerSummary, summaryWords }: PreparedSummary,
+    config: FilterConfig,
+  ): FilterMatch | null {
+    if (!config.filterRules) return null;
 
     for (const rule of config.filterRules) {
       // Skip rules with empty keywords list
@@ -90,14 +110,7 @@ export class FrontendInformationExtractor {
 
     return null;
   }
-
-  /**
-   * Determines the value for a specific filter configuration based on summary text.
-   */
-  static determineValue(
-    summary: string | null | undefined,
-    config: FilterConfig,
-  ): string | null {
-    return this.findMatch(summary, config)?.labelOption ?? null;
-  }
 }
+
+export { FrontendInformationExtractor };
+export type { FilterConfig, FilterMatch };

@@ -8,6 +8,7 @@ import {
   Select,
 } from '../../../../components';
 import { fetchRequest } from '../../../../utils';
+import { useParserConfigs } from '../search-configs-store';
 import {
   asPerLineSearchQueries,
   asSingleSearchQuery,
@@ -15,9 +16,17 @@ import {
 } from '../search-queries';
 import { countSearchedFiles } from '../search-sources';
 import type { SearchSource } from '../search-sources';
+import {
+  searchSourcesStore,
+  useSearchSources,
+  useSelectedPaths,
+} from '../search-sources-store';
 import type { SearchFormProps } from './SearchForm.types';
 import { FPDModalParserConfigSettings } from './components/FPDModalParserConfigSettings';
-import { FPDModalSearchHistory } from './components/FPDModalSearchHistory';
+import {
+  FPDModalSearchHistory,
+  addSearchHistoryEntry,
+} from './components/FPDModalSearchHistory';
 import { FPDSourceFolderItem } from './components/FPDSourceFolderItem';
 import type { DocumentsIndexAction } from './components/FPDSourceFolderItem';
 
@@ -25,26 +34,46 @@ const I18N_NS = 'page.search.container.searchForm';
 
 const SearchForm = ({
   onSelectSourceDirectory,
-  initSubmitHandler,
   isFileSystemAccessSupported,
   isProcessing,
-  sources,
-  onRemoveSource,
-  onSourceChange,
-  selectedPaths,
-  onTogglePath,
-  searchQueries,
-  onSearchQueriesChange,
-  allowFuzzyMatch,
-  onAllowFuzzyMatchChange,
-  maxTypoDistance,
-  onMaxTypoDistanceChange,
-  parserConfigs,
-  onParserConfigsSaved,
   addToast,
-  onSubmit,
+  onSearch,
 }: SearchFormProps) => {
   const { t } = useTranslation();
+  const parserConfigs = useParserConfigs();
+
+  // The folders searched, each a root of the tree with its own parser config,
+  // and which of their folders are ticked
+  const sources = useSearchSources();
+  const selectedPaths = useSelectedPaths();
+
+  // The trees kept are snapshots of the moment each folder was picked: read
+  // them anew each time the page opens. Picking a folder reads it fresh anyway.
+  React.useEffect(() => {
+    searchSourcesStore.refresh();
+  }, []);
+
+  const handleAddSourceFolder = async () => {
+    const picked = await onSelectSourceDirectory();
+    if (!picked?.structure?.path) return;
+
+    const overlapping = searchSourcesStore.addPickedFolder(picked.structure);
+    if (overlapping) {
+      addToast(
+        'warning',
+        t(`${I18N_NS}.sourceFolderOverlapsWarning`, {
+          name: picked.structure.name,
+          other: overlapping.structure.name,
+        }),
+      );
+    }
+  };
+
+  // One query per entry: the per-line editor shows one row each, and the
+  // request sends them as an array.
+  const [searchQueries, setSearchQueries] = React.useState<string[]>(['']);
+  const [allowFuzzyMatch, setAllowFuzzyMatch] = React.useState(true);
+  const [maxTypoDistance, setMaxTypoDistance] = React.useState('1');
 
   // Whether there is a folder to search at all — checked in one place so
   // every gate below (submit button, the card's own height) reads the same
@@ -154,7 +183,7 @@ const SearchForm = ({
   const handleRemoveSourceKeepingCache = () => {
     if (!sourceToRemove) return;
     setSourceToRemove(null);
-    onRemoveSource(sourceToRemove.structure.path);
+    searchSourcesStore.removeFolder(sourceToRemove.structure.path);
   };
 
   // The folder stays in the list, its gear spinning, until its cache is gone:
@@ -171,12 +200,12 @@ const SearchForm = ({
         name: source.structure.name,
       }),
     );
-    if (isCacheDeleted) onRemoveSource(source.structure.path);
+    if (isCacheDeleted) searchSourcesStore.removeFolder(source.structure.path);
   };
 
+  // The saved configs reach every picker through their store
   const handleParserConfigSettingsSave = () => {
     setIsParserConfigSettingsOpen(false);
-    onParserConfigsSaved();
   };
 
   const handlePerLineModeChange = (isEnabled: boolean) => {
@@ -185,7 +214,7 @@ const SearchForm = ({
     // quote spanning several lines stays one search), while the per-line editor
     // searches each row on its own. Converting here rather than at submit keeps
     // what gets sent identical to what's on screen.
-    onSearchQueriesChange(
+    setSearchQueries(
       isEnabled
         ? asPerLineSearchQueries(searchQueries)
         : asSingleSearchQuery(searchQueries),
@@ -195,7 +224,7 @@ const SearchForm = ({
   };
 
   const handleSearchQueryChange = (index: number, value: string) => {
-    onSearchQueriesChange(
+    setSearchQueries(
       searchQueries.map((query, i) => (i === index ? value : query)),
     );
   };
@@ -205,11 +234,27 @@ const SearchForm = ({
 
     // Clearing the last row rather than dropping it — an empty editor would
     // leave nothing on screen to type into.
-    onSearchQueriesChange(remaining.length > 0 ? remaining : ['']);
+    setSearchQueries(remaining.length > 0 ? remaining : ['']);
   };
 
   const handleSearchQueryAdd = () => {
-    onSearchQueriesChange([...searchQueries, '']);
+    setSearchQueries([...searchQueries, '']);
+  };
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    // History is stored as the one multi-line string the textarea shows, so
+    // restoring an entry drops straight back into either editor.
+    addSearchHistoryEntry(joinSearchQueries(searchQueries));
+
+    onSearch({
+      queries: searchQueries,
+      isInflectedWordFormsAllowed: allowFuzzyMatch,
+      maxTypoDistance: Number(maxTypoDistance),
+      pageSize: isPageSizeAll ? 'ALL' : Number(pageSizeValue),
+      sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
+    });
   };
 
   return (
@@ -230,7 +275,7 @@ const SearchForm = ({
             Пошук в документах
           </h3>
           */}
-          <form onSubmit={initSubmitHandler(onSubmit)}>
+          <form onSubmit={handleSubmit}>
             <div
               className={`transition-all duration-500 ease-in-out ${
                 isSettingsExpanded
@@ -336,7 +381,7 @@ const SearchForm = ({
                       rows={4}
                       value={joinSearchQueries(searchQueries)}
                       // Whatever is typed here is one query, newlines and all.
-                      onChange={(e) => onSearchQueriesChange([e.target.value])}
+                      onChange={(e) => setSearchQueries([e.target.value])}
                       className="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
                       placeholder={t(`${I18N_NS}.searchTextPlaceholder`)}
                     />
@@ -358,9 +403,7 @@ const SearchForm = ({
                         type="number"
                         min="0"
                         value={maxTypoDistance}
-                        onChange={(e) =>
-                          onMaxTypoDistanceChange(e.target.value)
-                        }
+                        onChange={(e) => setMaxTypoDistance(e.target.value)}
                         className="block w-full border bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
                         placeholder="1"
                       />
@@ -370,7 +413,7 @@ const SearchForm = ({
                       <Checkbox
                         theme="toggle"
                         checked={allowFuzzyMatch}
-                        onChange={onAllowFuzzyMatchChange}
+                        onChange={setAllowFuzzyMatch}
                         label={
                           <>
                             <span>
@@ -412,12 +455,6 @@ const SearchForm = ({
                         className="block w-full border disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 dark:focus:border-blue-500 dark:focus:ring-blue-500 rounded-lg p-2.5 text-sm"
                         placeholder="10"
                       />
-                      {/* Hidden input to send correct value to API */}
-                      <input
-                        type="hidden"
-                        name="pageSize"
-                        value={isPageSizeAll ? 'ALL' : pageSizeValue}
-                      />
                     </div>
 
                     {/* Toggle - Swapped place with input */}
@@ -437,7 +474,6 @@ const SearchForm = ({
                 <div className="sm:col-span-2">
                   <Select
                     id="sortOrder"
-                    name="sortOrder"
                     label={<Trans i18nKey={`${I18N_NS}.sortOrderLabel`} />}
                     value={sortOrder}
                     onChange={setSortOrder}
@@ -516,7 +552,7 @@ const SearchForm = ({
                 {isSourceDirectorySelected && (
                   <button
                     type="button"
-                    onClick={onSelectSourceDirectory}
+                    onClick={handleAddSourceFolder}
                     disabled={!isFileSystemAccessSupported}
                     className="shrink-0 flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
                   >
@@ -575,17 +611,19 @@ const SearchForm = ({
                         key={source.structure.path}
                         source={source}
                         selectedPaths={selectedPaths}
-                        onTogglePath={onTogglePath}
+                        onTogglePath={searchSourcesStore.togglePath}
                         onCollapsedChange={(isCollapsed) =>
-                          onSourceChange(source.structure.path, {
-                            isCollapsed,
-                          })
+                          searchSourcesStore.changeFolder(
+                            source.structure.path,
+                            { isCollapsed },
+                          )
                         }
                         parserConfigs={parserConfigs}
                         onParserConfigChange={(parserConfigName) =>
-                          onSourceChange(source.structure.path, {
-                            parserConfigName,
-                          })
+                          searchSourcesStore.changeFolder(
+                            source.structure.path,
+                            { parserConfigName },
+                          )
                         }
                         onOpenParserSettings={() =>
                           setIsParserConfigSettingsOpen(true)
@@ -607,7 +645,7 @@ const SearchForm = ({
                 // folder, so the whole box is the button for it
                 <button
                   type="button"
-                  onClick={onSelectSourceDirectory}
+                  onClick={handleAddSourceFolder}
                   disabled={!isFileSystemAccessSupported}
                   className="w-full flex items-center justify-center gap-2 p-4 text-sm font-medium text-blue-700 border border-dashed border-blue-300 rounded-lg hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-200 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/30 dark:focus:ring-blue-900 cursor-pointer transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -663,7 +701,7 @@ const SearchForm = ({
         onSelectQuery={(query) => {
           // History keeps the multi-line string the textarea showed, so it has
           // to be re-read through whichever editor is currently open.
-          onSearchQueriesChange(
+          setSearchQueries(
             isPerLineMode
               ? asPerLineSearchQueries([query])
               : asSingleSearchQuery([query]),

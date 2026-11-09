@@ -73,14 +73,14 @@
       "fileSystemNotSupportedWarning": "File System Access API is not supported. Use Chrome 86+ or Edge 86+.",
       "processingMessage": "Processing request ...",
       "cancelButton": "Cancel",
+      "searchRun": {
+        "successMessage": "Search across the documents completed.",
+        "cancelledMessage": "Search cancelled. If the folder was being indexed, indexing continues in the background, and the next search waits for it to finish.",
+        "failedMessage": "Search failed. See the console for details."
+      },
       "container": {
-        "searchDocumentsContainer": {
-          "validationMessage": "Please select an output folder.",
-          "successMessage": "Search across the documents completed.",
-          "cancelledMessage": "Search cancelled. If the folder was being indexed, indexing continues in the background, and the next search waits for it to finish.",
-          "sourceFolderOverlapsWarning": "“{{name}}” wasn't added: it overlaps “{{other}}”, which is already in the list. Searching both would find the same documents twice."
-        },
         "searchForm": {
+          "sourceFolderOverlapsWarning": "“{{name}}” wasn't added: it overlaps “{{other}}”, which is already in the list. Searching both would find the same documents twice.",
           "reindexSuccessToast": "“{{name}}” reindexed.",
           "deleteCacheSuccessToast": "Index cache of “{{name}}” deleted.",
           "actionFailedToast": "“{{name}}”: failed to perform the action: {{message}}",
@@ -126,23 +126,7 @@
           "generateSuccessToast": "Successfully created {{count}} file(s) in the selected folder.",
           "generateFailedToast": "Error creating file: {{message}}",
           "openOutputFolderMessage": "<action>Open folder</action> <bold>{{name}}</bold> to view the files.",
-          "openFolderFailedToast": "Couldn't open the folder: {{message}}",
-          "documentDetailsTitle": "Document details",
-          "queryLabel": "Query:",
-          "matchLabel": "Match #{{number}}",
-          "filterLabel": "Filter",
-          "clearSearchLabel": "Clear search",
-          "allResultsPlaceholder": "All",
-          "saveXlsxButton": "Save .xlsx",
-          "clearSelectionButton": "Clear all",
-          "selectedMatchesCount_one": "<bold>{{count}}</bold> result selected for download",
-          "selectedMatchesCount_other": "<bold>{{count}}</bold> results selected for download",
-          "filtersLockedTitle": "Filters are locked while matches are selected — clear the selection to change them",
-          "addFiltersButton": "Add filters",
-          "noResultsForFiltersMessage": "Nothing found for the selected filters",
-          "noMatchesMessage": "No matches found for this search",
-          "searchingMessage": "Searching ...",
-          "resultsPlaceholderMessage": "Search results will appear here"
+          "openFolderFailedToast": "Couldn't open the folder: {{message}}"
         }
       },
       "component": {
@@ -174,6 +158,37 @@
           "generateDocmTooltip": "Save .doc*",
           "selectMatchForDownloadTitle": "Select this match for download",
           "selectFileMatchesForDownloadTitle": "Select all matches of this file for download"
+        },
+        "resultsFilterBox": {
+          "filterLabel": "Filter",
+          "filterMinLengthHint": "from {{min}} characters",
+          "clearSearchLabel": "Clear search"
+        },
+        "resultsPreviewSideOver": {
+          "documentDetailsTitle": "Document details",
+          "queryLabel": "Query:",
+          "matchLabel": "Match #{{number}}"
+        },
+        "maxResultsCounter": {
+          "allResultsPlaceholder": "All"
+        },
+        "buttonSaveXlsx": {
+          "label": "Save .xlsx"
+        },
+        "selectionBar": {
+          "selectedMatchesCount_one": "<bold>{{count}}</bold> result selected for download",
+          "selectedMatchesCount_other": "<bold>{{count}}</bold> results selected for download",
+          "clearSelectionButton": "Clear all"
+        },
+        "resultsFiltersBar": {
+          "filtersLockedTitle": "Filters are locked while matches are selected — clear the selection to change them",
+          "addFiltersButton": "Add filters"
+        },
+        "resultsPlaceholder": {
+          "searchingMessage": "Searching ...",
+          "noMatchesMessage": "No matches found for this search",
+          "noResultsForFiltersMessage": "Nothing found for the selected filters",
+          "resultsPlaceholderMessage": "Search results will appear here"
         },
         "fpdModalSearchHistory": {
           "title": "Search history",

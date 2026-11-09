@@ -13,7 +13,8 @@ import type {
   SearchQueryTotals,
 } from '../../search-page.types';
 import { ProcessedResultRow } from './ProcessedResultRow';
-import type { DocmGeneratePayload } from './components/FPDDocmTemplatesDropdown';
+import type { FilterConfig } from './frontend-information-extractor';
+import type { MatchFiltersReader } from './match-filters';
 import type { ExtractedTableField } from './result-helpers';
 import {
   DOC_NAME_SORT_COLUMN_ID,
@@ -114,10 +115,10 @@ const ProcessedResultGroup = ({
   totals,
   maxResults,
   onViewContent,
-  filterConfigs, // Add prop
+  filterConfigs,
+  readMatchFilters,
   tableFields,
   primaryFieldId,
-  templateTagFieldIds,
   searchTerm,
   sortColumnId,
   sortDirection,
@@ -126,8 +127,7 @@ const ProcessedResultGroup = ({
   onMatchSelectionEnabledChange,
   selectedMatches,
   onMatchesSelectionChange,
-  onBtnGenerateDocmClick,
-  addToast,
+  onOpenDocmMenu,
 }: {
   searchQuery: string;
   items: ResultGroup[];
@@ -136,10 +136,11 @@ const ProcessedResultGroup = ({
   totals?: SearchQueryTotals;
   maxResults?: string;
   onViewContent: (item: ResultGroup) => void;
-  filterConfigs: any[]; // Add prop type
+  // The filters' columns, and what each match makes of them
+  filterConfigs: FilterConfig[];
+  readMatchFilters: MatchFiltersReader;
   tableFields: ExtractedTableField[];
   primaryFieldId: string | null;
-  templateTagFieldIds: string[];
   searchTerm: string;
   sortColumnId: string;
   sortDirection: SortDirection;
@@ -153,8 +154,7 @@ const ProcessedResultGroup = ({
     matches: RichProcessedResultItem[],
     isSelected: boolean,
   ) => void;
-  onBtnGenerateDocmClick: (payload: DocmGeneratePayload) => void;
-  addToast: (type: 'success' | 'error' | 'warning', content: string) => void;
+  onOpenDocmMenu: (anchor: HTMLElement, match: RichProcessedResultItem) => void;
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
@@ -353,7 +353,13 @@ const ProcessedResultGroup = ({
         </div>
       </div>
       {isOpen && (
-        <div className="overflow-x-auto @container sm:rounded-b-lg">
+        // Laid out and painted only while on screen. With dozens of tables
+        // open, any change in the results card — a keystroke in its toolbar,
+        // say — would otherwise lay every one of them out again. Off screen, a
+        // table holds the height it last had (an estimate, until it has been
+        // seen). The containment this brings clips nothing new: as a
+        // horizontal scroller, this box already cuts off what overflows it.
+        <div className="overflow-x-auto @container sm:rounded-b-lg [content-visibility:auto] [contain-intrinsic-block-size:auto_640px]">
           <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400 min-w-full divide-y divide-gray-200 dark:divide-gray-600">
             <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
               <tr>
@@ -492,16 +498,15 @@ const ProcessedResultGroup = ({
                   onToggleExpand={() => handleToggleRow(rowIds[index])}
                   onOpenFile={handleOpenFile}
                   onViewContent={onViewContent}
-                  filterConfigs={filterConfigs} // Pass config
+                  filterConfigs={filterConfigs}
+                  readMatchFilters={readMatchFilters}
                   tableFields={tableFields}
                   primaryFieldId={primaryFieldId}
-                  templateTagFieldIds={templateTagFieldIds}
                   searchTerm={searchTerm}
                   isMatchSelectionEnabled={isMatchSelectionEnabled}
                   selectedMatches={selectedMatches}
                   onMatchesSelectionChange={onMatchesSelectionChange}
-                  onBtnGenerateDocmClick={onBtnGenerateDocmClick}
-                  addToast={addToast}
+                  onOpenDocmMenu={onOpenDocmMenu}
                 />
               ))}
             </tbody>

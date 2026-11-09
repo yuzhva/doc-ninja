@@ -75,14 +75,14 @@
       "fileSystemNotSupportedWarning": "File System Access API не підтримується. Використовуйте Chrome 86+ або Edge 86+.",
       "processingMessage": "Обробка запиту ...",
       "cancelButton": "Скасувати",
+      "searchRun": {
+        "successMessage": "Пошук у документах завершено.",
+        "cancelledMessage": "Пошук скасовано. Якщо папка саме індексувалася, індексування продовжиться у фоні, а наступний пошук дочекається його завершення.",
+        "failedMessage": "Пошук не вдався. Подробиці — в консолі."
+      },
       "container": {
-        "searchDocumentsContainer": {
-          "validationMessage": "Оберіть папку призначення.",
-          "successMessage": "Пошук у документах завершено.",
-          "cancelledMessage": "Пошук скасовано. Якщо папка саме індексувалася, індексування продовжиться у фоні, а наступний пошук дочекається його завершення.",
-          "sourceFolderOverlapsWarning": "Папку «{{name}}» не додано: вона перетинається з «{{other}}», яка вже є у списку. Пошук в обох знаходив би ті самі документи двічі."
-        },
         "searchForm": {
+          "sourceFolderOverlapsWarning": "Папку «{{name}}» не додано: вона перетинається з «{{other}}», яка вже є у списку. Пошук в обох знаходив би ті самі документи двічі.",
           "reindexSuccessToast": "Папку «{{name}}» переіндексовано.",
           "deleteCacheSuccessToast": "Кеш індексації папки «{{name}}» видалено.",
           "actionFailedToast": "«{{name}}»: не вдалося виконати дію: {{message}}",
@@ -130,25 +130,7 @@
           "generateSuccessToast": "Успішно створено {{count}} файл(ів) у обраній папці.",
           "generateFailedToast": "Помилка створення файлу: {{message}}",
           "openOutputFolderMessage": "<action>Відкрити теку</action> <bold>{{name}}</bold> для перегляду.",
-          "openFolderFailedToast": "Не вдалося відкрити теку: {{message}}",
-          "documentDetailsTitle": "Деталі документу",
-          "queryLabel": "Запит:",
-          "matchLabel": "Збіг #{{number}}",
-          "filterLabel": "Фільтр",
-          "clearSearchLabel": "Очистити пошук",
-          "allResultsPlaceholder": "Всі",
-          "saveXlsxButton": "Зберегти .xlsx",
-          "clearSelectionButton": "Очистити все",
-          "selectedMatchesCount_one": "Обрано <bold>{{count}}</bold> результат до завантаження",
-          "selectedMatchesCount_few": "Обрано <bold>{{count}}</bold> результати до завантаження",
-          "selectedMatchesCount_many": "Обрано <bold>{{count}}</bold> результатів до завантаження",
-          "selectedMatchesCount_other": "Обрано <bold>{{count}}</bold> результатів до завантаження",
-          "filtersLockedTitle": "Фільтри недоступні, поки обрано результати — очистіть вибір, щоб змінити їх",
-          "addFiltersButton": "Додайте фільтри",
-          "noResultsForFiltersMessage": "Нічого не знайдено за обраними фільтрами",
-          "noMatchesMessage": "За цим запитом нічого не знайдено",
-          "searchingMessage": "Пошук ...",
-          "resultsPlaceholderMessage": "Результати пошуку з'являться тут"
+          "openFolderFailedToast": "Не вдалося відкрити теку: {{message}}"
         }
       },
       "component": {
@@ -186,6 +168,39 @@
           "generateDocmTooltip": "Зберегти .doc*",
           "selectMatchForDownloadTitle": "Обрати результат для завантаження",
           "selectFileMatchesForDownloadTitle": "Обрати всі результати цього файлу для завантаження"
+        },
+        "resultsFilterBox": {
+          "filterLabel": "Фільтр",
+          "filterMinLengthHint": "від {{min}} символів",
+          "clearSearchLabel": "Очистити пошук"
+        },
+        "resultsPreviewSideOver": {
+          "documentDetailsTitle": "Деталі документу",
+          "queryLabel": "Запит:",
+          "matchLabel": "Збіг #{{number}}"
+        },
+        "maxResultsCounter": {
+          "allResultsPlaceholder": "Всі"
+        },
+        "buttonSaveXlsx": {
+          "label": "Зберегти .xlsx"
+        },
+        "selectionBar": {
+          "selectedMatchesCount_one": "Обрано <bold>{{count}}</bold> результат до завантаження",
+          "selectedMatchesCount_few": "Обрано <bold>{{count}}</bold> результати до завантаження",
+          "selectedMatchesCount_many": "Обрано <bold>{{count}}</bold> результатів до завантаження",
+          "selectedMatchesCount_other": "Обрано <bold>{{count}}</bold> результатів до завантаження",
+          "clearSelectionButton": "Очистити все"
+        },
+        "resultsFiltersBar": {
+          "filtersLockedTitle": "Фільтри недоступні, поки обрано результати — очистіть вибір, щоб змінити їх",
+          "addFiltersButton": "Додайте фільтри"
+        },
+        "resultsPlaceholder": {
+          "searchingMessage": "Пошук ...",
+          "noMatchesMessage": "За цим запитом нічого не знайдено",
+          "noResultsForFiltersMessage": "Нічого не знайдено за обраними фільтрами",
+          "resultsPlaceholderMessage": "Результати пошуку з'являться тут"
         },
         "fpdModalSearchHistory": {
           "title": "Історія пошуку",
