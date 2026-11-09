@@ -184,9 +184,14 @@ class FileIndexer {
     );
   }
 
-  /** Stops watching the folder (see `watchFiles`). The index stays usable. */
-  close(): void {
+  /**
+   * Stops watching the folder (see `watchFiles`). The index stays usable.
+   * @returns when the index update running, if any, is over: it goes on to
+   * its end, and holds the index until then
+   */
+  close(): Promise<void> {
     this.watcher?.close();
+    return this.updates;
   }
 
   /**

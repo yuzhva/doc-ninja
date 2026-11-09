@@ -38,7 +38,8 @@
       "closeLabel": "Закрити"
     },
     "batchProcessor": {
-      "failedMessage": "Обробка не вдалася. Подробиці — в консолі."
+      "failedMessage": "Обробка не вдалася. Подробиці — в консолі.",
+      "cancelledMessage": "Обробку скасовано."
     },
     "confirmModal": {
       "cancelButton": "Скасувати"
@@ -73,10 +74,12 @@
     "search": {
       "fileSystemNotSupportedWarning": "File System Access API не підтримується. Використовуйте Chrome 86+ або Edge 86+.",
       "processingMessage": "Обробка запиту ...",
+      "cancelButton": "Скасувати",
       "container": {
         "searchDocumentsContainer": {
           "validationMessage": "Оберіть папку призначення.",
-          "successMessage": "Пошук у документах завершено."
+          "successMessage": "Пошук у документах завершено.",
+          "cancelledMessage": "Пошук скасовано. Якщо папка саме індексувалася, індексування продовжиться у фоні, а наступний пошук дочекається його завершення."
         },
         "searchForm": {
           "selectSourceFolderFirstWarning": "Спочатку оберіть папку з документами.",

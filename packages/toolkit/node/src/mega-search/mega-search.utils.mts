@@ -1,6 +1,31 @@
+import { setImmediate as nextTurn } from 'timers/promises';
+
 import { editDistance } from './fuzzy.mjs';
 import { countsAsWord } from './text-processor.mjs';
 import { DocumentIndex, ProcessedSearchToken } from './types.mjs';
+
+/**
+ * A check, for a loop to make before each step, that throws once `signal`
+ * aborts. An abort comes in as an event — a closed connection, a message —
+ * which the event loop takes in only between tasks, and a step that reads
+ * nothing from disk awaits none: the check lets the event loop in once
+ * `everyMs` of work went by since it last did. Without a signal there is
+ * nothing to wait for, and it never pauses.
+ */
+export function createAbortCheck(
+  signal: AbortSignal | undefined,
+  everyMs = 20,
+): () => Promise<void> {
+  let lastPause = Date.now();
+  return async () => {
+    if (!signal) return;
+    if (Date.now() - lastPause >= everyMs) {
+      await nextTurn();
+      lastPause = Date.now();
+    }
+    signal.throwIfAborted();
+  };
+}
 
 /**
  * Whether the token at `position` counts as a word: not a number, nor a

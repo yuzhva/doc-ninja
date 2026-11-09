@@ -19,7 +19,14 @@ type ApiResponse = { status: number; body: unknown };
 
 type PortRequest = { id: number; request: ApiRequest };
 
+/**
+ * The window no longer waits for request `id` (window.electronAPI.abortFetch,
+ * preload.cjs): the backend stops it, as it does a fetch() cancelled in a
+ * browser, and sends no reply.
+ */
+type PortAbort = { id: number; abort: true };
+
 type PortReply =
   { id: number; response: ApiResponse } | { id: number; error: string };
 
-export type { ApiRequest, ApiResponse, PortReply, PortRequest };
+export type { ApiRequest, ApiResponse, PortAbort, PortReply, PortRequest };

@@ -53,7 +53,8 @@ const SearchPage = () => {
   });
 
   // --- Batch Processor Hook ---
-  const { execute, isProcessing, progress } = useBatchProcessor(addToast);
+  const { execute, cancel, isProcessing, progress } =
+    useBatchProcessor(addToast);
 
   const initSubmitHandler = React.useCallback(
     (
@@ -118,6 +119,15 @@ const SearchPage = () => {
           <div className="flex items-center justify-start text-sm font-semibold">
             <LoadingSpinner className="text-gray-900" />
             {t(`${I18N_NS}.processingMessage`)}
+            {/* Disabled while the footer is hidden, so Tab never lands on it */}
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={!isProcessing}
+              className="ml-auto rounded-lg border border-gray-900/40 px-3 py-1 text-sm font-semibold text-gray-900 hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-gray-900/40 dark:hover:bg-yellow-300"
+            >
+              {t(`${I18N_NS}.cancelButton`)}
+            </button>
           </div>
         </div>
       </div>

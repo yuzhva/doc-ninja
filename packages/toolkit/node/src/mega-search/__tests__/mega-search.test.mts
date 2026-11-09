@@ -1394,6 +1394,57 @@ describe('MegaSearch', () => {
       /^Error: Search operation failed: Search indexes are not available$/,
     );
   });
+
+  describe('search() — cancelled', () => {
+    it('rejects with an AbortError for a signal aborted already', async () => {
+      await assert.rejects(
+        search('кошторис', { signal: AbortSignal.abort() }),
+        {
+          name: 'AbortError',
+        },
+      );
+    });
+
+    it('stops between documents, and caches nothing', async () => {
+      // A query of its own, so no earlier test cached its result
+      const options: SearchOptions = { pageSize: 'ALL', snippetsLimit: 'ALL' };
+      const controller = new AbortController();
+
+      const searching = search('наказу', {
+        ...options,
+        signal: controller.signal,
+      });
+      // As the first document's snippets are made: scoring is over by then
+      controller.abort();
+
+      await assert.rejects(searching, { name: 'AbortError' });
+      assert.equal((await search('наказу', options)).results.length, 5);
+    });
+
+    it('rejects with the abort, not a wrapped error, once aborted', async (t) => {
+      t.mock.method(console, 'error', () => {});
+      const controller = new AbortController();
+      t.mock.method(fixture.megaSearch.indexer, 'getSearchSnapshot', () => {
+        controller.abort();
+        throw new Error('index file vanished');
+      });
+
+      await assert.rejects(search('погода', { signal: controller.signal }), {
+        name: 'AbortError',
+      });
+    });
+
+    it('shares the cached result of the same search without a signal', async () => {
+      const options: SearchOptions = { ...PRODUCTION_OPTIONS, page: 1 };
+      const withoutSignal = await search('бюджет', options);
+      const withSignal = await search('бюджет', {
+        ...options,
+        signal: new AbortController().signal,
+      });
+
+      assert.equal(withSignal, withoutSignal);
+    });
+  });
 });
 
 describe('MegaSearch over an empty folder', () => {
@@ -1683,6 +1734,26 @@ describe('MegaSearch re-indexing and cache maintenance', () => {
       await queued;
 
       assert.deepEqual((await find('звіт')).sort(), ['d.txt', 'e.txt']);
+    });
+  });
+
+  describe('close() while an update runs', () => {
+    useFreshFixture();
+
+    it('resolves once the update is over: it goes on to its end', async () => {
+      // Resolved by what close() returns, as the update indexes d.txt
+      const closed = new Promise<void>((resolve) => {
+        onIndexDocument(fixture.megaSearch, async () =>
+          resolve(fixture.megaSearch.close()),
+        );
+      });
+
+      await fixture.corpus.write('d.txt', 'Квартальний звіт.');
+      const updating = fixture.megaSearch.reindex();
+      await closed;
+
+      assert.deepEqual(await find('звіт'), ['d.txt']);
+      await updating;
     });
   });
 

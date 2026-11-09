@@ -118,6 +118,14 @@ type SearchOptions = {
    * Useful for multi-tenant setups or when documents are organized in distinct folders.
    */
   searchScopedPaths?: string[];
+
+  /**
+   * Stops the search once aborted: search() rejects with the signal's reason
+   * (an AbortError by default), and caches nothing. It's looked at between
+   * documents as their snippets are made, never in the middle of scoring —
+   * that runs in one go, so an abort waits for it.
+   */
+  signal?: AbortSignal;
 };
 
 // NEW: Enhanced snippet information with position data
