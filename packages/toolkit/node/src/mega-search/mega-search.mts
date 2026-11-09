@@ -20,6 +20,11 @@ import type {
   SnippetInfo,
 } from './mega-search.types.mjs';
 import { createAbortCheck } from './mega-search.utils.mjs';
+import {
+  compareRankedResults,
+  dateFromFileName,
+} from './search-result-order.mjs';
+import type { RankedResult } from './search-result-order.mjs';
 import { createLogger } from './shared/logger.mjs';
 import {
   UkrainianTextProcessor,
@@ -613,47 +618,23 @@ class MegaSearch {
     sortOrder: 'asc' | 'desc',
     filenameDatePattern: string | undefined,
   ): [string, number][] {
-    // Pre-calculate dates if sorting by date to avoid repeated regex parsing
-    // inside sort (O(N) vs O(N log N)).
-    const docDates = new Map<string, number>();
-    if (sortBy === 'date') {
-      for (const docId of filteredDocIds) {
-        const doc = docCache.get(docId);
-        docDates.set(
-          docId,
-          doc
-            ? this.extractDateFromFilename(
-                doc.metadata.fileName,
-                filenameDatePattern,
-              )
-            : 0,
-        );
-      }
-    }
+    // Dates are read once per document, not once per comparison. The order
+    // itself is shared with mergeSearchResults, which puts several folders'
+    // results together as one search over all of them would.
+    const ranked: RankedResult[] = filteredDocIds.map((docId) => {
+      const doc = sortBy === 'date' ? docCache.get(docId) : undefined;
+      return {
+        id: docId,
+        score: docScores.get(docId) || 0,
+        date: doc
+          ? dateFromFileName(doc.metadata.fileName, filenameDatePattern)
+          : 0,
+      };
+    });
 
-    return filteredDocIds
-      .map((docId) => [docId, docScores.get(docId) || 0] as [string, number])
-      .sort((a, b) => {
-        const [docIdA, scoreA] = a;
-        const [docIdB, scoreB] = b;
-
-        if (sortBy === 'date') {
-          const dateA = docDates.get(docIdA) || 0;
-          const dateB = docDates.get(docIdB) || 0;
-
-          // Primary sort: Date
-          const diff = sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
-          if (diff !== 0) return diff;
-
-          // Secondary sort: Relevance (always descending)
-          return scoreB - scoreA;
-        }
-
-        // Default: Relevance. If scores are equal, sort by docId for stability.
-        const scoreDiff =
-          sortOrder === 'asc' ? scoreA - scoreB : scoreB - scoreA;
-        return scoreDiff !== 0 ? scoreDiff : docIdA.localeCompare(docIdB);
-      });
+    return ranked
+      .sort((a, b) => compareRankedResults(a, b, sortBy, sortOrder))
+      .map(({ id, score }) => [id, score] as [string, number]);
   }
 
   /** Generate snippets/highlights for a page of scored results. */
@@ -908,46 +889,6 @@ class MegaSearch {
       throw new Error(
         `Search operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
-    }
-  }
-
-  /**
-   * ✅ NEW: Helper to extract date from filename for chronological sorting
-   */
-  private extractDateFromFilename(
-    filename: string,
-    customPattern?: string,
-  ): number {
-    try {
-      // Default pattern matches DD.MM.YYYY or DD.MM.YY or D.M.YY with separators . / -
-      // Captures: 1=Day, 2=Month, 3=Year
-      // The (?:^|\D) ensures we don't match the middle of a number, but allows start of string or non-digit prefix
-      const defaultPattern =
-        /(?:^|\D)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\D|$)/;
-      const regex = customPattern ? new RegExp(customPattern) : defaultPattern;
-
-      const match = filename.match(regex);
-      if (!match) return 0; // No date found
-
-      // Assuming the pattern captures (Day, Month, Year) in groups 1, 2, 3
-      const day = parseInt(match[1], 10);
-      const month = parseInt(match[2], 10);
-      let year = parseInt(match[3], 10);
-
-      // Handle 2-digit years
-      if (year < 100) {
-        // Simple heuristic: if year is between 00-50 -> 2000-2050
-        // if year is 51-99 -> 1951-1999
-        // This covers the user's "25" -> 2025 case
-        year += year < 50 ? 2000 : 1900;
-      }
-
-      // Validate date components
-      if (month < 1 || month > 12 || day < 1 || day > 31) return 0;
-
-      return new Date(year, month - 1, day).getTime();
-    } catch (e) {
-      return 0;
     }
   }
 

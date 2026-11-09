@@ -242,6 +242,29 @@ Main search method with full feature support.
 - `close()` - Stop watching the folder. Resolves once the index update running, if any, is over
   (it goes on to its end)
 
+#### Searching Several Folders
+
+An engine searches one root folder. To search several as one, search each with its own engine and
+put one query's answers together with `mergeSearchResults`:
+
+```typescript
+import { mergeSearchResults, pageOptionsForMerge } from 'toolkit--local/node';
+
+const options = { sortBy: 'date', pageSize: 10 } as const;
+const perFolder = await Promise.all(
+  engines.map((engine) =>
+    // Each folder's first pages: any of them may hold the whole page asked for
+    engine.search(query, { ...options, ...pageOptionsForMerge(options) }),
+  ),
+);
+const result = mergeSearchResults(perFolder, options);
+```
+
+The results come in the order one search over all the folders would give (by the date in the file
+name, then relevance; or by relevance), cut to the page asked for, with every folder's totals added
+up. Scores come from separate engines, each scoring against its own folder's documents, so a merge
+by relevance compares them as they are.
+
 ## 🌟 Advanced Features
 
 ### Ukrainian Language Processing

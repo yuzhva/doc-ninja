@@ -79,13 +79,18 @@
         "searchDocumentsContainer": {
           "validationMessage": "Оберіть папку призначення.",
           "successMessage": "Пошук у документах завершено.",
-          "cancelledMessage": "Пошук скасовано. Якщо папка саме індексувалася, індексування продовжиться у фоні, а наступний пошук дочекається його завершення."
+          "cancelledMessage": "Пошук скасовано. Якщо папка саме індексувалася, індексування продовжиться у фоні, а наступний пошук дочекається його завершення.",
+          "sourceFolderOverlapsWarning": "Папку «{{name}}» не додано: вона перетинається з «{{other}}», яка вже є у списку. Пошук в обох знаходив би ті самі документи двічі."
         },
         "searchForm": {
-          "selectSourceFolderFirstWarning": "Спочатку оберіть папку з документами.",
-          "reindexSuccessToast": "Переіндексацію завершено.",
-          "deleteCacheSuccessToast": "Кеш індексації видалено.",
-          "actionFailedToast": "Не вдалося виконати дію: {{message}}",
+          "reindexSuccessToast": "Папку «{{name}}» переіндексовано.",
+          "deleteCacheSuccessToast": "Кеш індексації папки «{{name}}» видалено.",
+          "actionFailedToast": "«{{name}}»: не вдалося виконати дію: {{message}}",
+          "removeSourceConfirmTitle": "Прибрати папку з пошуку?",
+          "removeSourceConfirmMessage": "Папку <strong>{{name}}</strong> буде прибрано зі списку.<br/><br/>Її кеш індексації лежить у самій папці (<code>.cache</code>).<br/>Якщо його залишити, після повторного додавання шукати в ній можна одразу, без нової індексації.",
+          "removeSourceKeepCacheButton": "Сховати зі списку",
+          "removeSourceWithCacheButton": "Видалити з кешом",
+          "removeSourceWithCacheSuccessToast": "Папку «{{name}}» прибрано з пошуку, її кеш індексації видалено.",
           "searchTextLabel": "Текст пошуку",
           "searchTextPlaceholder": "Введіть ключове слово або фразу ...",
           "perLineModeLabel": "Мульти пошук",
@@ -105,22 +110,16 @@
           "searchButton": "Пошук",
           "expandSettingsTitle": "Показати параметри",
           "collapseSettingsTitle": "Згорнути параметри",
-          "sourceFolderLabel": "Папка з документами для пошуку",
-          "documentsIndexActionsTitle": "Налаштування індексації документів",
-          "reindexAction": "Переіндексувати",
-          "deleteCacheAction": "Видалити кеш",
-          "parserConfigLabel": "Обробка знайденого тексту",
-          "noParsingOption": "Без обробки",
-          "parserSettingsTitle": "Налаштування парсера документів",
+          "sourceFoldersLabel": "Папки для пошуку",
+          "addSourceFolderButton": "Додати",
+          "addFirstSourceFolderButton": "Додати папку з документами",
           "searchFoldersLabelAll": "Пошук у всіх папках",
           "searchFoldersLabelScoped": "Пошук лише у вибраних",
           "searchFoldersHintAll": "(якщо не обрано жодної)",
           "searchFilesCount_one": "{{count}} файл",
           "searchFilesCount_few": "{{count}} файли",
           "searchFilesCount_many": "{{count}} файлів",
-          "searchFilesCount_other": "{{count}} файлів",
-          "searchFoldersNoSubfolders": "Пошук відбувається по усих файлах папки.",
-          "searchFoldersEmpty": "У цій папці немає файлів для пошуку. Оберіть іншу папку або додайте до неї документи."
+          "searchFilesCount_other": "{{count}} файлів"
         },
         "searchResults": {
           "excelFileTypeDescription": "Файл Excel",
@@ -290,6 +289,19 @@
         "fpdDirectoryTreeItem": {
           "expandLabel": "Розгорнути",
           "collapseLabel": "Згорнути"
+        },
+        "fpdSourceFolderItem": {
+          "expandLabel": "Розгорнути",
+          "collapseLabel": "Згорнути",
+          "actionsTitle": "Дії з папкою",
+          "reindexAction": "Переіндексувати",
+          "deleteCacheAction": "Видалити кеш",
+          "removeAction": "Прибрати з пошуку",
+          "parserConfigTitle": "Обробка знайденого тексту",
+          "noParsing": "Без обробки",
+          "parserSettingsAction": "Налаштування обробки документів",
+          "createParserConfigAction": "Створити конфігурацію",
+          "emptyFolderMessage": "У цій папці немає файлів для пошуку."
         },
         "fpdDocmTemplatesDropdown": {
           "wordTemplatesFileTypeDescription": "Шаблони Word",

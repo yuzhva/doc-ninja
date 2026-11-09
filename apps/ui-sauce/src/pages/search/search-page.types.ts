@@ -61,10 +61,17 @@ interface ExtractedResultItem {
   foundInDocument: string;
   matchedText: string;
   originalFilePath?: string;
+  // The source folder searched that the document is in, as the request named
+  // it — several can be searched at once, each with its own parser config.
+  sourcePath?: string;
   position?: number;
   // Always string|null — mirrors information-extractor.mts's ExtractedFields.
   // Every pipeline rule and compound resolves to text (or null), never a number.
   extractedFieldById: Record<string, string | null | undefined>;
+  // Not from the BE: the field of `extractedFieldById` holding this match's
+  // body text, as its folder's parser config marks it — stamped on when the
+  // response comes in (see SearchDocumentsContainer, getPrimaryText).
+  primaryFieldId?: string | null;
 }
 
 // Container that holds both the NLP extraction and the raw search metadata

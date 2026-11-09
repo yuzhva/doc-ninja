@@ -16,16 +16,27 @@ import { SearchForm } from './SearchForm/SearchForm';
 import { readStoredParserConfigs } from './SearchForm/components/FPDModalParserConfigSettings';
 import { addSearchHistoryEntry } from './SearchForm/components/FPDModalSearchHistory';
 import { SearchResults } from './SearchResults/SearchResults';
+import { getExtractedFieldOutputs } from './SearchResults/result-helpers';
 import {
   getDirectoryStructureFingerprint,
   isRescannableDirectoryPath,
-  reconcileSelectedPaths,
   rescanDirectoryStructure,
 } from './directory-structure';
 import { joinSearchQueries, normalizeSearchQueries } from './search-queries';
-
-const SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY =
-  'docNinja_selectedParserConfigName';
+import {
+  buildSearchSourcesPayload,
+  collectFolderPaths,
+  findOverlappingSource,
+  isPathWithin,
+  isSamePath,
+  readStoredSearchSources,
+  readStoredSelectedPaths,
+  reconcileSelectedPathsAcross,
+  storeSearchSources,
+  storeSelectedPaths,
+  withFullPaths,
+} from './search-sources';
+import type { SearchSource, SearchSourceChanges } from './search-sources';
 
 const I18N_NS = 'page.search.container.searchDocumentsContainer';
 
@@ -59,27 +70,24 @@ const SearchDocumentsContainer = ({
     Record<string, SearchQueryTotals>
   >({});
 
-  // Initialize from LocalStorage if available
-  // Store the entire processed result object instead of just the structure
-  const [directoryData, setDirectoryData] = React.useState<any>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const saved = localStorage.getItem('docNinja_directoryData'); // Renamed key
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  // The parser configs the results on screen were extracted with — the folders'
+  // as they were when searched, since what was extracted can't follow a later
+  // change of one. They decide the results' columns.
+  const [searchedParserConfigNames, setSearchedParserConfigNames] =
+    React.useState<string[]>([]);
 
-  const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
-    try {
-      const saved = localStorage.getItem('docNinja_selectedPaths');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
+  // The folders searched in, each with its own parser config. Ticked folders
+  // (`selectedPaths`) span all of their trees: with none ticked, every folder
+  // is searched whole.
+  const [sources, setSources] = React.useState<SearchSource[]>(
+    readStoredSearchSources,
+  );
+
+  // Read before the folders are stored for the first time: carrying over the
+  // single-folder version's ticks takes its folder, which that store drops
+  const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(
+    readStoredSelectedPaths,
+  );
 
   // One query per entry — the payload sends them as an array, which is why
   // they're held here rather than read back out of the form's FormData.
@@ -96,47 +104,25 @@ const SearchDocumentsContainer = ({
     return readStoredParserConfigs();
   }, [parserConfigsVersion]);
 
-  const [selectedParserConfigName, setSelectedParserConfigName] =
-    React.useState(() => {
-      if (typeof window === 'undefined') return '';
-      try {
-        return (
-          localStorage.getItem(SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY) || ''
-        );
-      } catch {
-        return '';
-      }
-    });
-
-  // Keep the selection valid whenever the parser config list changes
-  // (e.g. an entry was renamed or removed via the settings modal).
-  // An empty selection ('') represents the "none" option and is always valid.
+  // Keep each folder's parser config valid whenever the list changes (e.g. an
+  // entry was renamed or removed via the settings modal). '' stands for the
+  // "none" option and is always valid.
   React.useEffect(() => {
-    if (parserConfigs.length === 0 || selectedParserConfigName === '') return;
+    if (parserConfigs.length === 0) return;
 
-    const stillExists = parserConfigs.some(
-      (c: any) => c.name === selectedParserConfigName,
+    const configNames = new Set(parserConfigs.map((c: any) => c.name));
+    const isStale = (source: SearchSource) =>
+      source.parserConfigName !== '' &&
+      !configNames.has(source.parserConfigName);
+
+    setSources((prev) =>
+      prev.some(isStale)
+        ? prev.map((source) =>
+            isStale(source) ? { ...source, parserConfigName: '' } : source,
+          )
+        : prev,
     );
-
-    if (!stillExists) {
-      setSelectedParserConfigName('');
-    }
-  }, [parserConfigs, selectedParserConfigName]);
-
-  React.useEffect(() => {
-    try {
-      if (selectedParserConfigName) {
-        localStorage.setItem(
-          SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY,
-          selectedParserConfigName,
-        );
-      } else {
-        localStorage.removeItem(SELECTED_PARSER_CONFIG_NAME_STORAGE_KEY);
-      }
-    } catch (e) {
-      console.warn('Failed to save selected parser config to storage', e);
-    }
-  }, [selectedParserConfigName]);
+  }, [parserConfigs]);
 
   const handleParserConfigsSaved = React.useCallback(() => {
     setParserConfigsVersion((v) => v + 1);
@@ -144,35 +130,19 @@ const SearchDocumentsContainer = ({
 
   // Persist state changes
   React.useEffect(() => {
-    try {
-      if (directoryData) {
-        localStorage.setItem(
-          'docNinja_directoryData', // Renamed key
-          JSON.stringify(directoryData),
-        );
-      } else {
-        localStorage.removeItem('docNinja_directoryData');
-      }
-    } catch (e) {
-      console.warn('Failed to save directory data to storage', e);
-    }
-  }, [directoryData]);
+    storeSearchSources(sources);
+  }, [sources]);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem(
-        'docNinja_selectedPaths',
-        JSON.stringify(Array.from(selectedPaths)),
-      );
-    } catch (e) {}
+    storeSelectedPaths(selectedPaths);
   }, [selectedPaths]);
 
-  // Build lookup maps for efficient recursive selection
+  // Build lookup maps for efficient recursive selection. Each source folder is
+  // a root of its own: ticking all of one's subfolders ticks it, and never
+  // reaches another folder.
   const { parentMap, childrenMap } = React.useMemo(() => {
     const parentMap = new Map<string, string | null>();
     const childrenMap = new Map<string, string[]>();
-
-    if (!directoryData?.structure) return { parentMap, childrenMap }; // Check structure existence
 
     const traverse = (node: FileSystemItem, parent: string | null) => {
       parentMap.set(node.path, parent);
@@ -180,9 +150,9 @@ const SearchDocumentsContainer = ({
       childrenMap.set(node.path, kids);
       node.fsNestedItems?.forEach((child) => traverse(child, node.path));
     };
-    traverse(directoryData.structure, null); // Use structure from stored data
+    sources.forEach((source) => traverse(source.structure, null));
     return { parentMap, childrenMap };
-  }, [directoryData]);
+  }, [sources]);
 
   const handleTogglePath = React.useCallback(
     (path: string, checked: boolean) => {
@@ -230,95 +200,184 @@ const SearchDocumentsContainer = ({
     [childrenMap, parentMap], // Dependencies remain the same
   );
 
-  React.useEffect(() => {
-    const buildTree = async () => {
-      if (!sourceDirectory) return;
-
-      try {
-        // Use the structure already processed by FileSystemService
-        if (sourceDirectory) {
-          setDirectoryData(sourceDirectory); // Store the full object
-          setSelectedPaths(new Set()); // Reset selection when source changes explicitly
-          console.log('Directory tree built:', sourceDirectory.structure);
-        }
-      } catch (error) {
-        console.error('Failed to build directory tree:', error);
-      }
-    };
-
-    buildTree();
-  }, [sourceDirectory]);
-
-  // The stored tree is a snapshot of the moment the folder was picked, so it
-  // goes stale as soon as anything changes on disk. These refs let the async
-  // refresh below read current values without re-creating itself (and thus
-  // re-running the mount effect) on every state change.
-  const directoryDataRef = React.useRef(directoryData);
+  // The stored trees are snapshots of the moment each folder was picked, so
+  // they go stale as soon as anything changes on disk. These refs let the
+  // async code below read current values without re-creating itself (and thus
+  // re-running the effects that call it) on every state change.
+  const sourcesRef = React.useRef(sources);
   const selectedPathsRef = React.useRef(selectedPaths);
-  const pendingRefreshRef = React.useRef<Promise<Set<string>> | null>(null);
+  const pendingRefreshRef = React.useRef<Promise<{
+    sources: SearchSource[];
+    selectedPaths: Set<string>;
+  }> | null>(null);
 
   React.useEffect(() => {
-    directoryDataRef.current = directoryData;
-  }, [directoryData]);
+    sourcesRef.current = sources;
+  }, [sources]);
 
   React.useEffect(() => {
     selectedPathsRef.current = selectedPaths;
   }, [selectedPaths]);
 
+  // A folder just picked (useDirectoryPicker hands over a new result for each
+  // pick) joins the folders searched. Picked again, it's read anew and keeps
+  // its parser config and ticks.
+  React.useEffect(() => {
+    const pickedStructure: FileSystemItem | undefined =
+      sourceDirectory?.structure;
+    if (!pickedStructure?.path) return;
+    const structure = withFullPaths(pickedStructure);
+
+    const currentSources = sourcesRef.current;
+    const pickedAgain = currentSources.find((source) =>
+      isSamePath(source.structure.path, structure.path),
+    );
+
+    if (pickedAgain) {
+      // Opened, like a folder just added: it's the one being looked at
+      const nextSources = currentSources.map((source) =>
+        source === pickedAgain
+          ? { ...source, structure, isCollapsed: false }
+          : source,
+      );
+      setSources(nextSources);
+      setSelectedPaths((prev) =>
+        reconcileSelectedPathsAcross(prev, nextSources),
+      );
+      return;
+    }
+
+    const overlapping = findOverlappingSource(currentSources, structure.path);
+    if (overlapping) {
+      addToast(
+        'warning',
+        t(`${I18N_NS}.sourceFolderOverlapsWarning`, {
+          name: structure.name,
+          other: overlapping.structure.name,
+        }),
+      );
+      return;
+    }
+
+    setSources((prev) => [
+      ...prev,
+      {
+        structure,
+        // Folders added one after another tend to hold the same kind of
+        // documents, so the last one's parser config is the likeliest guess
+        parserConfigName: prev[prev.length - 1]?.parserConfigName ?? '',
+      },
+    ]);
+
+    // With some folders ticked, only those are searched: the folder was added
+    // to be searched, so it's ticked too. With none, every folder is already.
+    setSelectedPaths((prev) =>
+      prev.size === 0
+        ? prev
+        : new Set([...prev, ...collectFolderPaths(structure)]),
+    );
+    // Only a new pick should run this — not every toast or translation change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceDirectory]);
+
+  const handleRemoveSource = React.useCallback((sourcePath: string) => {
+    setSources((prev) =>
+      prev.filter((source) => source.structure.path !== sourcePath),
+    );
+    setSelectedPaths((prev) => {
+      const next = new Set(
+        [...prev].filter((path) => !isPathWithin(path, sourcePath)),
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }, []);
+
+  const handleSourceChange = React.useCallback(
+    (sourcePath: string, changes: SearchSourceChanges) => {
+      setSources((prev) =>
+        prev.map((source) =>
+          source.structure.path === sourcePath
+            ? { ...source, ...changes }
+            : source,
+        ),
+      );
+    },
+    [],
+  );
+
   /**
-   * Re-reads the source folder and swaps `directoryData` only when its
-   * fingerprint moved, keeping the existing selection across the swap.
+   * Re-reads every source folder and swaps in the trees whose fingerprint
+   * moved, carrying the selection over to them.
    *
-   * Returns the selection in effect afterwards, so the search submit can use it
-   * in the same tick rather than waiting for the state update to land.
+   * Returns the folders and selection in effect afterwards, so the search
+   * submit can use them in the same tick rather than waiting for the state
+   * update to land.
    */
-  const refreshDirectoryStructure = React.useCallback(async (): Promise<
-    Set<string>
-  > => {
+  const refreshSearchSources = React.useCallback(async (): Promise<{
+    sources: SearchSource[];
+    selectedPaths: Set<string>;
+  }> => {
     // Overlapping runs (the mount refresh still in flight when the user hits
     // Search) would scan twice and race over the same state — join instead.
     if (pendingRefreshRef.current) return pendingRefreshRef.current;
 
-    const currentStructure = directoryDataRef.current?.structure;
-    const sourcePath: string | undefined = currentStructure?.path;
-
-    if (!isRescannableDirectoryPath(sourcePath)) {
-      return selectedPathsRef.current;
-    }
-
     const refreshTask = (async () => {
       try {
-        const refreshedDirectoryData =
-          await rescanDirectoryStructure(sourcePath);
+        const rescanned = await Promise.all(
+          sourcesRef.current.map(async ({ structure: { path } }) => {
+            if (!isRescannableDirectoryPath(path)) return null;
 
-        // The user may have picked a different source folder while the scan was
-        // running — that pick wins, this result is about the previous folder.
-        if (directoryDataRef.current?.structure?.path !== sourcePath) {
-          return selectedPathsRef.current;
-        }
-
-        if (
-          getDirectoryStructureFingerprint(refreshedDirectoryData.structure) ===
-          getDirectoryStructureFingerprint(currentStructure)
-        ) {
-          return selectedPathsRef.current;
-        }
-
-        const nextSelectedPaths = reconcileSelectedPaths(
-          selectedPathsRef.current,
-          refreshedDirectoryData.structure,
+            try {
+              const { structure } = await rescanDirectoryStructure(path);
+              return [path, withFullPaths(structure)] as const;
+            } catch (error) {
+              // A folder that was moved, deleted or became unreadable must not
+              // block the search: the request that follows reports that far
+              // better than a toast raised out of a background refresh would.
+              console.warn('Failed to refresh directory structure:', error);
+              return null;
+            }
+          }),
         );
 
-        setDirectoryData(refreshedDirectoryData);
+        // Folders added or removed while the scans ran are as they are now:
+        // only the trees of the ones still there are swapped in
+        const changedStructureByPath = new Map(
+          rescanned.filter(
+            (entry): entry is NonNullable<typeof entry> =>
+              !!entry &&
+              sourcesRef.current.some(
+                (source) =>
+                  source.structure.path === entry[0] &&
+                  getDirectoryStructureFingerprint(source.structure) !==
+                    getDirectoryStructureFingerprint(entry[1]),
+              ),
+          ),
+        );
+
+        if (changedStructureByPath.size === 0) {
+          return {
+            sources: sourcesRef.current,
+            selectedPaths: selectedPathsRef.current,
+          };
+        }
+
+        const withChangedStructures = (current: SearchSource[]) =>
+          current.map((source) => {
+            const structure = changedStructureByPath.get(source.structure.path);
+            return structure ? { ...source, structure } : source;
+          });
+
+        const nextSources = withChangedStructures(sourcesRef.current);
+        const nextSelectedPaths = reconcileSelectedPathsAcross(
+          selectedPathsRef.current,
+          nextSources,
+        );
+
+        setSources(withChangedStructures);
         setSelectedPaths(nextSelectedPaths);
 
-        return nextSelectedPaths;
-      } catch (error) {
-        // A folder that was moved, deleted or became unreadable must not block
-        // the search: the request that follows reports that far better than a
-        // toast raised out of a background refresh would.
-        console.warn('Failed to refresh directory structure:', error);
-        return selectedPathsRef.current;
+        return { sources: nextSources, selectedPaths: nextSelectedPaths };
       } finally {
         pendingRefreshRef.current = null;
       }
@@ -329,11 +388,11 @@ const SearchDocumentsContainer = ({
     return refreshTask;
   }, []);
 
-  // Refresh the tree restored from localStorage once on mount. Picking a folder
-  // scans it fresh anyway, so this never competes with the effect above.
+  // Refresh the trees restored from localStorage once on mount. Picking a
+  // folder scans it fresh anyway, so this never competes with the effect above.
   React.useEffect(() => {
-    refreshDirectoryStructure();
-  }, [refreshDirectoryStructure]);
+    refreshSearchSources();
+  }, [refreshSearchSources]);
 
   const postProcessDocuments = React.useCallback<
     Parameters<typeof initSubmitHandler>[0]
@@ -343,14 +402,27 @@ const SearchDocumentsContainer = ({
       // restoring an entry drops straight back into either editor.
       addSearchHistoryEntry(joinSearchQueries(searchQueries));
 
-      // Pick up folders created/removed since the tree was last read, so the
+      // Pick up folders created/removed since the trees were last read, so the
       // scope sent below matches what is actually on disk right now.
-      const effectiveSelectedPaths = await refreshDirectoryStructure();
+      const effective = await refreshSearchSources();
 
-      const selectedParserConfig = parserConfigs.find(
-        (c: any) =>
-          c.name ===
-          (formDataJSON.parserConfigName || selectedParserConfigName),
+      // Each folder with where in it to search, and the parser config the
+      // backend parses what it finds there with
+      const searchSources = buildSearchSourcesPayload(
+        effective.sources,
+        effective.selectedPaths,
+        parserConfigs,
+      );
+
+      // The body text a match shows is its own parser config's primary field,
+      // which differs between folders parsed with different configs
+      const primaryFieldIdBySourcePath = new Map(
+        searchSources.map((source) => [
+          source.sourcePath,
+          getExtractedFieldOutputs(
+            source.extractorSchema ? [source.extractorSchema] : [],
+          ).primaryFieldId,
+        ]),
       );
 
       const payload = {
@@ -358,16 +430,9 @@ const SearchDocumentsContainer = ({
         // Blank rows and stray padding are the user's editing leftovers, not
         // queries — the request carries only what's actually searchable.
         bulkNames: normalizeSearchQueries(searchQueries),
-        sourcePath:
-          sourceDirectory?.structure?.path ||
-          directoryData?.structure?.path ||
-          '',
-        searchScopedPaths: Array.from(effectiveSelectedPaths),
+        sources: searchSources,
         isInflectedWordFormsAllowed: allowFuzzyMatch,
         maxTypoDistance: Number(maxTypoDistance),
-        // Sent to the backend so it knows which pipelines/compounds to
-        // parse the matched documents with. API wiring TBD server-side.
-        extractorSchema: selectedParserConfig,
       };
 
       return executeBatch(
@@ -466,7 +531,14 @@ const SearchDocumentsContainer = ({
                   );
 
                   const newItem = {
-                    extracted: item,
+                    extracted: item.sourcePath
+                      ? {
+                          ...item,
+                          primaryFieldId:
+                            primaryFieldIdBySourcePath.get(item.sourcePath) ??
+                            undefined,
+                        }
+                      : item,
                     search: searchResult,
                   };
 
@@ -487,6 +559,13 @@ const SearchDocumentsContainer = ({
               );
               setProcessedResults(groupedResults);
               setSearchTotalsByQuery(totalsByQuery);
+              setSearchedParserConfigNames([
+                ...new Set(
+                  searchSources.flatMap((source) =>
+                    source.extractorSchema ? [source.extractorSchema.name] : [],
+                  ),
+                ),
+              ]);
             }
             return resAsJson;
           });
@@ -497,14 +576,11 @@ const SearchDocumentsContainer = ({
       executeBatch,
       selectedFile,
       outputDirectory,
-      sourceDirectory,
-      directoryData, // Updated dependency
-      refreshDirectoryStructure,
+      refreshSearchSources,
       searchQueries,
       allowFuzzyMatch,
       maxTypoDistance,
       parserConfigs,
-      selectedParserConfigName,
       t,
     ],
   );
@@ -516,10 +592,11 @@ const SearchDocumentsContainer = ({
       <SearchForm
         onSelectSourceDirectory={onSelectSourceDirectory}
         initSubmitHandler={initSubmitHandler}
-        sourceDirectory={sourceDirectory}
         isFileSystemAccessSupported={isFileSystemAccessSupported}
         isProcessing={isProcessing}
-        directoryData={directoryData}
+        sources={sources}
+        onRemoveSource={handleRemoveSource}
+        onSourceChange={handleSourceChange}
         selectedPaths={selectedPaths}
         onTogglePath={handleTogglePath}
         searchQueries={searchQueries}
@@ -529,8 +606,6 @@ const SearchDocumentsContainer = ({
         maxTypoDistance={maxTypoDistance}
         onMaxTypoDistanceChange={setMaxTypoDistance}
         parserConfigs={parserConfigs}
-        selectedParserConfigName={selectedParserConfigName}
-        onSelectedParserConfigNameChange={setSelectedParserConfigName}
         onParserConfigsSaved={handleParserConfigsSaved}
         addToast={addToast}
         onSubmit={postProcessDocuments}
@@ -540,9 +615,9 @@ const SearchDocumentsContainer = ({
         results={processedResults}
         totalsByQuery={searchTotalsByQuery}
         parserConfigs={parserConfigs}
-        selectedParserConfigName={selectedParserConfigName}
+        parserConfigNames={searchedParserConfigNames}
         isProcessing={isProcessing}
-        isSourceDirectorySelected={!!directoryData?.structure}
+        isSourceDirectorySelected={sources.length > 0}
         addToast={addToast}
       />
     </div>

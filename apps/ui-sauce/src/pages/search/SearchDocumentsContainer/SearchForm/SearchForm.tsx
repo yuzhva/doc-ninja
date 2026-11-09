@@ -1,13 +1,10 @@
 import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import type { FileSystemItem } from 'toolkit--local/browser';
 
 import {
   ButtonProcessing,
   Checkbox,
-  Dropdown,
-  FormConfigSelect,
-  FormInputFileSelect,
+  ConfirmModal,
   Select,
 } from '../../../../components';
 import { fetchRequest } from '../../../../utils';
@@ -16,20 +13,24 @@ import {
   asSingleSearchQuery,
   joinSearchQueries,
 } from '../search-queries';
+import { countSearchedFiles } from '../search-sources';
+import type { SearchSource } from '../search-sources';
 import type { SearchFormProps } from './SearchForm.types';
-import { FPDDirectoryTreeItem } from './components/FPDDirectoryTreeItem';
 import { FPDModalParserConfigSettings } from './components/FPDModalParserConfigSettings';
 import { FPDModalSearchHistory } from './components/FPDModalSearchHistory';
+import { FPDSourceFolderItem } from './components/FPDSourceFolderItem';
+import type { DocumentsIndexAction } from './components/FPDSourceFolderItem';
 
 const I18N_NS = 'page.search.container.searchForm';
 
 const SearchForm = ({
   onSelectSourceDirectory,
   initSubmitHandler,
-  sourceDirectory,
   isFileSystemAccessSupported,
   isProcessing,
-  directoryData,
+  sources,
+  onRemoveSource,
+  onSourceChange,
   selectedPaths,
   onTogglePath,
   searchQueries,
@@ -39,42 +40,22 @@ const SearchForm = ({
   maxTypoDistance,
   onMaxTypoDistanceChange,
   parserConfigs,
-  selectedParserConfigName,
-  onSelectedParserConfigNameChange,
   onParserConfigsSaved,
   addToast,
   onSubmit,
 }: SearchFormProps) => {
   const { t } = useTranslation();
 
-  // Whether a source folder is configured at all — checked in one place so
-  // every gate below (submit button, index actions, parser/tree sections, the
-  // card's own height) reads the same signal instead of re-deriving it.
-  const isSourceDirectorySelected = !!directoryData?.structure;
+  // Whether there is a folder to search at all — checked in one place so
+  // every gate below (submit button, the card's own height) reads the same
+  // signal instead of re-deriving it.
+  const isSourceDirectorySelected = sources.length > 0;
 
-  const subfolders: FileSystemItem[] =
-    directoryData?.structure?.fsNestedItems ?? [];
-
-  // How many files the next search reads. `fsFileCount` already includes
-  // everything below a folder, and the backend searches a selected folder by
-  // path prefix (subfolders included), so only the top-most selected folders
-  // count — adding their selected descendants too would count files twice.
-  // No selection means the whole source folder.
-  const searchedFileCount = React.useMemo(() => {
-    const root: FileSystemItem | undefined = directoryData?.structure;
-    if (!root) return 0;
-    if (selectedPaths.size === 0) return root.fsFileCount ?? 0;
-
-    const countSelected = (node: FileSystemItem): number =>
-      selectedPaths.has(node.path)
-        ? (node.fsFileCount ?? 0)
-        : (node.fsNestedItems ?? []).reduce(
-            (sum, child) => sum + countSelected(child),
-            0,
-          );
-
-    return countSelected(root);
-  }, [directoryData, selectedPaths]);
+  // How many files the next search reads, across every folder searched
+  const searchedFileCount = React.useMemo(
+    () => countSearchedFiles(sources, selectedPaths),
+    [sources, selectedPaths],
+  );
 
   const [isPageSizeAll, setIsPageSizeAll] = React.useState(false);
   const [pageSizeValue, setPageSizeValue] = React.useState('10');
@@ -92,60 +73,106 @@ const SearchForm = ({
     isSourceDirectorySelected,
   );
 
-  // Auto-expand whenever a new directory arrives from the container (i.e.
-  // the user just picked/re-picked a source folder) — mirrors the previous
-  // tree-loading effect's `setIsSettingsExpanded(true)`.
+  // Auto-expand whenever the folders change in number (i.e. the user just
+  // added or removed a source folder) — mirrors the previous tree-loading
+  // effect's `setIsSettingsExpanded(true)`.
   React.useEffect(() => {
-    if (directoryData) {
+    if (sources.length > 0) {
       setIsSettingsExpanded(true);
     }
-  }, [directoryData]);
+  }, [sources.length]);
 
-  // Reindex / delete-cache act on the currently selected source folder, so
-  // both share the same sourcePath resolution and request plumbing — only
-  // the action string (and resulting toast copy) differs.
-  const [pendingDocumentsIndexAction, setPendingDocumentsIndexAction] =
-    React.useState<'reindex' | 'delete-cache' | null>(null);
+  // Reindex / delete-cache act on one source folder each, and share the same
+  // request plumbing — only the action string (and resulting toast copy)
+  // differs. One folder's action doesn't hold up another's.
+  const [pendingIndexActionByPath, setPendingIndexActionByPath] =
+    React.useState<Record<string, DocumentsIndexAction>>({});
 
-  const handleDocumentsIndexAction = React.useCallback(
-    async (action: 'reindex' | 'delete-cache') => {
-      const sourcePath =
-        sourceDirectory?.structure?.path ||
-        directoryData?.structure?.path ||
-        '';
+  /** Runs the action, with a toast either way; resolves to whether it did. */
+  const runDocumentsIndexAction = React.useCallback(
+    async (
+      source: SearchSource,
+      action: DocumentsIndexAction,
+      successToast: string,
+    ) => {
+      const { path: sourcePath, name } = source.structure;
 
-      if (!sourcePath) {
-        addToast('warning', t(`${I18N_NS}.selectSourceFolderFirstWarning`));
-        return;
-      }
-
-      setPendingDocumentsIndexAction(action);
+      setPendingIndexActionByPath((prev) => ({
+        ...prev,
+        [sourcePath]: action,
+      }));
       try {
         await fetchRequest('/api-local/process/documents-index', {
           method: 'POST',
           body: JSON.stringify({ action, sourcePath }),
         });
 
-        addToast(
-          'success',
-          action === 'reindex'
-            ? t(`${I18N_NS}.reindexSuccessToast`)
-            : t(`${I18N_NS}.deleteCacheSuccessToast`),
-        );
+        addToast('success', successToast);
+        return true;
       } catch (error: any) {
         console.error('Documents index action failed:', error);
+        // Several folders' actions can run at once: each toast names its own
         addToast(
           'error',
           t(`${I18N_NS}.actionFailedToast`, {
+            name,
             message: error.message || error,
           }),
         );
+        return false;
       } finally {
-        setPendingDocumentsIndexAction(null);
+        setPendingIndexActionByPath(
+          ({ [sourcePath]: _done, ...stillPending }) => stillPending,
+        );
       }
     },
-    [sourceDirectory, directoryData, addToast, t],
+    [addToast, t],
   );
+
+  const handleDocumentsIndexAction = (
+    source: SearchSource,
+    action: DocumentsIndexAction,
+  ) => {
+    const { name } = source.structure;
+    runDocumentsIndexAction(
+      source,
+      action,
+      action === 'reindex'
+        ? t(`${I18N_NS}.reindexSuccessToast`, { name })
+        : t(`${I18N_NS}.deleteCacheSuccessToast`, { name }),
+    );
+  };
+
+  // The folder whose removal is being confirmed
+  const [sourceToRemove, setSourceToRemove] =
+    React.useState<SearchSource | null>(null);
+  const cancelSourceRemoval = React.useCallback(
+    () => setSourceToRemove(null),
+    [],
+  );
+
+  const handleRemoveSourceKeepingCache = () => {
+    if (!sourceToRemove) return;
+    setSourceToRemove(null);
+    onRemoveSource(sourceToRemove.structure.path);
+  };
+
+  // The folder stays in the list, its gear spinning, until its cache is gone:
+  // were that to fail, it's still there to try again
+  const handleRemoveSourceWithCache = async () => {
+    if (!sourceToRemove) return;
+    const source = sourceToRemove;
+    setSourceToRemove(null);
+
+    const isCacheDeleted = await runDocumentsIndexAction(
+      source,
+      'delete-cache',
+      t(`${I18N_NS}.removeSourceWithCacheSuccessToast`, {
+        name: source.structure.name,
+      }),
+    );
+    if (isCacheDeleted) onRemoveSource(source.structure.path);
+  };
 
   const handleParserConfigSettingsSave = () => {
     setIsParserConfigSettingsOpen(false);
@@ -477,146 +504,45 @@ const SearchForm = ({
               </button>
             </div>
 
-            <div className="grid gap-4 mb-4 sm:grid-cols-2">
-              <div className="sm:col-span-2 flex items-end gap-2">
-                <div className="flex-1">
-                  <FormInputFileSelect
-                    id="processDocumentsSourceFolder"
-                    name="sourceDirectory"
-                    label={<Trans i18nKey={`${I18N_NS}.sourceFolderLabel`} />}
+            {/* Source folders — each a root of the tree, with its own parser
+                config and index actions. No height cap on purpose: a cap
+                makes the box a scroll container, which would clip the
+                folders' menus; the form column scrolls instead. */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  <Trans i18nKey={`${I18N_NS}.sourceFoldersLabel`} />
+                </span>
+                {isSourceDirectorySelected && (
+                  <button
+                    type="button"
                     onClick={onSelectSourceDirectory}
-                    selectedItem={sourceDirectory || directoryData}
-                    isFileSystemAccessSupported={isFileSystemAccessSupported}
-                    icon="folder"
-                  />
-                </div>
-
-                <Dropdown
-                  openDirection="up"
-                  panelClassName="right-0 bg-white dark:bg-gray-800"
-                  panelPadding=""
-                  trigger={({ toggle }) => (
-                    <button
-                      type="button"
-                      onClick={toggle}
-                      title={t(`${I18N_NS}.documentsIndexActionsTitle`)}
-                      className={`${
-                        !isSourceDirectorySelected
-                          ? 'opacity-50 cursor-not-allowed '
-                          : 'cursor-pointer '
-                      }shrink-0 rounded-lg p-2.5 text-sm text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:text-gray-400 dark:hover:bg-gray-700 dark:focus:ring-gray-700`}
-                      disabled={!isSourceDirectorySelected}
+                    disabled={!isFileSystemAccessSupported}
+                    className="shrink-0 flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                      stroke="currentColor"
                     >
-                      <svg
-                        className="w-5 h-5"
-                        aria-hidden="true"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth="2"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                >
-                  <ul className="text-xs text-gray-700 dark:text-gray-200">
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() => handleDocumentsIndexAction('reindex')}
-                        disabled={pendingDocumentsIndexAction !== null}
-                        className="w-full whitespace-nowrap flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <svg
-                          className="w-4 h-4 shrink-0"
-                          aria-hidden="true"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth="2"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M17.651 7.65a7.131 7.131 0 0 0-12.68 3.15M18.001 4v4h-4m-7.652 8.35a7.13 7.13 0 0 0 12.68-3.15M6 20v-4h4"
-                          />
-                        </svg>
-                        <Trans i18nKey={`${I18N_NS}.reindexAction`} />
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleDocumentsIndexAction('delete-cache')
-                        }
-                        disabled={pendingDocumentsIndexAction !== null}
-                        className="w-full whitespace-nowrap flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-red-600 dark:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <svg
-                          className="w-4 h-4 shrink-0"
-                          aria-hidden="true"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth="2"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-                          />
-                        </svg>
-                        <Trans i18nKey={`${I18N_NS}.deleteCacheAction`} />
-                      </button>
-                    </li>
-                  </ul>
-                </Dropdown>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 12h14m-7 7V5"
+                      />
+                    </svg>
+                    <Trans i18nKey={`${I18N_NS}.addSourceFolderButton`} />
+                  </button>
+                )}
               </div>
 
-              {/* Parser Config Selection */}
-              {isSourceDirectorySelected && (
-                <div className="sm:col-span-2">
-                  <FormConfigSelect
-                    id="parserConfigName"
-                    name="parserConfigName"
-                    label={<Trans i18nKey={`${I18N_NS}.parserConfigLabel`} />}
-                    value={selectedParserConfigName}
-                    onChange={onSelectedParserConfigNameChange}
-                    options={parserConfigs.map((c: any) => ({
-                      value: c.name,
-                      label: c.name,
-                    }))}
-                    noneOption={{
-                      value: '',
-                      label: t(`${I18N_NS}.noParsingOption`),
-                    }}
-                    settingsTitle={t(`${I18N_NS}.parserSettingsTitle`)}
-                    onSettingsClick={() => setIsParserConfigSettingsOpen(true)}
-                  />
-                </div>
-              )}
-
-              {/* Directory Tree View — shown for any picked folder: one with
-                  files but no subfolders still needs its file count, and an
-                  empty one needs saying so before a search finds nothing. */}
-              {isSourceDirectorySelected && (
-                <div className="sm:col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-                  <div className="flex items-baseline justify-between gap-2 mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+              {isSourceDirectorySelected ? (
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-2 bg-gray-50 dark:bg-gray-900">
+                  <div className="flex items-baseline justify-between gap-2 mb-1 px-1 text-xs font-semibold text-gray-500 dark:text-gray-400">
                     <span className="uppercase">
                       <Trans
                         i18nKey={`${I18N_NS}.${
@@ -632,24 +558,6 @@ const SearchForm = ({
                       })}
                     </span>
                   </div>
-
-                  {subfolders.length === 0 && (
-                    <p
-                      className={`px-1 py-1 text-sm ${
-                        (directoryData.structure.fsFileCount ?? 0) > 0
-                          ? 'text-gray-500 dark:text-gray-400'
-                          : 'text-yellow-700 dark:text-yellow-400'
-                      }`}
-                    >
-                      {t(
-                        `${I18N_NS}.${
-                          (directoryData.structure.fsFileCount ?? 0) > 0
-                            ? 'searchFoldersNoSubfolders'
-                            : 'searchFoldersEmpty'
-                        }`,
-                      )}
-                    </p>
-                  )}
                   {/* An empty selection searches everything — without saying
                         so, the unchecked boxes read as "nothing is included"
                         and users tick every folder by hand. */}
@@ -660,20 +568,88 @@ const SearchForm = ({
                         />
                     </div>
                     */}
-                  {subfolders.map((fsNestedItem) => (
-                    <FPDDirectoryTreeItem
-                      key={fsNestedItem.path}
-                      fsNestedItem={fsNestedItem}
-                      selectedPaths={selectedPaths}
-                      onTogglePath={onTogglePath}
-                    />
-                  ))}
+
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {sources.map((source) => (
+                      <FPDSourceFolderItem
+                        key={source.structure.path}
+                        source={source}
+                        selectedPaths={selectedPaths}
+                        onTogglePath={onTogglePath}
+                        onCollapsedChange={(isCollapsed) =>
+                          onSourceChange(source.structure.path, {
+                            isCollapsed,
+                          })
+                        }
+                        parserConfigs={parserConfigs}
+                        onParserConfigChange={(parserConfigName) =>
+                          onSourceChange(source.structure.path, {
+                            parserConfigName,
+                          })
+                        }
+                        onOpenParserSettings={() =>
+                          setIsParserConfigSettingsOpen(true)
+                        }
+                        pendingIndexAction={
+                          pendingIndexActionByPath[source.structure.path] ??
+                          null
+                        }
+                        onIndexAction={(action) =>
+                          handleDocumentsIndexAction(source, action)
+                        }
+                        onRemove={() => setSourceToRemove(source)}
+                      />
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                // Nothing to search yet: the one thing to do here is add a
+                // folder, so the whole box is the button for it
+                <button
+                  type="button"
+                  onClick={onSelectSourceDirectory}
+                  disabled={!isFileSystemAccessSupported}
+                  className="w-full flex items-center justify-center gap-2 p-4 text-sm font-medium text-blue-700 border border-dashed border-blue-300 rounded-lg hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-200 dark:text-blue-400 dark:border-blue-700 dark:hover:bg-blue-900/30 dark:focus:ring-blue-900 cursor-pointer transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M14 13h-4m2-2v4m-9 4V6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"
+                    />
+                  </svg>
+                  <Trans i18nKey={`${I18N_NS}.addFirstSourceFolderButton`} />
+                </button>
               )}
             </div>
           </form>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={sourceToRemove !== null}
+        title={t(`${I18N_NS}.removeSourceConfirmTitle`)}
+        message={
+          <Trans
+            i18nKey={`${I18N_NS}.removeSourceConfirmMessage`}
+            values={{ name: sourceToRemove?.structure.name ?? '' }}
+            components={{ strong: <strong />, code: <code />, br: <br /> }}
+          />
+        }
+        alternativeLabel={t(`${I18N_NS}.removeSourceKeepCacheButton`)}
+        onAlternative={handleRemoveSourceKeepingCache}
+        confirmLabel={t(`${I18N_NS}.removeSourceWithCacheButton`)}
+        onConfirm={handleRemoveSourceWithCache}
+        onCancel={cancelSourceRemoval}
+      />
 
       <FPDModalParserConfigSettings
         isOpen={isParserConfigSettingsOpen}

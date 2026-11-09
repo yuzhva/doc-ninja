@@ -5,10 +5,16 @@ import { Modal } from './Modal';
 
 const I18N_NS = 'component.confirmModal';
 
+const outlinedButtonClassName =
+  'px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-2 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors';
+
 /**
  * A small yes/no dialog in place of window.confirm — same look as the app's
  * other modals. Focus starts on Cancel, and Escape cancels, so a stray
  * Enter never confirms a destructive action.
+ *
+ * A milder way to go ahead (`alternativeLabel`) can sit between the two: with
+ * it, Cancel moves to the left, away from the two ways to go ahead.
  */
 const ConfirmModal = ({
   isOpen,
@@ -16,6 +22,8 @@ const ConfirmModal = ({
   message,
   confirmLabel,
   onConfirm,
+  alternativeLabel,
+  onAlternative,
   onCancel,
 }: {
   isOpen: boolean;
@@ -23,8 +31,11 @@ const ConfirmModal = ({
   message: React.ReactNode;
   confirmLabel: React.ReactNode;
   onConfirm: () => void;
+  alternativeLabel?: React.ReactNode;
+  onAlternative?: () => void;
   onCancel: () => void;
 }) => {
+  const hasAlternative = alternativeLabel != null && onAlternative != null;
   const { t } = useTranslation();
 
   React.useEffect(() => {
@@ -41,21 +52,31 @@ const ConfirmModal = ({
       title={title}
       isOpen={isOpen}
       onBtnCloseClick={onCancel}
-      maxWidthClassName="max-w-md"
+      // Wider with three buttons, which would otherwise not fit on one line
+      maxWidthClassName={hasAlternative ? 'max-w-xl' : 'max-w-md'}
       footer={
-        <div className="ms-auto flex gap-2">
+        <div className="flex grow flex-wrap justify-end gap-2">
           <button
             type="button"
             autoFocus
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 dark:focus:ring-gray-700 cursor-pointer transition-colors"
+            className={`${outlinedButtonClassName} ${hasAlternative ? 'me-auto' : ''}`}
           >
             {t(`${I18N_NS}.cancelButton`)}
           </button>
+          {hasAlternative && (
+            <button
+              type="button"
+              onClick={onAlternative}
+              className={outlinedButtonClassName}
+            >
+              {alternativeLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:ring-4 focus:outline-none focus:ring-red-300 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900 cursor-pointer transition-colors"
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:ring-2 focus:outline-none focus:ring-red-300 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900 cursor-pointer transition-colors"
           >
             {confirmLabel}
           </button>

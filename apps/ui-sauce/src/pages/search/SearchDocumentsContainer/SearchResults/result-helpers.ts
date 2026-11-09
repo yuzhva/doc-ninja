@@ -1,13 +1,19 @@
 import type { RichProcessedResultItem } from '../../search-page.types';
 import { FrontendInformationExtractor } from './frontend-information-extractor';
 
+/**
+ * A match's body text: the primary field of the parser config it was
+ * extracted with — stamped on the match when the search answered, since the
+ * folders searched together can each have their own (see
+ * SearchDocumentsContainer) — or else `primaryFieldId`, the results' own.
+ */
 const getPrimaryText = (
-  item: RichProcessedResultItem,
+  item: Pick<RichProcessedResultItem, 'extracted'>,
   primaryFieldId: string | null,
-) =>
-  primaryFieldId
-    ? item.extracted?.extractedFieldById[primaryFieldId]
-    : undefined;
+) => {
+  const fieldId = item.extracted?.primaryFieldId ?? primaryFieldId;
+  return fieldId ? item.extracted?.extractedFieldById[fieldId] : undefined;
+};
 
 // Helper to calculate dynamic values including legacy dependencies
 const calculateDynamicValues = (
@@ -58,8 +64,12 @@ const collectFilterMatchedTexts = (
 // concern the FE never needs to know about.
 type ExtractedTableField = { id: string; label: string };
 
+// The results of folders searched together may come from several parser
+// configs: their fields are all shown, a field id the configs share once
+// (labelled as the first config has it), so each match fills the columns of
+// its own config and leaves the others blank.
 const getExtractedFieldOutputs = (
-  parserSchema: any,
+  parserSchemas: any[],
 ): {
   tableFields: ExtractedTableField[];
   spreadsheetFields: ExtractedTableField[];
@@ -71,13 +81,21 @@ const getExtractedFieldOutputs = (
   // which were never meant to be filled into a document template.
   allFieldIds: string[];
 } => {
-  const pipelines = Array.isArray(parserSchema?.config?.pipelines)
-    ? parserSchema.config.pipelines
-    : [];
-  const compounds = Array.isArray(parserSchema?.config?.compounds)
-    ? parserSchema.config.compounds
-    : [];
-  const allFields = [...pipelines, ...compounds];
+  const fieldIds = new Set<string>();
+  const allFields = parserSchemas
+    .flatMap((parserSchema) => [
+      ...(Array.isArray(parserSchema?.config?.pipelines)
+        ? parserSchema.config.pipelines
+        : []),
+      ...(Array.isArray(parserSchema?.config?.compounds)
+        ? parserSchema.config.compounds
+        : []),
+    ])
+    .filter((field: any) => {
+      if (fieldIds.has(field?.id)) return false;
+      fieldIds.add(field?.id);
+      return true;
+    });
 
   const fieldsForDestination = (destination: string): ExtractedTableField[] =>
     allFields
@@ -92,6 +110,8 @@ const getExtractedFieldOutputs = (
   // BE always emits a 'summary' compound (see DEFAULT_EXTRACTOR_SCHEMA), so
   // fall back to it whenever no field in the schema was explicitly marked
   // primary — otherwise no-template/default-template searches show no content.
+  // With several configs the first one's wins: it's only the fallback for a
+  // match with no primary field of its own (see getPrimaryText).
   const primaryFieldId =
     allFields.find((field: any) => field?.output?.isPrimarySearchResponseText)
       ?.id ?? 'summary';
@@ -144,6 +164,7 @@ export {
   collectFilterMatchedTexts,
   flattenGroupedResults,
   getExtractedFieldOutputs,
+  getPrimaryText,
   truncateRowForXlsx,
 };
 export type { ExtractedTableField };

@@ -35,9 +35,10 @@ const folderKey = (rootDirectory: string): string => {
  * asked for in `idleMs` is let go, and so is the least recently searched one
  * beyond `maxEngines`. That memory is large: the index and every document's
  * words a search read run to about three times the folder's text (a folder
- * of 1 GB of text: ~3 GB). So by default only the folder in use keeps one,
- * and not for long once searches stop; the next search after that loads the
- * index from its cache again.
+ * of 1 GB of text: ~3 GB). So by default only the folder in use keeps one —
+ * or the folders, when a search reads several (getAll) — and not for long
+ * once searches stop; the next search after that loads the index from its
+ * cache again.
  */
 class MegaSearchEngines {
   // Insertion order is recency: least recently used first
@@ -60,7 +61,47 @@ class MegaSearchEngines {
   async get(
     rootDirectory: string,
   ): Promise<{ megaSearch: MegaSearch; isNew: boolean }> {
-    const key = folderKey(rootDirectory);
+    const [engine] = await this.getAll([rootDirectory]);
+    return engine;
+  }
+
+  /**
+   * The engines of folders searched together, one per folder given and in
+   * that order, as get() gives them. They're kept together too: up to as
+   * many folders as given, beyond `maxEngines` if need be, so that none of
+   * them lets go of another — searching them together would load each
+   * folder's index anew every time. The next call keeps to its own limit.
+   * Rejects if any of them failed.
+   */
+  async getAll(
+    rootDirectories: string[],
+  ): Promise<{ megaSearch: MegaSearch; isNew: boolean }[]> {
+    const keys = rootDirectories.map(folderKey);
+    const limit = Math.max(this.maxEngines, new Set(keys).size);
+
+    // All taken before anything awaits, so none of them can be let go of
+    // in between
+    const taken = new Map<string, { engine: Engine; isNew: boolean }>();
+    keys.forEach((key, index) => {
+      if (!taken.has(key)) {
+        taken.set(key, this.take(key, rootDirectories[index], limit));
+      }
+    });
+
+    return Promise.all(
+      keys.map(async (key) => {
+        const { engine, isNew } = taken.get(key)!;
+        return { megaSearch: await engine.megaSearch, isNew };
+      }),
+    );
+  }
+
+  /** The folder's engine, created if need be, put last in recency. */
+  private take(
+    key: string,
+    rootDirectory: string,
+    limit: number,
+  ): { engine: Engine; isNew: boolean } {
     let engine = this.engines.get(key);
     const isNew = !engine;
 
@@ -74,9 +115,9 @@ class MegaSearchEngines {
       created.megaSearch.catch(() => this.drop(key, created));
       engine = created;
     }
-    this.keep(key, engine);
+    this.keep(key, engine, limit);
 
-    return { megaSearch: await engine.megaSearch, isNew };
+    return { engine, isNew };
   }
 
   /**
@@ -120,15 +161,18 @@ class MegaSearchEngines {
     return this.options.createEngine(rootDirectory);
   }
 
-  /** Puts the engine last in recency, and lets go of what's beyond the limits. */
-  private keep(key: string, engine: Engine): void {
+  /**
+   * Puts the engine last in recency, and lets go of the least recently
+   * searched beyond `limit`.
+   */
+  private keep(key: string, engine: Engine, limit: number): void {
     engine.idleTimer = setTimeout(() => this.drop(key, engine), this.idleMs);
     // Waiting to let go of an engine is no reason to keep the process running
     engine.idleTimer.unref?.();
     this.engines.set(key, engine);
 
     for (const [oldestKey, oldest] of this.engines) {
-      if (this.engines.size <= this.maxEngines) break;
+      if (this.engines.size <= limit) break;
       this.drop(oldestKey, oldest);
     }
   }

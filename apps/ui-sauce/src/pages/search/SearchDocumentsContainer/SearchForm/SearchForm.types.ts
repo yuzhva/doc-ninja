@@ -1,15 +1,22 @@
 import type { BatchFileProcessingSectionProps } from '../../../../hooks/use-batch-processor';
+import type { SearchSource, SearchSourceChanges } from '../search-sources';
 
 interface SearchFormProps {
+  // Opens the folder picker; the folder picked joins `sources` (see the
+  // container).
   onSelectSourceDirectory: BatchFileProcessingSectionProps['onSelectSourceDirectory'];
   initSubmitHandler: BatchFileProcessingSectionProps['initSubmitHandler'];
-  sourceDirectory: BatchFileProcessingSectionProps['sourceDirectory'];
   isFileSystemAccessSupported: boolean;
   isProcessing: boolean;
 
-  // Directory tree — data/selection live in the container (shared with the
+  // The folders searched, each with its parser config — owned by the
+  // container, which builds the search request out of them.
+  sources: SearchSource[];
+  onRemoveSource: (sourcePath: string) => void;
+  onSourceChange: (sourcePath: string, changes: SearchSourceChanges) => void;
+
+  // Directory trees — the selection lives in the container (shared with the
   // search request payload), the form only renders and toggles it.
-  directoryData: any;
   selectedPaths: Set<string>;
   onTogglePath: (path: string, checked: boolean) => void;
 
@@ -26,11 +33,8 @@ interface SearchFormProps {
   maxTypoDistance: string;
   onMaxTypoDistanceChange: (value: string) => void;
 
-  // Parser config — the selected schema also feeds the container's submit
-  // handler (override-precedence check), so the list/selection are owned there.
+  // Every parser config there is, for each folder to pick from.
   parserConfigs: any[];
-  selectedParserConfigName: string;
-  onSelectedParserConfigNameChange: (name: string) => void;
   onParserConfigsSaved: () => void;
 
   addToast: (type: 'success' | 'error' | 'warning', content: string) => void;

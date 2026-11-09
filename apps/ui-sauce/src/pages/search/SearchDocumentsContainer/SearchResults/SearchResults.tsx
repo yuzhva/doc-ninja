@@ -20,6 +20,7 @@ import {
   calculateDynamicValues,
   flattenGroupedResults,
   getExtractedFieldOutputs,
+  getPrimaryText,
   truncateRowForXlsx,
 } from './result-helpers';
 import type { ResultsSortState } from './results-sorting';
@@ -74,19 +75,23 @@ const SearchResults = ({
   results,
   totalsByQuery,
   parserConfigs,
-  selectedParserConfigName,
+  parserConfigNames,
   isProcessing,
   isSourceDirectorySelected,
   addToast,
 }: SearchResultsProps) => {
   const { t } = useTranslation();
-  // The schema currently selected in the UI — derived locally since nothing
-  // outside this pane (table columns, excel export, .docm template tags)
-  // needs it; the container only needs the raw selection for its own
-  // override-precedence check when building the search payload.
-  const parserSchema = React.useMemo(
-    () => parserConfigs.find((c: any) => c.name === selectedParserConfigName),
-    [parserConfigs, selectedParserConfigName],
+  // The schemas the results were extracted with — derived locally since
+  // nothing outside this pane (table columns, excel export, .docm template
+  // tags) needs them. Looked up by name, so an edit to one (a field's label,
+  // say) shows without searching again.
+  const parserSchemas = React.useMemo(
+    () =>
+      parserConfigNames.flatMap((name) => {
+        const config = parserConfigs.find((c: any) => c.name === name);
+        return config ? [config] : [];
+      }),
+    [parserConfigs, parserConfigNames],
   );
   // Removed internal filter open/close state logic as it is now inside FilterDropdown
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -173,8 +178,8 @@ const SearchResults = ({
   }, [configVersion]); // Re-run when version changes
 
   const { tableFields, primaryFieldId, allFieldIds } = React.useMemo(
-    () => getExtractedFieldOutputs(parserSchema),
-    [parserSchema],
+    () => getExtractedFieldOutputs(parserSchemas),
+    [parserSchemas],
   );
 
   // Filtering logic
@@ -200,11 +205,7 @@ const SearchResults = ({
           if (searchTerm && !matchesKey) {
             const matchingGroupItems = groupItems.filter(
               (item: RichProcessedResultItem) =>
-                (
-                  (primaryFieldId &&
-                    item.extracted?.extractedFieldById[primaryFieldId]) ??
-                  ''
-                )
+                (getPrimaryText(item, primaryFieldId) ?? '')
                   .toLowerCase()
                   .includes(searchTermLower),
             );
@@ -488,7 +489,7 @@ const SearchResults = ({
     ];
 
     const { spreadsheetFields, primaryFieldId: exportPrimaryFieldId } =
-      getExtractedFieldOutputs(parserSchema);
+      getExtractedFieldOutputs(parserSchemas);
 
     // The primary field is always shown in the UI (see the `?? 'summary'`
     // fallback in getExtractedFieldOutputs) even when the schema never
@@ -531,7 +532,12 @@ const SearchResults = ({
       };
 
       exportedSpreadsheetFields.forEach((field) => {
-        row[field.id] = extracted.extractedFieldById[field.id];
+        // The primary column holds each match's own body text, whichever
+        // field its parser config keeps that in
+        row[field.id] =
+          field.id === exportPrimaryFieldId
+            ? getPrimaryText({ extracted }, exportPrimaryFieldId)
+            : extracted.extractedFieldById[field.id];
       });
 
       // Calculate dynamic fields using shared helper
