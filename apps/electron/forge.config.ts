@@ -11,6 +11,22 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import fs from 'fs';
 import path from 'path';
 
+// The Microsoft Store identity and the build machine's Windows SDK come from
+// the environment (or apps/electron/.env, see .env.example), so a release
+// build never edits this file. Variables already set in the shell win.
+const envFile = path.join(__dirname, '.env');
+if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+
+const requireMsixEnv = (name: string) => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(
+      `${name} is not set: the MSIX package needs it. Set it in the shell or in apps/electron/.env (see .env.example).`,
+    );
+  }
+  return value;
+};
+
 // Prepare dist directory
 const distDir = path.join(__dirname, 'dist');
 if (fs.existsSync(distDir)) {
@@ -55,20 +71,22 @@ const config: ForgeConfig = {
     new MakerZIP({}),
     new MakerRpm({}),
     new MakerDeb({}),
-    new MakerMSIX({
+    // A function, so the variables are read only when an MSIX package is
+    // made: `start` and the other makers run without them.
+    new MakerMSIX(() => ({
       // Pin to the installed SDK; electron-windows-msix otherwise derives the
       // build-tooling version from packageMinOSVersion below and fails if that
       // exact SDK isn't installed.
-      windowsKitVersion: '10.0.26100.0',
+      windowsKitVersion: requireMsixEnv('MSIX__WINDOWS_KIT_VERSION'),
       // Real tile/logo assets — without this, electron-windows-msix falls back to
       // its bundled placeholder images, which fails Store cert 10.1.1.11.
       packageAssets: path.join(__dirname, 'images/msix-assets'),
       manifestVariables: {
         appDisplayName: 'DocNinja',
-        // TODO: replace with the exact values from Partner Center > App identity before submitting
-        packageIdentity: 'REPLACE_WITH_PACKAGE_IDENTITY',
-        publisher: 'CN=REPLACE_WITH_PUBLISHER_CN',
-        publisherDisplayName: 'REPLACE_WITH_PUBLISHER_DISPLAY_NAME',
+        // From Partner Center > Product identity
+        packageIdentity: requireMsixEnv('MSIX__PACKAGE_IDENTITY'),
+        publisher: `CN=${requireMsixEnv('MSIX__PUBLISHER_ID')}`,
+        publisherDisplayName: requireMsixEnv('MSIX__PUBLISHER_DISPLAY_NAME'),
         // Store rejects packages targeting MinVersion <= 10.0.17134.0; default in
         // electron-windows-msix (10.0.14393.0) is below that, so set it explicitly.
         // 10.0.19041.0 (Win10 2004) also covers Windows 11 since both share the
@@ -76,7 +94,7 @@ const config: ForgeConfig = {
         packageMinOSVersion: '10.0.19041.0',
         packageMaxOSVersionTested: '10.0.19041.0',
       },
-    }),
+    })),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
