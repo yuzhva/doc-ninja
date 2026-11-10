@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <!--
+    Entitlements for every executable nested inside DocNinja.app: Electron
+    helpers, native .node modules (sharp, onnxruntime) and the bundled
+    PyInstaller binaries. Apple allows exactly these two keys here; the child
+    inherits the parent's sandbox.
+  -->
+  <dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+  </dict>
+</plist>

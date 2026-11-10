@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <!--
+    Entitlements for the top-level DocNinja.app (Mac App Store build).
+    Kept to what the app actually uses: App Review asks for a justification of
+    every entitlement, and osx-sign's own default adds camera, microphone, USB,
+    printing and network access that DocNinja never touches.
+    application-groups, com.apple.application-identifier and
+    com.apple.developer.team-identifier are injected by @electron/osx-sign
+    (preAutoEntitlements) from the signing identity's Team ID.
+  -->
+  <dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- Documents and output folders the user picks in the open dialog / File System Access picker -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+  </dict>
+</plist>

@@ -18,6 +18,7 @@ Dockerfile
 *.sh
 *.toml
 *.yaml
+*.plist
 *.env*
 
 # other programming languages

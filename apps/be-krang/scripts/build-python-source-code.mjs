@@ -10,6 +10,23 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const isWin = process.platform === 'win32';
+const isMac = process.platform === 'darwin';
+
+// On macOS the binaries are built fat (x86_64 + arm64), so one universal
+// Electron build (what the Mac App Store gets for Intel and Apple silicon)
+// can run them on both. That needs a universal2 Python: the python.org
+// installer is one, Homebrew's python3 is arm64-only. PYTHON=/path/to/python3
+// overrides the interpreter.
+const macUniversalPython =
+  '/Library/Frameworks/Python.framework/Versions/Current/bin/python3';
+const macUniversal =
+  isMac && (!!process.env.PYTHON || fs.existsSync(macUniversalPython));
+if (isMac && !macUniversal) {
+  console.warn(
+    `⚠️ No universal2 Python at ${macUniversalPython}: building for ${process.arch} only.\n` +
+      '   A Mac App Store (universal) build refuses these binaries. Install Python from python.org or set PYTHON.',
+  );
+}
 
 // Ensure output directory exists
 const distDir = path.join(rootDir, 'dist', 'python-scripts');
@@ -26,7 +43,9 @@ if (fs.existsSync(venvDir)) {
 }
 
 // Create venv
-const pythonCmd = isWin ? 'python' : 'python3';
+const pythonCmd =
+  process.env.PYTHON ??
+  (isWin ? 'python' : macUniversal ? macUniversalPython : 'python3');
 try {
   execFileSync(pythonCmd, ['-m', 'venv', '.venv-build'], {
     cwd: rootDir,
@@ -67,7 +86,15 @@ for (const script of scripts) {
   // Run PyInstaller
   execFileSync(
     pyInstallerCmd,
-    ['--onefile', '--distpath', distDir, '--name', script, scriptPath],
+    [
+      '--onefile',
+      ...(macUniversal ? ['--target-arch', 'universal2'] : []),
+      '--distpath',
+      distDir,
+      '--name',
+      script,
+      scriptPath,
+    ],
     { cwd: rootDir, stdio: 'inherit' },
   );
 }

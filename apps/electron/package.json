@@ -9,7 +9,10 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "make:mac-intel": "electron-forge make --platform=darwin --arch=x64",
-    "make:mac-universal": "electron-forge make --platform=darwin --arch=universal"
+    "make:mac-universal": "electron-forge make --platform=darwin --arch=universal",
+    "package:mas-dev": "MAS_DEV=1 electron-forge package --platform=mas --arch=universal",
+    "make:mas": "electron-forge make --platform=mas --arch=universal",
+    "upload:mas": "node ./scripts/upload-mas.mjs"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
@@ -20,6 +23,7 @@
     "@electron-forge/cli": "^7.11.2",
     "@electron-forge/maker-deb": "^7.11.2",
     "@electron-forge/maker-msix": "^7.11.2",
+    "@electron-forge/maker-pkg": "^7.11.2",
     "@electron-forge/maker-rpm": "^7.11.2",
     "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",

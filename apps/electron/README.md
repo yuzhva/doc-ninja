@@ -45,3 +45,7 @@ profit - ready to start
 ---
 
 The screenshots are generated at [https://shots.so/](https://shots.so/)
+
+---
+
+Mac App Store build (certificates, provisioning profiles, upload): see [mac-app-store/README.md](./mac-app-store/README.md)
