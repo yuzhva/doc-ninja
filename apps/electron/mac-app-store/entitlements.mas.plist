@@ -16,5 +16,15 @@
     <!-- Documents and output folders the user picks in the open dialog / File System Access picker -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    <!--
+      Loopback only: the backend process (src/backend-process.mts) answers each
+      window request through a short-lived HTTP server on 127.0.0.1 and
+      connects to it with supertest. Without these the sandbox refuses both
+      (listen/connect EPERM). Nothing is reachable from or sent to the network.
+    -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
   </dict>
 </plist>

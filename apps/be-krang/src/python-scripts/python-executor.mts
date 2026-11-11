@@ -20,8 +20,13 @@ const executePythonScript = async (
 
   // 1. Try to find compiled binary (Production / Bundled)
   // In prod bundle: dist/cjs/index.cjs -> __dirname is dist/cjs
-  // Binaries are in: dist/python-scripts/
-  const binaryPath = path.resolve(__dirname, '../python-scripts', binaryName);
+  // Binaries are in: dist/python-scripts/<script>/ (PyInstaller --onedir)
+  const binaryPath = path.resolve(
+    __dirname,
+    '../python-scripts',
+    scriptName,
+    binaryName,
+  );
 
   // 2. Fallback to source script (Development)
   // In dev: src/python-scripts/python-executor.mts -> __dirname is src/python-scripts
@@ -67,6 +72,16 @@ const executePythonScript = async (
       } else {
         console.error(`Python Error [${scriptName}]: ${str}`);
       }
+    });
+
+    // The process could not start (missing binary, no permission, …): without
+    // a listener this 'error' is thrown and takes the whole backend down
+    pythonProcess.on('error', (error) => {
+      reject(
+        new Error(
+          `Python script ${scriptName} failed to start: ${error.message}`,
+        ),
+      );
     });
 
     pythonProcess.on('close', (code) => {

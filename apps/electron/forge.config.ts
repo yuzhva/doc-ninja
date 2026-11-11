@@ -43,7 +43,10 @@ const copyDir = (src: string, dest: string) => {
     fs.rmSync(dest, { recursive: true, force: true });
   }
   fs.mkdirSync(dest, { recursive: true });
-  fs.cpSync(src, dest, { recursive: true });
+  // verbatimSymlinks: keep relative links relative (cpSync otherwise rewrites
+  // them to absolute paths into the workspace), e.g. the Python.framework
+  // links in the PyInstaller folders; they must stay inside the app bundle
+  fs.cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
 };
 
 // Copy UI
@@ -84,31 +87,45 @@ const requireMasEnv = (name: string) => {
 };
 
 // One universal build serves Intel and Apple silicon, so the PyInstaller
-// binaries must hold both architectures. @electron/universal can't merge
-// them (they are the same file in the x64 and arm64 halves), so it is told to
-// keep them as they are (osxUniversal.x64ArchFiles) — checked here first.
-const pythonScriptsGlob = '**/python-scripts/*';
+// binaries (each script's executable and the Python runtime in its _internal
+// folder) must hold both architectures. @electron/universal can't merge them
+// (they are the same file in the x64 and arm64 halves), so it is told to keep
+// them as they are (osxUniversal.x64ArchFiles) — checked here first.
+const pythonScriptsGlob = '**/python-scripts/**';
 if (isMasBuild) {
   const pythonScriptsDir = path.join(beDest, 'python-scripts');
-  const binaries = fs.existsSync(pythonScriptsDir)
-    ? fs.readdirSync(pythonScriptsDir)
+  const files = fs.existsSync(pythonScriptsDir)
+    ? (fs.readdirSync(pythonScriptsDir, { recursive: true }) as string[])
+        .map((file) => path.join(pythonScriptsDir, file))
+        .filter((file) => fs.lstatSync(file).isFile())
     : [];
+  // Mach-O files, by magic number: universal (fat) or single-architecture
+  const isMachO = (file: string) => {
+    const head = Buffer.alloc(4);
+    const fd = fs.openSync(file, 'r');
+    const read = fs.readSync(fd, head, 0, 4, 0);
+    fs.closeSync(fd);
+    return (
+      read === 4 &&
+      [0xcafebabe, 0xfeedfacf, 0xcffaedfe, 0xfeedface, 0xcefaedfe].includes(
+        head.readUInt32BE(0),
+      )
+    );
+  };
+  const binaries = files.filter(isMachO);
   if (binaries.length === 0) {
     throw new Error(
       `No Python binaries in ${pythonScriptsDir}: run \`pnpm run build--release\` in apps/be-krang first.`,
     );
   }
   for (const binary of binaries) {
-    const archs = execFileSync('lipo', [
-      '-archs',
-      path.join(pythonScriptsDir, binary),
-    ])
+    const archs = execFileSync('lipo', ['-archs', binary])
       .toString()
       .trim()
       .split(' ');
     if (!archs.includes('x86_64') || !archs.includes('arm64')) {
       throw new Error(
-        `be-krang/dist/python-scripts/${binary} is ${archs.join('+')} only; the store build needs x86_64+arm64. Rebuild it with the python.org (universal2) Python: see apps/be-krang/scripts/build-python-source-code.mjs.`,
+        `be-krang/dist/python-scripts/${path.relative(pythonScriptsDir, binary)} is ${archs.join('+')} only; the store build needs x86_64+arm64. Rebuild it with the python.org (universal2) Python: see apps/be-krang/scripts/build-python-source-code.mjs.`,
       );
     }
   }

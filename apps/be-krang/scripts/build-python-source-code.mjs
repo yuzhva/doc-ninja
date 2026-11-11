@@ -28,11 +28,11 @@ if (isMac && !macUniversal) {
   );
 }
 
-// Ensure output directory exists
+// Start from an empty output directory, so no binary of an earlier layout
+// (e.g. the old --onefile files) is packaged along
 const distDir = path.join(rootDir, 'dist', 'python-scripts');
-if (!fs.existsSync(distDir)) {
-  fs.mkdirSync(distDir, { recursive: true });
-}
+fs.rmSync(distDir, { recursive: true, force: true });
+fs.mkdirSync(distDir, { recursive: true });
 
 console.log('📦 Setting up temporary Python environment...');
 const venvDir = path.join(rootDir, '.venv-build');
@@ -83,12 +83,20 @@ const scripts = [
 for (const script of scripts) {
   console.log(`Building ${script}...`);
   const scriptPath = path.join('src', 'python-scripts', `${script}.py`);
-  // Run PyInstaller
+  // Run PyInstaller. --onedir (dist/python-scripts/<script>/<script> plus its
+  // _internal runtime), not --onefile: a onefile binary starts as two
+  // processes that sync through a System V semaphore, which the Mac App Store
+  // sandbox forbids ("Failed to initialize sync semaphore"). onedir runs as
+  // one process and unpacks nothing to a temp folder on every call.
   execFileSync(
     pyInstallerCmd,
     [
-      '--onefile',
+      '--onedir',
+      '--noconfirm',
       ...(macUniversal ? ['--target-arch', 'universal2'] : []),
+      // Keeps the binaries off system files the Mac App Store sandbox denies
+      '--runtime-hook',
+      path.join(__dirname, 'pyinstaller-hooks', 'rth_sandbox_mimetypes.py'),
       '--distpath',
       distDir,
       '--name',
