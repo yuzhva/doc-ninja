@@ -1,8 +1,5 @@
-import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerMSIX } from '@electron-forge/maker-msix';
 import { MakerPKG } from '@electron-forge/maker-pkg';
-import { MakerRpm } from '@electron-forge/maker-rpm';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -59,8 +56,9 @@ const beSource = path.join(__dirname, '../be-krang/dist');
 const beDest = path.join(distDir, 'be-krang');
 if (fs.existsSync(beSource)) copyDir(beSource, beDest);
 
-// Mac App Store build: only for `--platform=mas`, so the darwin zip and the
-// Windows/Linux builds stay as they are.
+// Mac App Store build: only for `--platform=mas` (what `pnpm run make` passes
+// on macOS, see scripts/forge.mjs), so `start` and the Windows build stay as
+// they are.
 const cliPlatform = (() => {
   const index = process.argv.findIndex(
     (arg) => arg === '--platform' || arg.startsWith('--platform='),
@@ -69,7 +67,7 @@ const cliPlatform = (() => {
   return process.argv[index].split('=')[1] ?? process.argv[index + 1];
 })();
 const isMasBuild = cliPlatform === 'mas';
-// MAS_DEV=1 signs with "Apple Development" + the development profile: the
+// MAS_DEV=1 (`pnpm run package` on macOS) signs with "Apple Development" + the development profile: the
 // only way to launch a sandboxed MAS build on this Mac. A distribution-signed
 // one runs only once installed from the store/TestFlight.
 const isMasDevBuild = isMasBuild && process.env.MAS_DEV === '1';
@@ -187,6 +185,12 @@ const masPackagerConfig = (): ForgeConfig['packagerConfig'] => {
     buildVersion,
     // LSApplicationCategoryType — App Store Connect rejects uploads without it
     appCategoryType: 'public.app-category.productivity',
+    extendInfo: {
+      // Export compliance, answered here so App Store Connect doesn't ask on
+      // every upload: DocNinja implements no encryption of its own; the only
+      // crypto is Chromium's TLS/HTTPS and the OS keychain (exempt)
+      ITSAppUsesNonExemptEncryption: false,
+    },
     osxSign: {
       // Matched as a substring of `security find-identity -v`
       identity: isMasDevBuild
@@ -226,44 +230,45 @@ const config: ForgeConfig = {
     // Make sure 'apps/electron/images/icons/icon.ico' exists!
     icon: path.join(__dirname, 'images/icons/icon'),
     extraResource: [distDir],
-    // Any `--arch=universal` build (mas and darwin): keep the universal2
-    // PyInstaller binaries as they are instead of merging them
+    // The universal (Mac App Store) build: keep the universal2 PyInstaller
+    // binaries as they are instead of merging them
     osxUniversal: { x64ArchFiles: pythonScriptsGlob },
     ...(isMasBuild && masPackagerConfig()),
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({
-      // Sets the icon for the Setup/Installer executable
-      setupIcon: path.join(__dirname, 'images/icons/icon.ico'),
-    }),
-    new MakerZIP({}),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    // `pnpm run make` (scripts/forge.mjs) makes the store package for the OS it
+    // runs on: Windows the portable .zip + the Microsoft Store .msix, macOS the
+    // Mac App Store .pkg.
+    // Portable Windows build: unzip and run DocNinja.exe, no installer
+    new MakerZIP({}, ['win32']),
     // A function, so the variables are read only when an MSIX package is
     // made: `start` and the other makers run without them.
-    new MakerMSIX(() => ({
-      // Pin to the installed SDK; electron-windows-msix otherwise derives the
-      // build-tooling version from packageMinOSVersion below and fails if that
-      // exact SDK isn't installed.
-      windowsKitVersion: requireMsixEnv('MSIX__WINDOWS_KIT_VERSION'),
-      // Real tile/logo assets — without this, electron-windows-msix falls back to
-      // its bundled placeholder images, which fails Store cert 10.1.1.11.
-      packageAssets: path.join(__dirname, 'images/msix-assets'),
-      manifestVariables: {
-        appDisplayName: 'DocNinja',
-        // From Partner Center > Product identity
-        packageIdentity: requireMsixEnv('MSIX__PACKAGE_IDENTITY'),
-        publisher: `CN=${requireMsixEnv('MSIX__PUBLISHER_ID')}`,
-        publisherDisplayName: requireMsixEnv('MSIX__PUBLISHER_DISPLAY_NAME'),
-        // Store rejects packages targeting MinVersion <= 10.0.17134.0; default in
-        // electron-windows-msix (10.0.14393.0) is below that, so set it explicitly.
-        // 10.0.19041.0 (Win10 2004) also covers Windows 11 since both share the
-        // "Windows.Desktop" device family — there's no separate way to cap at Win10 only.
-        packageMinOSVersion: '10.0.19041.0',
-        packageMaxOSVersionTested: '10.0.19041.0',
-      },
-    })),
+    new MakerMSIX(
+      () => ({
+        // Pin to the installed SDK; electron-windows-msix otherwise derives the
+        // build-tooling version from packageMinOSVersion below and fails if that
+        // exact SDK isn't installed.
+        windowsKitVersion: requireMsixEnv('MSIX__WINDOWS_KIT_VERSION'),
+        // Real tile/logo assets — without this, electron-windows-msix falls back to
+        // its bundled placeholder images, which fails Store cert 10.1.1.11.
+        packageAssets: path.join(__dirname, 'images/msix-assets'),
+        manifestVariables: {
+          appDisplayName: 'DocNinja',
+          // From Partner Center > Product identity
+          packageIdentity: requireMsixEnv('MSIX__PACKAGE_IDENTITY'),
+          publisher: `CN=${requireMsixEnv('MSIX__PUBLISHER_ID')}`,
+          publisherDisplayName: requireMsixEnv('MSIX__PUBLISHER_DISPLAY_NAME'),
+          // Store rejects packages targeting MinVersion <= 10.0.17134.0; default in
+          // electron-windows-msix (10.0.14393.0) is below that, so set it explicitly.
+          // 10.0.19041.0 (Win10 2004) also covers Windows 11 since both share the
+          // "Windows.Desktop" device family — there's no separate way to cap at Win10 only.
+          packageMinOSVersion: '10.0.19041.0',
+          packageMaxOSVersionTested: '10.0.19041.0',
+        },
+      }),
+      ['win32'],
+    ),
     // The .pkg uploaded to App Store Connect, signed with the
     // "Mac Installer Distribution" certificate.
     new MakerPKG(

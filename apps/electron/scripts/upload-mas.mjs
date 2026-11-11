@@ -1,5 +1,5 @@
 // Validates and uploads the newest Mac App Store .pkg (made by
-// `pnpm run make:mas`) to App Store Connect with Apple's altool.
+// `pnpm run make` on macOS) to App Store Connect with Apple's altool.
 // The build then shows up in App Store Connect > TestFlight after processing.
 import { execFileSync } from 'child_process';
 import fs from 'fs';
@@ -30,7 +30,9 @@ const pkgs = fs.existsSync(makeDir)
       .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
   : [];
 if (pkgs.length === 0) {
-  console.error(`No .pkg in ${makeDir}: run \`pnpm run make:mas\` first.`);
+  console.error(
+    `No .pkg in ${makeDir}: run \`pnpm run make\` (on macOS) first.`,
+  );
   process.exit(1);
 }
 const pkg = pkgs[0];

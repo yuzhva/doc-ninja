@@ -7,7 +7,7 @@
  * the app quits, after which the very same path is denied (a search folder
  * rescanned to nothing, a remembered output folder refused every write). A
  * security-scoped bookmark, made at the pick, gets that access back on the
- * next launch. Elsewhere (Windows, Linux, the darwin zip, `start`) there is
+ * next launch. Elsewhere (Windows, `start`) there is
  * no sandbox, and a path is all there is to remember.
  *
  * Access is opened in this (main) process; the backend's process, which scans

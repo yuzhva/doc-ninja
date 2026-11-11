@@ -1,13 +1,13 @@
 # Mac App Store
 
-What the Mac App Store build (`pnpm run make:mas`) needs, where each piece
+What the Mac App Store build (`pnpm run make` on macOS) needs, where each piece
 lives, and how to set up a new Mac.
 
 | What                                                     | Where                                     | In git          |
 | -------------------------------------------------------- | ----------------------------------------- | --------------- |
 | `entitlements.mas.plist`, `entitlements.mas.child.plist` | this folder                               | yes             |
 | `DocNinja_MAS_Distribution_Profile.provisionprofile`     | this folder                               | no (downloaded) |
-| `DocNinja_Dev_Profile.provisionprofile`                  | this folder (only for `package:mas-dev`)  | no (downloaded) |
+| `DocNinja_Dev_Profile.provisionprofile`                  | this folder (only for `package`)          | no (downloaded) |
 | Signing certificates + their private keys                | login Keychain                            | never           |
 | App Store Connect API key `AuthKey_<key id>.p8`          | `~/.appstoreconnect/private_keys/`        | never           |
 | Team ID, Bundle ID, API key IDs                          | `apps/electron/.env` (see `.env.example`) | never           |
@@ -39,13 +39,13 @@ justification of every entitlement. Add one only when the app needs it.
 2. **Python from [python.org](https://www.python.org/downloads/macos/)**: its
    installer is universal2 (Intel + Apple silicon), which the be-krang Python
    binaries need. Homebrew's `python3` builds Apple-silicon-only binaries,
-   which `make:mas` refuses.
+   which `make` refuses.
 
 3. **Certificates** (Keychain). The build needs:
    - `Apple Distribution: <name> (<team id>)`: signs the app
    - `3rd Party Mac Developer Installer: <name> (<team id>)`: signs the `.pkg`
      (created as "Mac Installer Distribution")
-   - `Apple Development: <name> (…)`: only for `package:mas-dev`
+   - `Apple Development: <name> (…)`: only for `package`
 
    Either import the `.p12` from the password manager (double-click it), or
    create new ones in **Xcode > Settings > Accounts > Manage Certificates > +**.
@@ -105,7 +105,7 @@ justification of every entitlement. Add one only when the app needs it.
 
    ```sh
    cd apps/electron
-   pnpm run make:mas
+   pnpm run make
    pnpm run upload:mas
    ```
 
@@ -120,6 +120,6 @@ To try the sandboxed build on this Mac before uploading (a
 distribution-signed app only runs once installed from the store):
 
 ```sh
-pnpm run package:mas-dev
+pnpm run package
 open out/DocNinja-mas-universal/DocNinja.app
 ```
