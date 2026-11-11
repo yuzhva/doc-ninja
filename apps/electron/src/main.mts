@@ -18,6 +18,10 @@ import { FileScannerNode } from 'toolkit--local/node';
 import { pathToFileURL } from 'url';
 
 import { BackendProcess } from './backend.mjs';
+import {
+  restoreSecurityScopedAccess,
+  saveSecurityScopedBookmark,
+} from './security-scoped-bookmarks.mjs';
 
 // electron-forge's Vite plugin always bundles the main process to CommonJS,
 // so Node provides `__dirname` natively at runtime.
@@ -146,6 +150,10 @@ const createWindow = () => {
 };
 
 const startApp = async () => {
+  // Mac App Store build: access to the folders picked in earlier sessions,
+  // before the UI loads and rescans them (see security-scoped-bookmarks.mts)
+  restoreSecurityScopedAccess();
+
   // Define where the web app files are located
   let webappRoot: string;
   if (electronApp.isPackaged) {
@@ -264,9 +272,13 @@ const startApp = async () => {
 
   // Handle File/Directory Picker
   ipcMain.handle('dialog:showOpenDialog', async (event, options) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+    const isDirectory = options?.properties?.includes('openDirectory');
+    const { canceled, filePaths, bookmarks } = await dialog.showOpenDialog({
       properties: options?.properties || ['openFile'],
       filters: options?.filters,
+      // Mac App Store build only (ignored elsewhere): a picked folder stays
+      // readable after a restart only through its bookmark
+      securityScopedBookmarks: isDirectory,
     });
 
     if (canceled || filePaths.length === 0) {
@@ -275,9 +287,10 @@ const startApp = async () => {
 
     const filePath = filePaths[0];
     const name = path.basename(filePath);
-    const isDirectory = options?.properties?.includes('openDirectory');
 
     if (isDirectory) {
+      saveSecurityScopedBookmark(filePath, bookmarks?.[0]);
+
       const scannedFiles = await FileScannerNode.scanDirectory(filePath);
 
       // Map to serializable DTOs to avoid "object could not be cloned" error
