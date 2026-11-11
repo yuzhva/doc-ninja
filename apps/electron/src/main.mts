@@ -18,10 +18,11 @@ import { FileScannerNode } from 'toolkit--local/node';
 import { pathToFileURL } from 'url';
 
 import { BackendProcess } from './backend.mjs';
+import { registerFileSystemIpc } from './file-system-ipc.mjs';
 import {
-  restoreSecurityScopedAccess,
-  saveSecurityScopedBookmark,
-} from './security-scoped-bookmarks.mjs';
+  rememberPickedPath,
+  restorePickedPathsAccess,
+} from './picked-paths.mjs';
 
 // electron-forge's Vite plugin always bundles the main process to CommonJS,
 // so Node provides `__dirname` natively at runtime.
@@ -150,9 +151,11 @@ const createWindow = () => {
 };
 
 const startApp = async () => {
-  // Mac App Store build: access to the folders picked in earlier sessions,
-  // before the UI loads and rescans them (see security-scoped-bookmarks.mts)
-  restoreSecurityScopedAccess();
+  // Mac App Store build: access to the files and folders picked in earlier
+  // sessions, before the UI loads and rescans them (see picked-paths.mts)
+  restorePickedPathsAccess();
+  // Reads and writes in those, for the UI's Electron file handles
+  registerFileSystemIpc();
 
   // Define where the web app files are located
   let webappRoot: string;
@@ -276,9 +279,11 @@ const startApp = async () => {
     const { canceled, filePaths, bookmarks } = await dialog.showOpenDialog({
       properties: options?.properties || ['openFile'],
       filters: options?.filters,
-      // Mac App Store build only (ignored elsewhere): a picked folder stays
-      // readable after a restart only through its bookmark
-      securityScopedBookmarks: isDirectory,
+      // Where the dialog opens (a file's folder, a folder picked before)
+      defaultPath: options?.defaultPath,
+      // Mac App Store build only (ignored elsewhere): a pick stays readable
+      // after a restart only through its bookmark (see picked-paths.mts)
+      securityScopedBookmarks: true,
     });
 
     if (canceled || filePaths.length === 0) {
@@ -287,10 +292,9 @@ const startApp = async () => {
 
     const filePath = filePaths[0];
     const name = path.basename(filePath);
+    rememberPickedPath(filePath, bookmarks?.[0]);
 
     if (isDirectory) {
-      saveSecurityScopedBookmark(filePath, bookmarks?.[0]);
-
       const scannedFiles = await FileScannerNode.scanDirectory(filePath);
 
       // Map to serializable DTOs to avoid "object could not be cloned" error

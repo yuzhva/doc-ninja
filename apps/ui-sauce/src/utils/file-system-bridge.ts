@@ -1,6 +1,13 @@
 import type { FileSystemItem } from 'toolkit--local/browser';
 import { FileScannerBrowser, FileSystemService } from 'toolkit--local/browser';
 
+import {
+  ElectronDirectoryHandle,
+  ElectronFileHandle,
+  reviveElectronHandle,
+} from './electron-file-system-handles';
+import type { ElectronFileSystemApi } from './electron-file-system-handles';
+
 interface FilePickerAcceptType {
   description?: string;
   accept: Record<string, string[]>;
@@ -22,13 +29,13 @@ interface PickDirectoryOptions {
 
 // Define the ElectronAPI interface using unified types
 interface ElectronAPI {
-  showDirectoryPicker: () => Promise<{
+  showDirectoryPicker: (options?: { defaultPath?: string }) => Promise<{
     name: string;
     filePath: string;
     files: FileSystemItem[];
   } | null>;
   showOpenFilePicker: (
-    options?: PickFileOptions,
+    options?: PickFileOptions & { defaultPath?: string },
   ) => Promise<FileSystemItem | null>;
   fetch: (url: string, options?: any) => Promise<any>;
   readFile: (path: string) => Promise<Buffer>;
@@ -37,6 +44,11 @@ interface ElectronAPI {
   // when the main process never saw it granted. The handle the picker gives
   // the UI has no path of its own — see main.mts.
   getWritableDirectoryPath: (name: string) => Promise<string | null>;
+  // The path of a dropped File ('' when it has none)
+  getPathForFile: (file: File) => string;
+  // Reads and writes behind the Electron file handles (see
+  // electron-file-system-handles.ts)
+  fileSystem: ElectronFileSystemApi;
 }
 
 // Extend the Window interface
@@ -45,6 +57,10 @@ declare global {
     electronAPI?: ElectronAPI;
   }
 }
+
+// The paths of dropped files in Electron, by their browser handle — which
+// has none of its own — so a later dialog can open next to the file
+const droppedFilePathByHandle = new WeakMap<FileSystemHandle, string>();
 
 class FileSystemBridge {
   static isSupported(): boolean {
@@ -112,6 +128,49 @@ class FileSystemBridge {
         return await fileHandle.getFile();
       },
     };
+  }
+
+  /**
+   * Where Electron's dialog opens for `startIn` (the File System Access
+   * picker option): an Electron folder handle's own path, an Electron file
+   * handle's or a dropped file's folder. Any other browser handle has no path
+   * to offer — the dialog then opens wherever the OS last left it.
+   */
+  private static electronDefaultPath(startIn: unknown): string | undefined {
+    if (startIn instanceof ElectronDirectoryHandle) return startIn.electronPath;
+    const filePath =
+      startIn instanceof ElectronFileHandle
+        ? startIn.electronPath
+        : droppedFilePathByHandle.get(startIn as FileSystemHandle);
+    return filePath?.replace(/[\\/][^\\/]*$/, '');
+  }
+
+  /**
+   * A handle read back from IndexedDB, ready to use: an Electron handle comes
+   * back as plain fields (see electron-file-system-handles.ts) and is turned
+   * into a handle again; a browser handle, as it is. Every read of a stored
+   * handle goes through here, so callers never tell the two apart.
+   */
+  static reviveStoredHandle<T>(handle: T): T {
+    return reviveElectronHandle(handle);
+  }
+
+  /**
+   * The folder's absolute path, for "open the folder" in the desktop app;
+   * null in a browser, which never gets to know one. An Electron handle
+   * carries it; a browser handle picked in Electron (one remembered from
+   * before the app had its own handles) is looked up by name in the main
+   * process, which notes the path when write access is granted.
+   */
+  static async getDirectoryPath(
+    handle: FileSystemDirectoryHandle,
+  ): Promise<string | null> {
+    if (handle instanceof ElectronDirectoryHandle) return handle.electronPath;
+    return (
+      (await window.electronAPI
+        ?.getWritableDirectoryPath(handle.name)
+        .catch(() => null)) ?? null
+    );
   }
 
   /**
@@ -198,15 +257,26 @@ class FileSystemBridge {
     }
 
     try {
-      // Always the native File System Access picker, Electron included —
-      // same precedent as pickDirectory's readwrite branch below, which
-      // already relies on Electron's Chromium supporting this API. Unlike
-      // directory scanning (where Electron's own dialog + Node fs walk is
-      // used deliberately, see the other branch of pickDirectory), a single
-      // file pick has no such reason to prefer the Electron-specific path:
-      // this way every pick, in every environment, comes back with a real
-      // FileSystemFileHandle, so callers that need to remember a pick (e.g.
-      // a docm template) never have to special-case Electron.
+      // Every pick comes back with a handle — a browser one, or in Electron
+      // one of its own (see electron-file-system-handles.ts): picked through
+      // Electron's dialog, it is still readable after a restart in the Mac
+      // App Store build, which a browser-picked file isn't. Either way a
+      // caller that remembers a pick (e.g. a docm template) never has to
+      // special-case Electron.
+      if (window.electronAPI) {
+        const picked = await window.electronAPI.showOpenFilePicker({
+          ...options,
+          defaultPath: this.electronDefaultPath(options.startIn),
+        });
+        if (!picked) return null;
+
+        const fileHandle = new ElectronFileHandle(picked.name, picked.path);
+        return this.toPickedFile(
+          await fileHandle.getFile(),
+          fileHandle as unknown as FileSystemFileHandle,
+        );
+      }
+
       const [fileHandle] = await window.showOpenFilePicker({
         multiple: false,
         ...options,
@@ -246,6 +316,10 @@ class FileSystemBridge {
     return (async () => {
       if (!file) return null;
       const handle = await pendingHandle?.catch(() => null);
+      // Electron: its dialogs open by path, which the browser handle lacks
+      const droppedPath = window.electronAPI?.getPathForFile(file);
+      if (handle && droppedPath)
+        droppedFilePathByHandle.set(handle, droppedPath);
       return this.toPickedFile(
         file,
         handle?.kind === 'file' ? (handle as FileSystemFileHandle) : null,
@@ -281,8 +355,13 @@ class FileSystemBridge {
     }
 
     try {
-      if (window.electronAPI && options.mode !== 'readwrite') {
-        const dirResult = await window.electronAPI.showDirectoryPicker();
+      // Electron: its own dialog and a Node scan, for reading and writing
+      // alike — a folder picked there stays usable after a restart in the
+      // Mac App Store build (see electron-file-system-handles.ts).
+      if (window.electronAPI) {
+        const dirResult = await window.electronAPI.showDirectoryPicker({
+          defaultPath: this.electronDefaultPath(options.startIn),
+        });
         if (!dirResult) return null;
 
         // Hydrate files with getFileContent
@@ -298,7 +377,15 @@ class FileSystemBridge {
 
         return {
           ...result,
-          browserFSAPIhandle: null,
+          // A folder to write into gets a handle, as in a browser; a folder
+          // to read (search, process) is used by its path.
+          browserFSAPIhandle:
+            options.mode === 'readwrite'
+              ? (new ElectronDirectoryHandle(
+                  dirResult.name,
+                  dirResult.filePath,
+                ) as unknown as FileSystemDirectoryHandle)
+              : null,
         };
       } else {
         const dirHandle: FileSystemDirectoryHandle | null =

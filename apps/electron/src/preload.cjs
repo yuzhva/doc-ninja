@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webFrame } = require('electron');
+const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 
 // The backend runs in a process of its own (see backend-process.mts). The
 // window asks the main process once for a port to it, then sends its requests
@@ -80,15 +80,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   focusWindow: () => ipcRenderer.send('window:focus'),
   readFile: (path) => ipcRenderer.invoke('file:readFile', path),
   openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
+  // The path of a File from a drop or a file input ('' when it has none)
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   getWritableDirectoryPath: (name) =>
     ipcRenderer.invoke('fileSystemAccess:getWritableDirectoryPath', name),
-  showDirectoryPicker: () =>
+  // Reads and writes in the picked files and folders, for the UI's Electron
+  // file handles (see file-system-ipc.mts). Each resolves to { ok, value } or
+  // { ok: false, code, message }.
+  fileSystem: {
+    getChild: (parentPath, name, kind, create) =>
+      ipcRenderer.invoke('fileSystem:getChild', parentPath, name, kind, create),
+    readDirectory: (directoryPath) =>
+      ipcRenderer.invoke('fileSystem:readDirectory', directoryPath),
+    readFile: (filePath) => ipcRenderer.invoke('fileSystem:readFile', filePath),
+    writeFile: (filePath, data) =>
+      ipcRenderer.invoke('fileSystem:writeFile', filePath, data),
+  },
+  showDirectoryPicker: (options) =>
     ipcRenderer.invoke('dialog:showOpenDialog', {
       properties: ['openDirectory'],
+      defaultPath: options?.defaultPath,
     }),
   showOpenFilePicker: (options) =>
     ipcRenderer.invoke('dialog:showOpenDialog', {
       properties: ['openFile'],
+      defaultPath: options?.defaultPath,
       filters: options?.types?.map((t) => ({
         name: t.description || 'Files',
         extensions: Object.values(t.accept)

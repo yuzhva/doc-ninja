@@ -1,3 +1,5 @@
+import { FileSystemBridge } from './file-system-bridge';
+
 const DB_NAME = 'DocNinja';
 const DB_VERSION = 2;
 const STORE_NAME = 'docTemplates';
@@ -101,8 +103,21 @@ const withStore = <T, _>(
       }),
   );
 
-const listStoredTemplates = (): Promise<StoredTemplateRecord[]> =>
-  withStore(STORE_NAME, 'readonly', (store) => store.getAll());
+// Handles go through FileSystemBridge.reviveStoredHandle on the way out: the
+// desktop app's own handles come back from IndexedDB as plain fields.
+const listStoredTemplates = async (): Promise<StoredTemplateRecord[]> => {
+  const records = await withStore<StoredTemplateRecord[], unknown>(
+    STORE_NAME,
+    'readonly',
+    (store) => store.getAll(),
+  );
+  return records.map((record) => ({
+    ...record,
+    browserFileHandle: FileSystemBridge.reviveStoredHandle(
+      record.browserFileHandle,
+    ),
+  }));
+};
 
 const saveStoredTemplate = async (
   record: StoredTemplateRecord,
@@ -115,12 +130,24 @@ const removeStoredTemplate = async (id: string): Promise<void> => {
 };
 
 /** Resolves undefined when no folder has been remembered yet. */
-const readStoredOutputDirectory = (): Promise<
+const readStoredOutputDirectory = async (): Promise<
   StoredOutputDirectoryRecord | undefined
-> =>
-  withStore(OUTPUT_DIRECTORY_STORE_NAME, 'readonly', (store) =>
+> => {
+  const record = await withStore<
+    StoredOutputDirectoryRecord | undefined,
+    unknown
+  >(OUTPUT_DIRECTORY_STORE_NAME, 'readonly', (store) =>
     store.get(OUTPUT_DIRECTORY_RECORD_ID),
   );
+  return (
+    record && {
+      ...record,
+      browserDirectoryHandle: FileSystemBridge.reviveStoredHandle(
+        record.browserDirectoryHandle,
+      ),
+    }
+  );
+};
 
 const saveStoredOutputDirectory = async (
   record: Omit<StoredOutputDirectoryRecord, 'id'>,

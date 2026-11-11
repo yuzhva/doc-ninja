@@ -2,6 +2,7 @@ import React from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { DocxTemplateEngine } from '../../../../utils/docx-template-engine';
+import { FileSystemBridge } from '../../../../utils/file-system-bridge';
 import type { DocmGeneratePayload } from './components/DocmTemplatesPanel';
 
 const I18N_NS = 'page.search.container.searchResults';
@@ -61,14 +62,12 @@ const useDocmGeneration = (addToast: AddToast) => {
         await writable.close();
       }
 
-      // Desktop app only: a browser can't open a folder on the computer, and
-      // even Electron only knows where this one is because its main process
-      // noted the path when write access was granted — the handle itself
-      // carries none. A lookup that fails just leaves the link out.
+      // Desktop app only: a browser can't open a folder on the computer, so
+      // there it's null and the link is left out.
       const outputFolderName = payload.outputDirectoryHandle.name;
-      const outputFolderPath = await window.electronAPI
-        ?.getWritableDirectoryPath(outputFolderName)
-        .catch(() => null);
+      const outputFolderPath = await FileSystemBridge.getDirectoryPath(
+        payload.outputDirectoryHandle,
+      );
 
       addToast(
         'success',
