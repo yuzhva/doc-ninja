@@ -108,11 +108,38 @@ type ExtractorSchema = {
 
 type UnitSpan = { text: string; start: number; end: number };
 
+// A document's units, split once per unit kind and shared by every match
+// found in it — re-splitting a multi-megabyte document per match is what
+// made a search with thousands of matches crawl.
+type UnitsCache = Map<ExtractorUnit, UnitSpan[]>;
+
 // Greedily consumes an entire run of consecutive blank lines as ONE
 // separator (2 blank lines and 5 blank lines both just mean "next
 // paragraph") — otherwise a run of N newlines produces N-2 empty "phantom"
 // paragraph units between real ones.
 const PARAGRAPH_SEPARATOR = /(?:\n[ \t\r]*){2,}/g;
+
+// No real paragraph comes near this long: the longest in legal codes, EU
+// acts and novels run 2–4k chars. A blank-line "paragraph" past it means the
+// document puts its paragraphs on single lines with no blank line between
+// them (common for text exported from .doc/.docx/.html), so it's split at
+// its line breaks instead. Otherwise the whole document is one paragraph, and
+// every match's preview is the rest of the document from that match on.
+const OVERSIZED_PARAGRAPH_CHARS = 10_000;
+
+// The most text a verbatim rule (one without a `pattern`) returns for one
+// match. A safety net whatever the document looks like (one huge line with
+// no line breaks at all) or the rule asks for (`limit: 'ULTIMATE'` means
+// "to the end of the document"): a search with thousands of matches must not
+// hold thousands of copies of the document — that ran the backend out of
+// memory. Above the longest paragraph above, so a real one is never cut.
+const MAX_VERBATIM_CHARS = 10_000;
+
+// When a verbatim value is cut, how much of the text before the match it
+// keeps, so the match shows up with some lead-in rather than at the very top.
+const MAX_VERBATIM_LEAD_CHARS = 2_000;
+
+const ELLIPSIS = '…';
 
 // Per-rule fallbacks when a config omits a field — owned by the engine, not
 // by every config file, so schemas only ever state what's non-default.
@@ -142,41 +169,46 @@ class InformationExtractor {
   /**
    * Splits the whole document into blank-line-separated paragraph blocks,
    * keeping absolute character offsets so later steps can slice back into
-   * the original content.
+   * the original content. A block too long to be a real paragraph is split
+   * at its line breaks instead (see OVERSIZED_PARAGRAPH_CHARS).
    */
   private static splitParagraphs(content: string): UnitSpan[] {
     const units: UnitSpan[] = [];
     let cursor = 0;
     let match: RegExpExecArray | null;
 
+    const pushBlock = (start: number, end: number): void => {
+      if (end - start > OVERSIZED_PARAGRAPH_CHARS) {
+        units.push(...this.splitLines(content, start, end));
+      } else {
+        units.push({ text: content.slice(start, end), start, end });
+      }
+    };
+
     PARAGRAPH_SEPARATOR.lastIndex = 0;
     while ((match = PARAGRAPH_SEPARATOR.exec(content))) {
-      units.push({
-        text: content.slice(cursor, match.index),
-        start: cursor,
-        end: match.index,
-      });
+      pushBlock(cursor, match.index);
       cursor = match.index + match[0].length;
     }
-    units.push({
-      text: content.slice(cursor),
-      start: cursor,
-      end: content.length,
-    });
+    pushBlock(cursor, content.length);
 
     return units;
   }
 
-  /** Splits the whole document into newline-separated lines. */
-  private static splitLines(content: string): UnitSpan[] {
+  /** Splits `content` (from `from` up to `to`) into newline-separated lines. */
+  private static splitLines(
+    content: string,
+    from = 0,
+    to = content.length,
+  ): UnitSpan[] {
     const units: UnitSpan[] = [];
-    let cursor = 0;
+    let cursor = from;
 
-    for (let i = 0; i <= content.length; i++) {
-      if (i === content.length || content[i] === '\n') {
-        units.push({ text: content.slice(cursor, i), start: cursor, end: i });
-        cursor = i + 1;
-      }
+    while (cursor <= to) {
+      const newline = content.indexOf('\n', cursor);
+      const end = newline === -1 || newline > to ? to : newline;
+      units.push({ text: content.slice(cursor, end), start: cursor, end });
+      cursor = end + 1;
     }
 
     return units;
@@ -191,11 +223,27 @@ class InformationExtractor {
       : this.splitParagraphs(content);
   }
 
+  /**
+   * The unit `position` is in: the last one starting at or before it (units
+   * are in document order). A position in the separator between two units
+   * belongs to the one before it.
+   */
   private static findUnitIndexAt(units: UnitSpan[], position: number): number {
-    for (let i = 0; i < units.length; i++) {
-      if (position >= units[i].start && position <= units[i].end) return i;
+    let low = 0;
+    let high = units.length - 1;
+    let found = 0;
+
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      if (units[middle].start <= position) {
+        found = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
     }
-    return Math.max(0, units.length - 1);
+
+    return found;
   }
 
   private static resolveAnchorIndex(
@@ -235,6 +283,57 @@ class InformationExtractor {
   }
 
   /**
+   * The text from `start` up to `end`, cut to MAX_VERBATIM_CHARS when it's
+   * longer: around `position` when the match is in it (with up to
+   * MAX_VERBATIM_LEAD_CHARS before it), from `start` otherwise. A cut lands
+   * on whitespace, never mid-word, and is marked with an ellipsis.
+   */
+  private static sliceAroundMatch(
+    content: string,
+    start: number,
+    end: number,
+    position?: number,
+  ): string {
+    if (end - start <= MAX_VERBATIM_CHARS) return content.slice(start, end);
+
+    const hasMatch =
+      position !== undefined && position >= start && position < end;
+    let from = hasMatch
+      ? Math.max(
+          start,
+          Math.min(
+            position - MAX_VERBATIM_LEAD_CHARS,
+            end - MAX_VERBATIM_CHARS,
+          ),
+        )
+      : start;
+    let to = Math.min(end, from + MAX_VERBATIM_CHARS);
+
+    // Snap inwards to whitespace, never past the match itself
+    if (from > start) {
+      const limit = hasMatch ? position : to;
+      const offset = content.slice(from, limit).search(/\s/);
+      if (offset !== -1) from += offset + 1;
+    }
+    if (to < end) {
+      const floor = hasMatch ? Math.max(from, position) : from;
+      const tail = content.slice(floor, to);
+      const lastSpace = Math.max(
+        tail.lastIndexOf(' '),
+        tail.lastIndexOf('\n'),
+        tail.lastIndexOf('\t'),
+      );
+      if (lastSpace > 0) to = floor + lastSpace;
+    }
+
+    return (
+      (from > start ? ELLIPSIS + ' ' : '') +
+      content.slice(from, to) +
+      (to < end ? ' ' + ELLIPSIS : '')
+    );
+  }
+
+  /**
    * "Find first match and stop" rule: grows a text window unit-by-unit from
    * the anchor in `direction`, testing `pattern` after each expansion. When
    * `pattern` is omitted, just returns the verbatim text of the window once
@@ -269,7 +368,7 @@ class InformationExtractor {
         clipToMatchLine && position !== undefined && low === anchorIndex
           ? this.findLineStart(content, units[low].start, position)
           : units[low].start;
-      const windowText = content.slice(windowStart, units[high].end);
+      const windowEnd = units[high].end;
 
       if (!pattern) {
         const isFinalStep =
@@ -277,8 +376,13 @@ class InformationExtractor {
           (direction === 'DIRECTION__BOTTOM' && high === units.length - 1) ||
           (direction === 'DIRECTION__TOP' && low === 0);
         if (isFinalStep)
-          return windowText.replace(/[ \t]+/g, ' ').trim() || null;
+          return (
+            this.sliceAroundMatch(content, windowStart, windowEnd, position)
+              .replace(/[ \t]+/g, ' ')
+              .trim() || null
+          );
       } else {
+        const windowText = content.slice(windowStart, windowEnd);
         const value = this.extractValue(windowText, pattern);
         if (value) return value;
         if (nonEmptyUnitsSeen >= maxSteps) break;
@@ -401,15 +505,17 @@ class InformationExtractor {
 
   /**
    * Core extraction logic for a single match, driven entirely by `schemaConfig`.
+   * `unitsCache` holds `content`'s units across calls: pass the same one for
+   * every match in one document (and only that document).
    */
   static extract(
     schemaConfig: ExtractorConfig,
     content: string,
     match: ExtractionInput,
+    unitsCache: UnitsCache = new Map(),
   ): ExtractedInfo {
     const position = match.position ?? 0;
     const extractedFieldById: Record<string, string | null> = {};
-    const unitsCache = new Map<ExtractorUnit, UnitSpan[]>();
 
     const getUnits = (unit: ExtractorUnit): UnitSpan[] => {
       let units = unitsCache.get(unit);
@@ -521,6 +627,7 @@ class InformationExtractor {
     const extractedResults: ExtractedInfo[] = [];
 
     const fileContentCache = new Map<string, string>();
+    const unitsCacheByDocPath = new Map<string, UnitsCache>();
 
     for (const searchResult of searchResults) {
       const searchMatches = searchResult.results;
@@ -539,6 +646,11 @@ class InformationExtractor {
             content = await fs.readFile(docPath, 'utf-8');
             fileContentCache.set(docPath, content);
           }
+          let unitsCache = unitsCacheByDocPath.get(docPath);
+          if (!unitsCache) {
+            unitsCache = new Map();
+            unitsCacheByDocPath.set(docPath, unitsCache);
+          }
 
           for (const matchedSnippet of searchMatch.snippets) {
             const input: ExtractionInput = {
@@ -550,7 +662,12 @@ class InformationExtractor {
               position: matchedSnippet.matchCharStart || 0,
             };
 
-            const extractedResult = this.extract(schemaConfig, content, input);
+            const extractedResult = this.extract(
+              schemaConfig,
+              content,
+              input,
+              unitsCache,
+            );
             extractedResults.push(extractedResult);
           }
         } catch (error) {
