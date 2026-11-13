@@ -86,8 +86,7 @@ pnpm run upload:mas
 5. In App Store Connect, wait for the build to finish processing (TestFlight
    tab), select it in the app version, and submit for review.
 
-Each upload needs a new build number: bump `version` in `package.json` or set
-`MAS__BUILD_VERSION` in `.env` (e.g. `1.6.1`).
+Each upload needs a new build number: bump `version` in `package.json`.
 
 ---
 

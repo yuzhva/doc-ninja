@@ -138,21 +138,11 @@ if (isMasBuild || isWebsiteMacBuild) {
 // What the App Store and the website builds share: the same app, under the
 // same Bundle ID, so either one installed replaces the other
 const macAppInfo = (): ForgeConfig['packagerConfig'] => {
-  // CFBundleVersion: App Store Connect accepts each one once, so a re-upload
-  // of the same app version needs a higher one. Defaults to package.json version.
-  const buildVersion = process.env.MAS__BUILD_VERSION?.trim() || undefined;
-  if (buildVersion && !/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
-    throw new Error(
-      `MAS__BUILD_VERSION="${buildVersion}": App Store Connect takes at most three numbers (e.g. 1.6.1), not four.`,
-    );
-  }
-
   return {
     // Bundle/Dock name; otherwise it falls back to package.json "name".
     // macOS-only so the Windows exe name and userData folder stay unchanged.
     name: 'DocNinja',
     appBundleId: requireMasEnv('MAS__BUNDLE_ID'),
-    buildVersion,
     // LSApplicationCategoryType — App Store Connect rejects uploads without it
     appCategoryType: 'public.app-category.productivity',
     extendInfo: {

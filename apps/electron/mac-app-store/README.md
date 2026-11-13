@@ -115,9 +115,8 @@ justification of every entitlement. Add one only when the app needs it.
 4. The build appears in App Store Connect > TestFlight once Apple has
    processed it; select it in the app version and submit for review.
 
-Each upload needs a higher `CFBundleVersion` than the last one: set
-`MAS__BUILD_VERSION` (at most three numbers, e.g. `1.6.1`) or bump
-`package.json` `version`.
+Each upload needs a higher `CFBundleVersion` than the last one: bump
+`version` in `package.json`.
 
 To try the sandboxed build on this Mac before uploading (a
 distribution-signed app only runs once installed from the store):
