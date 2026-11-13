@@ -23,14 +23,11 @@
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
     <!--
-      Loopback only: the backend process (src/backend-process.mts) answers each
-      window request through a short-lived HTTP server on 127.0.0.1 and
-      connects to it with supertest. Without these the sandbox refuses both
-      (listen/connect EPERM). Nothing is reachable from or sent to the network.
+      No com.apple.security.network.*: DocNinja neither listens nor connects.
+      The backend process (src/backend-process.mts) answers the window over a
+      connection made in memory, not a socket, and links open in the user's
+      browser (shell.openExternal). App Review rejected 1.6.0 (guideline
+      2.4.5) for network.server without a server behind it.
     -->
-    <key>com.apple.security.network.server</key>
-    <true/>
-    <key>com.apple.security.network.client</key>
-    <true/>
   </dict>
 </plist>

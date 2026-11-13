@@ -9,8 +9,11 @@
  * answer to a search can be tens of MB, and the main process never copies it.
  */
 import { once } from 'events';
+import fs from 'fs';
 import http from 'http';
-import request from 'supertest';
+import { Readable, duplexPair } from 'stream';
+import type { Duplex } from 'stream';
+import { pipeline } from 'stream/promises';
 import { pathToFileURL } from 'url';
 
 import type {
@@ -39,96 +42,115 @@ expressApp.catch((error) => {
 /**
  * Answers a request with the Express app, as an HTTP request would be.
  *
- * Once `signal` aborts, the request's connection closes: the app sees what
- * it sees of a fetch() cancelled in a browser, and stops (see
- * abortedWhenClientLeaves in be-krang). It then rejects.
+ * Over a connection made in memory, not a socket: an HTTP server that
+ * listens, even on the loopback only, needs the sandbox's
+ * com.apple.security.network.server entitlement, and App Review refuses that
+ * entitlement to an app that serves nothing to the network. The app gets a
+ * real http.IncomingMessage and http.ServerResponse all the same, the way
+ * Node's own http tests drive a server over a duplexPair().
+ *
+ * Once `signal` aborts, the connection closes: the app sees what it sees of
+ * a fetch() cancelled in a browser, and stops (see abortedWhenClientLeaves
+ * in be-krang). It then rejects.
  */
 const answer = async (
   app: any,
   apiRequest: ApiRequest,
   signal: AbortSignal,
 ): Promise<ApiResponse> => {
-  // The server supertest would start for the app, started here to be closed
-  // here: supertest closes its own only once an answer comes, and a
-  // cancelled request gets none. On the loopback only — the window's
-  // requests are all it takes.
-  const server = http.createServer(app).listen(0, '127.0.0.1');
+  signal.throwIfAborted();
+  // A server that never listens: it gets its one connection from here
+  const [clientEnd, serverEnd] = duplexPair();
+  http.createServer(app).emit('connection', serverEnd);
   try {
-    await once(server, 'listening');
-    signal.throwIfAborted();
-    return await answerOn(server, apiRequest, signal);
+    return await answerOn(clientEnd, apiRequest, signal);
   } finally {
-    server.close();
+    // Both ends, whatever happened: once the answer is sent this changes
+    // nothing for the app; before, its response closes unanswered — the abort
+    clientEnd.destroy();
+    serverEnd.destroy();
   }
 };
 
-/** Sends the request to `server`, the app's, and waits for the answer. */
+/**
+ * The request's body as the app reads it off the wire, and its Content-Type.
+ *
+ * !IMPORTANT: body is serialized by {serializeElectronIPCBody} in the
+ * Front-End application (fetch-request.ts in ui-sauce): a FormData can't be
+ * copied over IPC, so it comes as its files and fields, and is put together
+ * again here.
+ */
+const encodeBody = async (
+  body: ApiRequest['body'],
+  electronAPIMeta: ApiRequest['electronAPIMeta'],
+): Promise<{ contentType?: string; content: Readable }> => {
+  if (electronAPIMeta?.isMultipart) {
+    const form = new FormData();
+    for (const file of body.files ?? []) {
+      // From disk when the file has a path, read only as it is sent
+      const blob = file.path
+        ? await fs.openAsBlob(file.path, { type: file.type })
+        : file.data && new Blob([Buffer.from(file.data)], { type: file.type });
+      if (blob) form.append(file.key, blob, file.name);
+    }
+    for (const [key, value] of Object.entries(body.fieldByName ?? {})) {
+      form.append(key, String(value));
+    }
+    // Encoded as fetch() encodes a FormData body, boundary and all
+    const encoded = new Response(form);
+    return {
+      contentType: encoded.headers.get('content-type')!,
+      content: Readable.fromWeb(encoded.body as any),
+    };
+  }
+  if (typeof body === 'string') {
+    return { contentType: 'application/json', content: Readable.from([body]) };
+  }
+  return { content: Readable.from([]) };
+};
+
+/**
+ * Sends the request over `connection`, to the app at its other end, and
+ * waits for the answer.
+ */
 const answerOn = async (
-  server: http.Server,
+  connection: Duplex,
   { method, path, body, electronAPIMeta }: ApiRequest,
   signal: AbortSignal,
 ): Promise<ApiResponse> => {
-  // Use supertest to make an "in-memory" request to your Express app
-  const req = (request(server) as any)[method.toLowerCase()](path);
+  const { contentType, content } = await encodeBody(body, electronAPIMeta);
 
-  /**
-   * !IMPORTANT: body is serialized by {serializeElectronIPCBody} in Front-End application
-   *
-   * If you pass a FormData object to window.electronAPI.fetch(...), the preload script receives an empty object {} instead of the form data.
-   * This happens because FormData is not "cloneable" by the structured clone algorithm used by Electron's IPC.
-   *
-   * Why it must stay in the Frontend
-   * You must convert the FormData into a plain JavaScript object (JSON-serializable) before it crosses the bridge.
-   * That is why the serialization logic lives in fetchRequest.ts inside the React app.
-   */
-  if (electronAPIMeta?.isMultipart) {
-    // Reconstruct multipart request for supertest
-
-    // 1. Attach files
-    if (body.files) {
-      for (const file of body.files) {
-        if (file.path) {
-          // Option A: Stream from disk (Best for performance)
-          req.attach(file.key, file.path, {
-            filename: file.name,
-            contentType: file.type,
-          });
-        } else if (file.data) {
-          // Option B: Buffer fallback (If path is missing)
-          req.attach(file.key, Buffer.from(file.data), {
-            filename: file.name,
-            contentType: file.type,
-          });
-        }
-      }
-    }
-
-    // 2. Attach text fields
-    if (body.fieldByName) {
-      for (const [key, value] of Object.entries(body.fieldByName)) {
-        req.field(key, value as string);
-      }
-    }
-  } else {
-    const bodyAsJSON = JSON.parse(body);
-
-    req.send(bodyAsJSON);
-  }
-
-  // A block, returning nothing: abort() returns the request, a thenable, and
-  // an abort listener's thenable is awaited — its rejection (the very abort)
-  // would go unhandled, and end this process
-  signal.addEventListener(
-    'abort',
-    () => {
-      req.abort();
+  const req = http.request({
+    method,
+    path,
+    headers: {
+      ...(contentType && { 'content-type': contentType }),
+      // One request per connection: answer() closes it after this one
+      connection: 'close',
     },
-    { once: true },
-  );
-  const response = await req;
+    createConnection: () => connection as any,
+    // Aborted, the request fails with an AbortError, and so does the wait
+    // below
+    signal,
+  });
+  // Waited for together: the app may answer before it reads the whole body
+  // (a bad request, a file too big)
+  const [[res]] = (await Promise.all([
+    once(req, 'response'),
+    pipeline(content, req),
+  ])) as [[http.IncomingMessage], void];
 
-  // Return the response body and status to the UI
-  return { status: response.status, body: response.body };
+  const chunks: Buffer[] = [];
+  for await (const chunk of res) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString('utf8');
+
+  // Parsed from JSON, as the UI expects it; every be-krang route answers in
+  // JSON, anything else (Express's own error pages) gives an empty object
+  const isJSON = /[/+]json\b/.test(res.headers['content-type'] ?? '');
+  return {
+    status: res.statusCode!,
+    body: isJSON && text ? JSON.parse(text) : {},
+  };
 };
 
 // A window's port to this process, from the main process

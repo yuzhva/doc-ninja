@@ -23,7 +23,10 @@ microphone, USB, printing and network access, and App Review asks for a
 justification of every entitlement. Add one only when the app needs it.
 
 - `entitlements.mas.plist`: the top-level `DocNinja.app` (sandbox + files the
-  user picks).
+  user picks). No network entitlements: the app neither listens nor connects
+  (the backend is reached in memory, see `src/backend-process.mts`). App
+  Review's automated check rejects `network.server` when the app serves
+  nothing (guideline 2.4.5), so don't add it back for a loopback server.
 - `entitlements.mas.child.plist`: every nested executable (Electron helpers,
   the PyInstaller binaries). Apple allows only these two keys there.
 
