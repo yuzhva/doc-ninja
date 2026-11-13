@@ -7,7 +7,8 @@
 //            "Apple Development" + the development profile (MAS_DEV=1): a
 //            distribution-signed one only runs once installed from the store.
 // Extra arguments go through to Forge, e.g. `pnpm run make -- --arch=arm64`
-// (an --arch given here wins over the default below).
+// (an --arch or --platform given here wins over the defaults below:
+// scripts/make-dmg.mjs packages the website build with --platform=darwin).
 import { spawnSync } from 'child_process';
 import { createRequire } from 'module';
 import path from 'path';
@@ -25,11 +26,15 @@ const forgeCli = path.join(
 );
 
 const isMac = process.platform === 'darwin';
-const hasArch = extraArgs.some(
-  (arg) => arg === '--arch' || arg.startsWith('--arch='),
-);
+const hasOption = (name) =>
+  extraArgs.some((arg) => arg === name || arg.startsWith(`${name}=`));
+const hasArch = hasOption('--arch');
+const hasPlatform = hasOption('--platform');
 const platformArgs = isMac
-  ? ['--platform=mas', ...(hasArch ? [] : ['--arch=universal'])]
+  ? [
+      ...(hasPlatform ? [] : ['--platform=mas']),
+      ...(hasArch ? [] : ['--arch=universal']),
+    ]
   : [];
 
 const { status } = spawnSync(
@@ -38,7 +43,7 @@ const { status } = spawnSync(
   {
     stdio: 'inherit',
     env:
-      isMac && command === 'package'
+      isMac && command === 'package' && !hasPlatform
         ? { ...process.env, MAS_DEV: '1' }
         : process.env,
   },

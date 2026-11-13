@@ -8,6 +8,7 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 // The store identities (Microsoft Store MSIX, Mac App Store) and the build
@@ -71,14 +72,19 @@ const isMasBuild = cliPlatform === 'mas';
 // only way to launch a sandboxed MAS build on this Mac. A distribution-signed
 // one runs only once installed from the store/TestFlight.
 const isMasDevBuild = isMasBuild && process.env.MAS_DEV === '1';
+// Website build: only for `--platform=darwin` (what `pnpm run make:dmg`
+// passes, see scripts/make-dmg.mjs). Signed with "Developer ID Application"
+// and notarized, so it opens when downloaded from the website.
+const isWebsiteMacBuild = cliPlatform === 'darwin';
 // Entitlements and provisioning profiles: see mac-app-store/README.md
 const masDir = path.join(__dirname, 'mac-app-store');
+const macWebsiteDir = path.join(__dirname, 'mac-website');
 
 const requireMasEnv = (name: string) => {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(
-      `${name} is not set: the Mac App Store build needs it. Set it in the shell or in apps/electron/.env (see .env.example).`,
+      `${name} is not set: the macOS build needs it. Set it in the shell or in apps/electron/.env (see .env.example).`,
     );
   }
   return value;
@@ -90,7 +96,7 @@ const requireMasEnv = (name: string) => {
 // (they are the same file in the x64 and arm64 halves), so it is told to keep
 // them as they are (osxUniversal.x64ArchFiles) — checked here first.
 const pythonScriptsGlob = '**/python-scripts/**';
-if (isMasBuild) {
+if (isMasBuild || isWebsiteMacBuild) {
   const pythonScriptsDir = path.join(beDest, 'python-scripts');
   const files = fs.existsSync(pythonScriptsDir)
     ? (fs.readdirSync(pythonScriptsDir, { recursive: true }) as string[])
@@ -128,6 +134,35 @@ if (isMasBuild) {
     }
   }
 }
+
+// What the App Store and the website builds share: the same app, under the
+// same Bundle ID, so either one installed replaces the other
+const macAppInfo = (): ForgeConfig['packagerConfig'] => {
+  // CFBundleVersion: App Store Connect accepts each one once, so a re-upload
+  // of the same app version needs a higher one. Defaults to package.json version.
+  const buildVersion = process.env.MAS__BUILD_VERSION?.trim() || undefined;
+  if (buildVersion && !/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
+    throw new Error(
+      `MAS__BUILD_VERSION="${buildVersion}": App Store Connect takes at most three numbers (e.g. 1.6.1), not four.`,
+    );
+  }
+
+  return {
+    // Bundle/Dock name; otherwise it falls back to package.json "name".
+    // macOS-only so the Windows exe name and userData folder stay unchanged.
+    name: 'DocNinja',
+    appBundleId: requireMasEnv('MAS__BUNDLE_ID'),
+    buildVersion,
+    // LSApplicationCategoryType — App Store Connect rejects uploads without it
+    appCategoryType: 'public.app-category.productivity',
+    extendInfo: {
+      // Export compliance, answered here so App Store Connect doesn't ask on
+      // every upload: DocNinja implements no encryption of its own; the only
+      // crypto is Chromium's TLS/HTTPS and the OS keychain (exempt)
+      ITSAppUsesNonExemptEncryption: false,
+    },
+  };
+};
 
 const masPackagerConfig = (): ForgeConfig['packagerConfig'] => {
   const teamId = requireMasEnv('MAS__TEAM_ID');
@@ -168,29 +203,8 @@ const masPackagerConfig = (): ForgeConfig['packagerConfig'] => {
     );
   }
 
-  // CFBundleVersion: App Store Connect accepts each one once, so a re-upload
-  // of the same app version needs a higher one. Defaults to package.json version.
-  const buildVersion = process.env.MAS__BUILD_VERSION?.trim() || undefined;
-  if (buildVersion && !/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
-    throw new Error(
-      `MAS__BUILD_VERSION="${buildVersion}": App Store Connect takes at most three numbers (e.g. 1.6.1), not four.`,
-    );
-  }
-
   return {
-    // Bundle/Dock name; otherwise it falls back to package.json "name".
-    // MAS-only so the Windows exe name and userData folder stay unchanged.
-    name: 'DocNinja',
-    appBundleId: bundleId,
-    buildVersion,
-    // LSApplicationCategoryType — App Store Connect rejects uploads without it
-    appCategoryType: 'public.app-category.productivity',
-    extendInfo: {
-      // Export compliance, answered here so App Store Connect doesn't ask on
-      // every upload: DocNinja implements no encryption of its own; the only
-      // crypto is Chromium's TLS/HTTPS and the OS keychain (exempt)
-      ITSAppUsesNonExemptEncryption: false,
-    },
+    ...macAppInfo(),
     osxSign: {
       // Matched as a substring of `security find-identity -v`
       identity: isMasDevBuild
@@ -222,6 +236,48 @@ const masPackagerConfig = (): ForgeConfig['packagerConfig'] => {
   };
 };
 
+const websiteMacPackagerConfig = (): ForgeConfig['packagerConfig'] => {
+  const teamId = requireMasEnv('MAS__TEAM_ID');
+  const signerName = requireMasEnv('MAS__SIGNER_NAME');
+  // Notarized with the App Store Connect API key `upload:mas` uses
+  const apiKeyId = requireMasEnv('ASC__API_KEY_ID');
+  const apiKeyPath = path.join(
+    os.homedir(),
+    '.appstoreconnect/private_keys',
+    `AuthKey_${apiKeyId}.p8`,
+  );
+  if (!fs.existsSync(apiKeyPath)) {
+    throw new Error(
+      `${apiKeyPath} is missing: notarization needs the App Store Connect API key (see mac-app-store/README.md).`,
+    );
+  }
+
+  return {
+    ...macAppInfo(),
+    osxSign: {
+      // Matched as a substring of `security find-identity -v`
+      identity: `Developer ID Application: ${signerName} (${teamId})`,
+      // As in the store build: an unsigned app is never usable
+      // @ts-expect-error
+      continueOnError: false,
+      // The app, the Electron helpers and the PyInstaller binaries alike: the
+      // hardened runtime, which notarization requires, with the exceptions
+      // they need to run (see mac-website/entitlements.plist)
+      optionsForFile: () => ({
+        entitlements: path.join(macWebsiteDir, 'entitlements.plist'),
+        hardenedRuntime: true,
+      }),
+    },
+    // Apple checks the signed app for malware and issues a ticket, stapled to
+    // the app: Gatekeeper then opens it, even offline. Takes a few minutes.
+    osxNotarize: {
+      appleApiKey: apiKeyPath,
+      appleApiKeyId: apiKeyId,
+      appleApiIssuer: requireMasEnv('ASC__API_ISSUER_ID'),
+    },
+  };
+};
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
@@ -234,6 +290,7 @@ const config: ForgeConfig = {
     // binaries as they are instead of merging them
     osxUniversal: { x64ArchFiles: pythonScriptsGlob },
     ...(isMasBuild && masPackagerConfig()),
+    ...(isWebsiteMacBuild && websiteMacPackagerConfig()),
   },
   rebuildConfig: {},
   makers: [

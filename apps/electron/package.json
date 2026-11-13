@@ -8,6 +8,7 @@
     "start": "electron-forge start",
     "package": "node ./scripts/forge.mjs package",
     "make": "node ./scripts/forge.mjs make",
+    "make:dmg": "node ./scripts/make-dmg.mjs",
     "upload:mas": "node ./scripts/upload-mas.mjs"
   },
   "dependencies": {

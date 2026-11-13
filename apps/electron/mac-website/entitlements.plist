@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <!--
+    Entitlements for the website build (`pnpm run make:dmg`): DocNinja.app and
+    every executable inside it, signed with "Developer ID Application" and the
+    hardened runtime, which notarization requires. No App Sandbox: like the
+    Windows build, the app reads the folders the user picks directly.
+
+    These are hardened-runtime exceptions only; notarization doesn't review
+    them, but each one is kept to what the app needs to start.
+  -->
+  <dict>
+    <!-- V8 (Electron, and Node in the backend process) compiles JavaScript at run time -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!--
+      The PyInstaller Python runtime (be-krang/dist/python-scripts): ctypes
+      callbacks (libffi) write executable memory on Intel Macs
+    -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!--
+      The PyInstaller binaries load the Python runtime and its extension
+      modules from their _internal folders; osx-sign re-signs them with the
+      same Team ID, but a library it misses would otherwise stop the script
+      at launch
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
