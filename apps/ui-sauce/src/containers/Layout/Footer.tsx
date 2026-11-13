@@ -4,6 +4,35 @@ import { Trans, useTranslation } from 'react-i18next';
 import { Modal } from '../../components';
 
 const I18N_NS = 'container.layout.footer';
+const PRIVACY_POLICY_NS = `${I18N_NS}.privacyPolicy`;
+const PRIVACY_POLICY_LAST_UPDATED = '23.07.2026';
+
+// The policy's sections in order, by their translation key, each with how
+// many paragraphs (`p1`, `p2`, ...) it has.
+const PRIVACY_POLICY_SECTIONS = [
+  { id: 'dataCollection', paragraphCount: 2 },
+  { id: 'localProcessing', paragraphCount: 4 },
+  { id: 'dataStorage', paragraphCount: 1 },
+  { id: 'thirdPartySharing', paragraphCount: 1 },
+  { id: 'appStores', paragraphCount: 1 },
+  { id: 'policyChanges', paragraphCount: 1 },
+  { id: 'contactUs', paragraphCount: 2 },
+] as const;
+
+const LINK_CLASS_NAME = 'text-blue-600 dark:text-blue-400 hover:underline';
+
+// The tags a policy paragraph may wrap text in, e.g. "<emailLink>...</emailLink>"
+const PRIVACY_POLICY_LINKS = {
+  emailLink: <a href="mailto:contact@mainset.io" className={LINK_CLASS_NAME} />,
+  chatLink: (
+    <a
+      href="https://mainset.io/uk/products/docninja?chat=open&source=desktop-app"
+      target="_blank"
+      rel="noopener noreferrer"
+      className={LINK_CLASS_NAME}
+    />
+  ),
+};
 
 const Footer = () => {
   // `Trans` only reads i18n off context — it never subscribes to
@@ -177,118 +206,31 @@ const Footer = () => {
       >
         <div className="space-y-4 text-sm text-gray-600 dark:text-gray-400">
           <p className="text-xs italic text-gray-500 dark:text-gray-500">
-            Last Updated: 23.07.2026
+            <Trans
+              i18nKey={`${PRIVACY_POLICY_NS}.lastUpdated`}
+              values={{ date: PRIVACY_POLICY_LAST_UPDATED }}
+            />
           </p>
 
           <p>
-            This Privacy Policy describes how DocNinja (&ldquo;the
-            Application&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or
-            &ldquo;our&rdquo;) handles your data. We built DocNinja with strict
-            privacy and security in mind.
+            <Trans i18nKey={`${PRIVACY_POLICY_NS}.intro`} />
           </p>
 
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              1. Data Collection and Usage
-            </h4>
-            <p>We do not collect, store, or transmit any personal data.</p>
-            <p>
-              DocNinja is designed to function entirely locally on your device.
-              The Application does not require an internet connection to process
-              your documents, and we do not monitor, track, or record your usage
-              of the Application.
-            </p>
-          </section>
-
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              2. Local File Processing and AI Inference
-            </h4>
-            <p>
-              All file processing, data extraction, and artificial intelligence
-              (AI) operations occur 100% locally on your machine.
-            </p>
-            <p>
-              When you upload or provide files (such as PDFs, Word documents, or
-              Excel spreadsheets) to the Application, those files are read
-              directly from your local file system.
-            </p>
-            <p>
-              Any vectorization, indexing, or AI chat inference is executed
-              using the Application&apos;s embedded local engine.
-            </p>
-            <p>
-              Your documents and chat prompts are never uploaded to our servers,
-              third-party cloud providers, or external AI services.
-            </p>
-          </section>
-
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              3. Data Storage
-            </h4>
-            <p>
-              To provide its functionality, DocNinja may store application
-              settings, cached indexed content, or a local vector database
-              directly on your device&apos;s hard drive. You maintain full
-              control over this data and can delete it at any time by
-              uninstalling the Application or clearing the Application&apos;s
-              local cache.
-            </p>
-          </section>
-
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              4. Third-Party Sharing
-            </h4>
-            <p>
-              Because we do not collect any user data, we do not share, sell, or
-              disclose any information to third parties, advertising networks,
-              or analytics providers.
-            </p>
-          </section>
-
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              5. Microsoft Store and Windows Telemetry
-            </h4>
-            <p>
-              While DocNinja itself does not collect data, please be aware that
-              the Microsoft Store and the Windows operating system may collect
-              standard diagnostic or crash data based on your personal Windows
-              privacy settings. This data is governed by the Microsoft Privacy
-              Statement.
-            </p>
-          </section>
-
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              6. Changes to This Policy
-            </h4>
-            <p>
-              We may update this Privacy Policy from time to time if we
-              introduce new features (for example, if we add an optional
-              cloud-sync feature in the future). If changes are made, we will
-              update the &ldquo;Last Updated&rdquo; date at the top of this
-              document.
-            </p>
-          </section>
-
-          <section className="space-y-1.5">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              7. Contact Us
-            </h4>
-            <p>
-              If you have any questions or concerns regarding this Privacy
-              Policy or how your data is handled, please contact us at:{' '}
-              <a
-                href="mailto:contact@mainset.io"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                contact@mainset.io
-              </a>
-            </p>
-          </section>
+          {PRIVACY_POLICY_SECTIONS.map(({ id, paragraphCount }) => (
+            <section key={id} className="space-y-1.5">
+              <h4 className="font-semibold text-gray-900 dark:text-white">
+                <Trans i18nKey={`${PRIVACY_POLICY_NS}.${id}.title`} />
+              </h4>
+              {Array.from({ length: paragraphCount }, (_, index) => (
+                <p key={index}>
+                  <Trans
+                    i18nKey={`${PRIVACY_POLICY_NS}.${id}.p${index + 1}`}
+                    components={PRIVACY_POLICY_LINKS}
+                  />
+                </p>
+              ))}
+            </section>
+          ))}
         </div>
       </Modal>
     </div>

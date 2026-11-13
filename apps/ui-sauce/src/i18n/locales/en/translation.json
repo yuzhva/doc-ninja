@@ -13,12 +13,50 @@
         "zoomResetButton": "Reset to 100%",
         "zoomShortcutsTitle": "Keys, while the settings are open:",
         "beta": "Beta",
+        "chatWithSupport": "Chat with us / support",
         "requestFeatureReportBug": "- Request a feature <br>- Report a bug"
       },
       "footer": {
         "termsAndConditions": "Terms and conditions",
         "requestFeatureReportBug": "Request a feature / Report a bug",
-        "privacyPolicyModalTitle": "Privacy Policy for DocNinja"
+        "privacyPolicyModalTitle": "Privacy Policy for DocNinja",
+        "privacyPolicy": {
+          "lastUpdated": "Last Updated: {{date}}",
+          "intro": "This Privacy Policy describes how DocNinja (“the Application”, “we”, “us”, or “our”) handles your data. We built DocNinja with strict privacy and security in mind.",
+          "dataCollection": {
+            "title": "1. Data Collection and Usage",
+            "p1": "We do not collect, store, or transmit any personal data.",
+            "p2": "DocNinja is designed to function entirely locally on your device. The Application does not require an internet connection to process your documents, and we do not monitor, track, or record your usage of the Application."
+          },
+          "localProcessing": {
+            "title": "2. Local File Processing and AI Inference",
+            "p1": "All file processing, data extraction, and artificial intelligence (AI) operations occur 100% locally on your machine.",
+            "p2": "When you upload or provide files (such as PDFs, Word documents, or Excel spreadsheets) to the Application, those files are read directly from your local file system.",
+            "p3": "Any vectorization, indexing, or AI chat inference is executed using the Application's embedded local engine.",
+            "p4": "Your documents and chat prompts are never uploaded to our servers, third-party cloud providers, or external AI services."
+          },
+          "dataStorage": {
+            "title": "3. Data Storage",
+            "p1": "To provide its functionality, DocNinja may store application settings, cached indexed content, or a local vector database directly on your device's hard drive. You maintain full control over this data and can delete it at any time by uninstalling the Application or clearing the Application's local cache."
+          },
+          "thirdPartySharing": {
+            "title": "4. Third-Party Sharing",
+            "p1": "Because we do not collect any user data, we do not share, sell, or disclose any information to third parties, advertising networks, or analytics providers."
+          },
+          "appStores": {
+            "title": "5. App Stores and Operating Systems",
+            "p1": "While DocNinja itself does not collect data, the Microsoft Store and Windows, or the App Store and macOS, may collect standard diagnostic or crash data based on your system's privacy settings. This data is governed by the Microsoft and Apple privacy policies."
+          },
+          "policyChanges": {
+            "title": "6. Changes to This Policy",
+            "p1": "We may update this Privacy Policy from time to time if we introduce new features (for example, if we add an optional cloud-sync feature in the future). If changes are made, we will update the “Last Updated” date at the top of this document."
+          },
+          "contactUs": {
+            "title": "7. Contact Us",
+            "p1": "If you have any questions or concerns regarding this Privacy Policy or how your data is handled, please contact us at: <emailLink>contact@mainset.io</emailLink>",
+            "p2": "You can also reach us or our support team via chat at: <chatLink>https://mainset.io/</chatLink>"
+          }
+        }
       },
       "welcomeModal": {
         "greetingLine1": "Hey hi",
